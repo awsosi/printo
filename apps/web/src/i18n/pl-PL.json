@@ -1,0 +1,14 @@
+{
+  "nav.adminConfig": "Konfiguracja administratora",
+  "settings.title": "Ustawienia użytkownika",
+  "settings.locale": "Język",
+  "settings.theme": "Motyw",
+  "settings.save": "Zapisz ustawienia",
+  "settings.status.saved": "Ustawienia zapisane",
+  "theme.system": "Systemowy",
+  "theme.light": "Jasny",
+  "theme.dark": "Ciemny",
+  "token.label": "Token autoryzacji",
+  "section.smb": "Źródła SMB",
+  "section.printers": "Drukarki"
+}

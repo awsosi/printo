@@ -72,13 +72,13 @@ Deliver a production-shaped, docker-compose-based E2E web application for PDF in
 - [x] Admin CRUD for local users (API baseline: list/create/role update/delete + tests)
 - [ ] Admin config screens/endpoints for:
   - [x] SMB path + domain credentials (API CRUD + RBAC tests + admin UI wiring)
-  - [x] filename masks (API CRUD + RBAC tests)
+  - [x] filename masks (API CRUD + RBAC tests + admin UI wiring)
   - [x] A4/thermal printer setup (API CRUD + RBAC tests + admin UI wiring)
-  - [x] page routing rules (A4 vs thermal) (API CRUD + RBAC tests)
-  - [x] global OCR config + user overrides (API CRUD + RBAC tests)
+  - [x] page routing rules (A4 vs thermal) (API CRUD + RBAC tests + admin UI wiring)
+  - [x] global OCR config + user overrides (API CRUD + RBAC tests + admin UI wiring)
 - [x] USER scope: self-view/edit allowed subset (API baseline: `/me/preferences` read/write)
-- [ ] i18n loader + fallback strategy in UI and API responses
-- [ ] Theme system preference + per-user override persisted
+- [x] i18n loader + fallback strategy in UI and API responses (web locale loader with en-US key/file fallback + API error-key responses)
+- [x] Theme system preference + per-user override persisted (`/me/preferences` + web UI save/apply)
 
 **Exit criteria:** admin can configure all required entities end-to-end from UI.
 

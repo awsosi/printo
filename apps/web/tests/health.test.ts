@@ -2,23 +2,45 @@ import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 import { createWebApp } from '../src/app.js';
 
-describe('web health', () => {
-  it('returns ok', async () => {
+describe('web app', () => {
+  it('returns health payload', async () => {
     const app = createWebApp();
     const res = await request(app).get('/health');
+
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('ok');
+    expect(res.body).toEqual({ service: 'web', status: 'ok' });
   });
 
-  it('renders admin configuration UI with SMB and printer forms', async () => {
+  it('renders admin configuration UI with all config sections', async () => {
     const app = createWebApp();
     const res = await request(app).get('/admin/config');
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain('SMB sources');
-    expect(res.text).toContain('Printers');
     expect(res.text).toContain('id="smbCreateForm"');
     expect(res.text).toContain('id="printerCreateForm"');
+    expect(res.text).toContain('id="maskCreateForm"');
+    expect(res.text).toContain('id="routingCreateForm"');
+    expect(res.text).toContain('id="ocrGlobalForm"');
+    expect(res.text).toContain('id="ocrOverrideForm"');
+  });
+
+  it('returns locale payload with fallback to en-US keys', async () => {
+    const app = createWebApp();
+    const res = await request(app).get('/i18n/messages?locale=pl-PL');
+
+    expect(res.status).toBe(200);
+    expect(res.body.locale).toBe('pl-PL');
+    expect(res.body.messages['settings.title']).toBe('Ustawienia użytkownika');
+    expect(res.body.messages['ocr.config']).toBe('OCR config JSON');
+  });
+
+  it('falls back to en-US locale file when requested locale is missing', async () => {
+    const app = createWebApp();
+    const res = await request(app).get('/i18n/messages?locale=de-DE');
+
+    expect(res.status).toBe(200);
+    expect(res.body.locale).toBe('en-US');
+    expect(res.body.messages['nav.adminConfig']).toBe('Admin configuration');
   });
 
   it('proxies SMB source list requests to API', async () => {
@@ -70,6 +92,34 @@ describe('web health', () => {
     expect(init.method).toBe('POST');
     expect(init.body).toBe(JSON.stringify(payload));
     expect((init.headers as Record<string, string>).authorization).toBe('Bearer admin-token');
+  });
+
+  it('proxies preference updates for locale and theme', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ locale: 'pl-PL', theme: 'dark' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    );
+    const app = createWebApp({ fetchImpl: fetchMock as typeof fetch, apiBaseUrl: 'http://api.internal' });
+
+    const payload = {
+      locale: 'pl-PL',
+      theme: 'dark'
+    };
+
+    const res = await request(app)
+      .patch('/me/preferences')
+      .set('authorization', 'Bearer user-token')
+      .send(payload);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(payload);
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('http://api.internal/me/preferences');
+    expect(init.method).toBe('PATCH');
+    expect(init.body).toBe(JSON.stringify(payload));
   });
 
   it('returns 401 when proxy auth token is missing', async () => {
