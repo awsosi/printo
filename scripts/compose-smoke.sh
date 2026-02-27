@@ -3,16 +3,30 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/infra/docker-compose.yml"
+COMPOSE_PROJECT_NAME="printo_smoke_${RANDOM}_$$"
+
+WEB_PORT="${WEB_PORT:-13000}"
+API_PORT="${API_PORT:-14000}"
+WORKER_PORT="${WORKER_PORT:-15000}"
+DB_PORT="${DB_PORT:-15432}"
+REDIS_PORT="${REDIS_PORT:-16379}"
+
+export WEB_PORT API_PORT WORKER_PORT DB_PORT REDIS_PORT
+
+compose() {
+  docker compose -p "$COMPOSE_PROJECT_NAME" -f "$COMPOSE_FILE" "$@"
+}
 
 cleanup() {
-  docker compose -f "$COMPOSE_FILE" down -v --remove-orphans >/dev/null 2>&1 || true
+  compose down -v --remove-orphans >/dev/null 2>&1 || true
 }
 
 trap cleanup EXIT
 
 wait_for_http() {
   local url="$1"
-  local attempts=60
+  local attempts="${2:-60}"
+
   for ((i=1; i<=attempts; i++)); do
     if curl -fsS "$url" >/dev/null 2>&1; then
       return 0
@@ -24,61 +38,87 @@ wait_for_http() {
   return 1
 }
 
+request_json() {
+  local method="$1"
+  local url="$2"
+  local body="${3:-}"
+  local auth="${4:-}"
+  local attempts=20
+
+  for ((i=1; i<=attempts; i++)); do
+    local headers=(-H 'accept: application/json')
+    if [[ -n "$auth" ]]; then
+      headers+=(-H "authorization: Bearer $auth")
+    fi
+
+    if [[ -n "$body" ]]; then
+      headers+=(-H 'content-type: application/json')
+      if response="$(curl -fsS -X "$method" "$url" "${headers[@]}" -d "$body")"; then
+        printf '%s' "$response"
+        return 0
+      fi
+    else
+      if response="$(curl -fsS -X "$method" "$url" "${headers[@]}")"; then
+        printf '%s' "$response"
+        return 0
+      fi
+    fi
+
+    sleep 1
+  done
+
+  echo "Request failed after retries: $method $url" >&2
+  return 1
+}
+
 cd "$ROOT_DIR"
 
-docker compose -f "$COMPOSE_FILE" up -d db redis api
-wait_for_http "http://127.0.0.1:4000/health"
+compose up -d db redis api
+wait_for_http "http://127.0.0.1:${API_PORT}/health"
 
-docker compose -f "$COMPOSE_FILE" up -d worker web
-wait_for_http "http://127.0.0.1:5000/health"
-wait_for_http "http://127.0.0.1:3000/health"
+compose up -d worker web
+wait_for_http "http://127.0.0.1:${WORKER_PORT}/health"
+wait_for_http "http://127.0.0.1:${WEB_PORT}/health"
 
 ADMIN_USER="smoke_admin_$(date +%s)"
 ADMIN_PASS="AdminPass123!"
 
-curl -fsS -X POST http://127.0.0.1:4000/auth/register \
-  -H 'content-type: application/json' \
-  -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\",\"roles\":[\"ADMIN\"]}" >/dev/null
+request_json POST "http://127.0.0.1:${API_PORT}/auth/register" \
+  "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\",\"roles\":[\"ADMIN\"]}" >/dev/null
 
-LOGIN_RESPONSE="$(curl -fsS -X POST http://127.0.0.1:4000/auth/login \
-  -H 'content-type: application/json' \
-  -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\"}")"
+LOGIN_RESPONSE="$(request_json POST "http://127.0.0.1:${API_PORT}/auth/login" \
+  "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\"}")"
 
 ACCESS_TOKEN="$(printf '%s' "$LOGIN_RESPONSE" | node -pe "JSON.parse(require('fs').readFileSync(0, 'utf8')).accessToken")"
 
-curl -fsS -X POST http://127.0.0.1:4000/admin/config/printers \
-  -H "authorization: Bearer $ACCESS_TOKEN" \
-  -H 'content-type: application/json' \
-  -d '{"name":"smoke-a4","type":"A4","targetUri":"ipp://a4.local/queue"}' >/dev/null
+request_json POST "http://127.0.0.1:${API_PORT}/admin/config/printers" \
+  '{"name":"smoke-a4","type":"A4","targetUri":"ipp://a4.local/queue"}' \
+  "$ACCESS_TOKEN" >/dev/null
 
-curl -fsS -X POST http://127.0.0.1:4000/admin/config/printers \
-  -H "authorization: Bearer $ACCESS_TOKEN" \
-  -H 'content-type: application/json' \
-  -d '{"name":"smoke-thermal","type":"THERMAL","targetUri":"socket://thermal.local:9100"}' >/dev/null
+request_json POST "http://127.0.0.1:${API_PORT}/admin/config/printers" \
+  '{"name":"smoke-thermal","type":"THERMAL","targetUri":"socket://thermal.local:9100"}' \
+  "$ACCESS_TOKEN" >/dev/null
 
-A4_ID="$(curl -fsS http://127.0.0.1:4000/admin/config/printers -H "authorization: Bearer $ACCESS_TOKEN" | node -pe "const data=JSON.parse(require('fs').readFileSync(0,'utf8'));(data.find((row)=>row.type==='A4')||{}).id||''")"
+A4_ID="$(request_json GET "http://127.0.0.1:${API_PORT}/admin/config/printers" '' "$ACCESS_TOKEN" \
+  | node -pe "const data=JSON.parse(require('fs').readFileSync(0,'utf8'));(data.find((row)=>row.type==='A4')||{}).id||''")"
 
-curl -fsS -X POST http://127.0.0.1:4000/admin/config/smb-sources \
-  -H "authorization: Bearer $ACCESS_TOKEN" \
-  -H 'content-type: application/json' \
-  -d '{"path":"/app/fixtures/intake","domainUsername":"EXAMPLE\\\\serviceuser","secretRef":"secret/smoke"}' >/dev/null
+request_json POST "http://127.0.0.1:${API_PORT}/admin/config/smb-sources" \
+  '{"path":"/app/fixtures/intake","domainUsername":"EXAMPLE\\\\serviceuser","secretRef":"secret/smoke"}' \
+  "$ACCESS_TOKEN" >/dev/null
 
-curl -fsS -X POST http://127.0.0.1:4000/admin/config/filename-masks \
-  -H "authorization: Bearer $ACCESS_TOKEN" \
-  -H 'content-type: application/json' \
-  -d '{"pattern":"invoice","isRegex":false}' >/dev/null
+request_json POST "http://127.0.0.1:${API_PORT}/admin/config/filename-masks" \
+  '{"pattern":"invoice","isRegex":false}' \
+  "$ACCESS_TOKEN" >/dev/null
 
-curl -fsS -X POST http://127.0.0.1:4000/admin/config/routing-profiles \
-  -H "authorization: Bearer $ACCESS_TOKEN" \
-  -H 'content-type: application/json' \
-  -d "{\"name\":\"smoke-routing\",\"thermalLabelPatterns\":[\"label\"],\"fallbackPrinterId\":\"$A4_ID\"}" >/dev/null
+request_json POST "http://127.0.0.1:${API_PORT}/admin/config/routing-profiles" \
+  "{\"name\":\"smoke-routing\",\"thermalLabelPatterns\":[\"label\"],\"fallbackPrinterId\":\"$A4_ID\"}" \
+  "$ACCESS_TOKEN" >/dev/null
 
-curl -fsS -X PUT http://127.0.0.1:4000/admin/config/ocr/global \
-  -H "authorization: Bearer $ACCESS_TOKEN" \
-  -H 'content-type: application/json' \
-  -d '{"provider":"mock","config":{"thermalKeyword":"label"}}' >/dev/null
+request_json PUT "http://127.0.0.1:${API_PORT}/admin/config/ocr/global" \
+  '{"provider":"mock","config":{"thermalKeyword":"label"}}' \
+  "$ACCESS_TOKEN" >/dev/null
 
-RUN_OUTPUT="$(curl -fsS -X POST http://127.0.0.1:5000/pipeline/run-once)"
+RUN_OUTPUT="$(request_json POST "http://127.0.0.1:${WORKER_PORT}/pipeline/run-once")"
 FILES_PROCESSED="$(printf '%s' "$RUN_OUTPUT" | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).summary.filesProcessed")"
 
 if [[ "$FILES_PROCESSED" -lt 1 ]]; then
@@ -86,9 +126,9 @@ if [[ "$FILES_PROCESSED" -lt 1 ]]; then
   exit 1
 fi
 
-PROCESSED_COUNT="$(docker compose -f "$COMPOSE_FILE" exec -T db psql -U printo -d printo -tAc "SELECT COUNT(*) FROM processed_files;")"
-JOBS_COUNT="$(docker compose -f "$COMPOSE_FILE" exec -T db psql -U printo -d printo -tAc "SELECT COUNT(*) FROM print_jobs;")"
-PAGES_COUNT="$(docker compose -f "$COMPOSE_FILE" exec -T db psql -U printo -d printo -tAc "SELECT COUNT(*) FROM print_job_pages;")"
+PROCESSED_COUNT="$(compose exec -T db psql -U printo -d printo -tAc "SELECT COUNT(*) FROM processed_files;")"
+JOBS_COUNT="$(compose exec -T db psql -U printo -d printo -tAc "SELECT COUNT(*) FROM print_jobs;")"
+PAGES_COUNT="$(compose exec -T db psql -U printo -d printo -tAc "SELECT COUNT(*) FROM print_job_pages;")"
 
 if [[ "$PROCESSED_COUNT" -lt 1 || "$JOBS_COUNT" -lt 1 || "$PAGES_COUNT" -lt 1 ]]; then
   echo "Smoke verification failed: processed=$PROCESSED_COUNT jobs=$JOBS_COUNT pages=$PAGES_COUNT" >&2

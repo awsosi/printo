@@ -2,194 +2,156 @@
 
 Owner: `@draven`
 Status: `ACTIVE`
-Last updated: `2026-02-27` (DoD sync)
+Last updated: `2026-02-27`
 
 Defines service boundaries, data flow, and docker-compose topology for `printo`.
 
 ## 1. System Topology (docker-compose)
 
-Minimum services:
-- `web` — frontend SPA/SSR (TypeScript)
-- `api` — REST API + AAA + config orchestration (TypeScript)
-- `worker` — SMB scan, OCR/vision, routing, print dispatch (TypeScript)
+Services:
+- `web` — frontend/admin UI + API proxy (TypeScript)
+- `api` — REST API + AAA + configuration (TypeScript)
+- `worker` — scan/ocr/route/dispatch pipeline (TypeScript)
 - `db` — PostgreSQL
-- `redis` — queue/event backbone for async jobs
+- `redis` — async backbone placeholder (ready for queue expansion)
 
-Optional later:
-- `otel-collector` (or lightweight metrics endpoint aggregator)
+All services expose `/health` and write structured logs to stdout.
 
-All services expose:
-- `/health` endpoint (liveness/readiness basics)
-- structured logs to stdout
+Host ports are configurable via compose env vars:
+`WEB_PORT`, `API_PORT`, `WORKER_PORT`, `DB_PORT`, `REDIS_PORT`.
 
 ## 2. Bounded Contexts
 
-### Identity & Access (API)
-Responsibilities:
-- Local account CRUD
-- Local session/JWT lifecycle
-- Role-based authorization (`USER`, `ADMIN`)
-- Remote account verification through `EXTAUTH_API.md` adapter only
-- Audit logging for sensitive actions
+### Identity & Access (`api`)
+- Local account lifecycle
+- JWT access/refresh flow
+- RBAC (`USER`, `ADMIN`)
+- Remote login verification through EXTAUTH adapter only
+- Audit logging for auth and admin actions
 
-### Configuration (API)
-Responsibilities:
-- User SMB source config (path + credentials)
-- Filename mask definitions
-- Printer config (A4 + thermal)
-- Page routing profiles
-- Global OCR config + per-user overrides
-- User language/theme preferences
+### Configuration (`api`)
+- SMB source config per user/global
+- Filename masks per user/global
+- Printer config
+- Routing profile config
+- OCR global + per-user override config
+- User preference config (`locale`, `theme`)
 
-### Processing Pipeline (Worker)
-Responsibilities:
-- Scheduled/continuous SMB polling (`runner` + `run-once` endpoint)
-- Candidate file filtering by masks
-- Dedup via `processed_files`
-- OCR/visual classification through provider interface
-- Route pages/documents to A4/thermal printer queues
-- Persist job statuses in `print_jobs` + `print_job_pages` and emit structured dispatch logs
+### Processing (`worker`)
+- Continuous interval runner + manual run endpoint
+- Source scan adapter (`filesystem` baseline, SMB-compatible contract)
+- Mask filtering + dedup guard
+- OCR provider abstraction (`mock` baseline)
+- Routing decision engine (thermal labels vs A4 fallback)
+- Dispatch adapter (`logging` baseline)
+- Persistent print job/page records
 
-### Presentation (Web)
-Responsibilities:
-- Admin panels for all configuration entities
-- User self-service settings
-- Auth flows and guarded routes
-- i18n + theme runtime preferences
+### Presentation (`web`)
+- Admin configuration surface for all required entities
+- User preference controls
+- i18n runtime loading with fallback
+- Theme resolution (`system`/`light`/`dark`)
 
-## 3. Data Model (PostgreSQL, high level)
+## 3. Data Model (PostgreSQL)
 
-Core tables (minimum):
-- `users`
-- `user_credentials_local` (or equivalent local auth material)
-- `user_roles`
-- `sessions` / `refresh_tokens`
+Core entities:
+- `users`, `user_credentials_local`, `user_roles`, `refresh_tokens`
 - `audit_log`
-- `remote_auth_profiles` (endpoint/api key references, policy)
-- `smb_sources`
-- `filename_masks`
-- `printers`
-- `user_printer_assignments`
+- `remote_auth_profiles`
+- `smb_sources`, `filename_masks`
+- `printers`, `user_printer_assignments`
 - `routing_profiles`
-- `ocr_config_global`
-- `ocr_config_user_override`
-- `processed_files`
-- `print_jobs`
-- `print_job_pages` (or equivalent split mapping)
+- `ocr_config_global`, `ocr_config_user_override`
+- `processed_files`, `print_jobs`, `print_job_pages`
 
-Indexes and constraints required for:
-- dedup (`processed_files`: unique checksum/path+mtime strategy)
-- fast queue/job status lookups
-- role and ownership filtering
+Dedup guarantees:
+- `processed_files.checksum_sha256` unique
+- `processed_files(file_path, file_mtime)` unique
 
-## 4. Authentication, Authorization, Auditing (AAA)
+## 4. AAA Rules
 
 ### Authentication
-- Local auth: username/password with secure hash (Argon2id/bcrypt)
-- Remote auth: adapter calls external endpoint from `EXTAUTH_API.md`
-- Combined mode policy:
-  - local-only for local users
-  - remote-check for users flagged as remote-enabled
-- Session strategy: short-lived access token + refresh token
+- Local auth: hashed password verification
+- Remote auth: EXTAUTH adapter with bounded timeout/retry
+- User mode switch: `is_remote_enabled` routes login through EXTAUTH
 
 ### Authorization
-- RBAC enforced in API middleware/guards
-- Roles:
-  - `ADMIN`: full CRUD and global config
-  - `USER`: own settings and self data only
-- UI route guards mirror API permissions (never trust frontend alone)
+- API middleware enforces JWT + role checks
+- `ADMIN` only routes for management/config
+- `USER` restricted to own scope endpoints
 
 ### Auditing
-Audit entries for:
-- auth attempts (local/remote)
-- user CRUD
-- config changes (SMB/printers/OCR/masks/routing)
-- pipeline decisions and print dispatch outcomes
+- Auth attempts (local + remote)
+- User/config mutations
+- Pipeline status can be joined through persisted print job records
 
 ## 5. External Auth Contract
 
-- Single integration point: `api` service adapter module
-- No direct calls from `web` or `worker`
-- Adapter behavior:
-  - timeout + retry (bounded)
-  - normalized result mapping
-  - non-sensitive error propagation
-  - audit event on each remote auth attempt
+`apps/api` is the only caller of EXTAUTH (`/RFM_Auth`) as defined in `EXTAUTH_API.md`.
+No direct `web`/`worker` calls are allowed.
 
-Spec source of truth: `EXTAUTH_API.md`.
+## 6. Processing Flow
 
-## 6. Processing Pipeline Flow
+1. Worker loads active source + mask + routing + OCR configs.
+2. Scanner returns candidate PDFs from configured source paths.
+3. Mask engine filters candidates.
+4. Dedup check prevents re-processing.
+5. OCR adapter normalizes page labels/text.
+6. Routing maps each page to `THERMAL` or `A4`.
+7. Dispatcher submits print actions.
+8. Worker stores processed file + job/page outcomes.
 
-1. Worker reads active SMB source configs.
-2. Worker authenticates to SMB using configured domain account (`EXAMPLE\\serviceuser`) and secret.
-3. Worker scans path and filters files by masks.
-4. Worker computes dedup identity and skips processed files.
-5. Worker sends document/page inputs to OCR/vision provider abstraction.
-6. Routing engine applies rules (e.g., labels → thermal, rest → A4).
-7. Worker dispatches print jobs to configured printer targets.
-8. Worker records processed file + job/page outcomes + audit events.
+## 7. OCR/Vision Abstraction
 
-## 7. OCR / Vision Provider Abstraction
+Contract:
+- `analyze(file, provider, config) -> { pages[] }`
 
-Interface contracts:
-- `analyzeDocument(input) -> structured layout/tags/pages`
-- `classifyPage(page) -> labels/confidence`
+Implemented providers:
+- `mock` (deterministic, CI-safe)
 
-Provider modes:
-- `mock` (tests/dev)
-- `tesseract` (local/offline baseline)
-- `external` (future cloud providers)
+Planned provider slots:
+- `tesseract` (offline)
+- external cloud providers via adapter module
 
-Routing must consume normalized provider output, not vendor-specific payloads.
-
-## 8. i18n & Theme
+## 8. i18n and Theme
 
 ### i18n
-- Locale files in JSON modules, namespaced by feature
-- Resolution order:
-  1. user preference
-  2. browser preference
-  3. default `en-US`
-- Missing file or key must fallback to `en-US`
-- API error/message keys should be translatable on frontend
+Resolution order:
+1. user preference
+2. browser locale
+3. default `en-US`
+
+Missing locale file or key falls back to `en-US`.
 
 ### Theme
-- Modes: `system`, `light`, `dark`
-- Default: `system`
-- Persist per-user override in DB
+Modes: `system`, `light`, `dark`.
+Stored per user and applied by web runtime.
 
-## 9. Security and Secret Handling
+## 9. Security/Secrets
 
-- No plaintext secrets in repo
-- Env-driven secret injection (`.env`, compose overrides)
-- Credentials at rest encrypted or restricted (minimum: strong hashing for passwords + sensitive config protection)
-- Principle of least privilege in DB roles and service access
+- Secrets injected by env vars only
+- No sensitive values committed to repo
+- No plaintext remote API key/password logging
 
 ## 10. Observability Baseline
 
-- Structured JSON logs with service name + request/job correlation id
-- Health endpoints for all containers
-- Minimal metrics (jobs processed, failures, queue depth) exposed for scraping/logging
+- Structured service logs
+- `/health` endpoints across services
+- Pipeline summary endpoint (`/pipeline/status`) for worker state
 
 ## 11. CI/CD Baseline
 
-Pipeline stages:
-1. lint + format check
-2. typecheck
-3. unit/integration tests
-4. build images/services
-5. optional compose smoke test
+GitHub Actions pipeline:
+1. install (`npm ci`)
+2. test
+3. lint
+4. typecheck
+5. build
+6. Playwright E2E
 
-Artifacts/logging retained for troubleshooting.
+Compose smoke validation is available via `npm run smoke:compose` and `make smoke`.
 
-## 12. Repository Layout (target)
+## 12. External Validation Limits
 
-- `apps/web`
-- `apps/api`
-- `apps/worker`
-- `packages/shared` (types/config/utils)
-- `infra/docker-compose.yml`
-- `infra/migrations`
-- `docs/*`
-
-(Exact paths may vary; boundaries must remain intact.)
+In this environment, physical network SMB auth and real printer dispatch are not directly testable end-to-end.
+Architecture keeps those concerns behind scanner/dispatcher adapters so production integrations can be attached without changing core pipeline logic.

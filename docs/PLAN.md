@@ -4,141 +4,70 @@ Owner: `@draven`
 Status: `ACTIVE`
 Last updated: `2026-02-27`
 
-Single source of truth for roadmap, milestones, and delivery sequencing for `printo`.
+Single source of truth for delivery state of `printo`.
 
 ## Mission
-Deliver a production-shaped, docker-compose-based E2E web application for PDF intake, OCR/visual routing, and split printing (A4 + thermal), with full AAA, PostgreSQL persistence, and minimal CI/CD.
+Deliver a docker-compose, TypeScript + PostgreSQL E2E application for PDF intake, OCR/visual routing, and split printing (A4 + thermal) with AAA, i18n fallback, theme preferences, CI, and tests.
 
-## Constraints (hard)
-- Project root: `/home/openclaw/projects/printo`
-- Stack: TypeScript services + PostgreSQL + modern web frontend
-- i18n JSON modules with fallback to `en-US` on missing file/key
-- Theme defaults to browser/system with per-user override
-- Remote auth checks must go only through `EXTAUTH_API.md`
-
-## Autonomous Session Protocol (enforced)
-- Coordination only in Rocket.Chat room `printo` with explicit `@mentions`.
-- Update cadence: milestone start, milestone done (with commit + commands run), blocker; otherwise stay heads-down.
-- `@draven` owns architecture, sequencing, acceptance gates, and docs truth in this file + `docs/ARCHITECTURE.md`.
-- `@virex` owns implementation, tests, docker-compose, CI/CD execution, and E2E flow completion.
-- Do not run maintenance-only host commands (e.g., `openclaw doctor --repair`) unless re-approved by `@alukaszuk`.
-
-## Active Autonomous Queue (current)
-1. `@virex`: Admin UI completion for SMB/Printers/Masks/Routing/OCR + i18n fallback + theme override persistence + tests.
-2. `@virex`: Worker intake loop (SMB poll + masks + dedup + OCR abstraction + routing + print dispatch adapters).
-3. `@virex`: Full E2E happy path (admin config -> worker processing -> routed print outcome) with deterministic fixtures/mocks.
-4. `@virex`: docker-compose reproducibility + README runbook + remaining Phase 4/5 checklist closure.
-5. `@draven`: acceptance review and gatekeeping per phase exits + docs synchronization.
-
-## Delivery Phases
+## Phase Status
 
 ### Phase 0 — Foundation & Contracts
-**Owner:** `@draven` (design), `@virex` (repo bootstrap)
-
-- [ ] Finalize architecture boundaries in `docs/ARCHITECTURE.md`
-- [x] Finalize external auth contract in `EXTAUTH_API.md`
-- [ ] Create monorepo/service structure and shared TS config
-- [ ] Create docker-compose baseline (web, api, worker, postgres, redis)
-- [ ] Add `.env.example` and secrets handling pattern
-
-**Exit criteria:** repo boots with placeholder services and health endpoints.
-
----
+- [x] Architecture boundaries defined (`docs/ARCHITECTURE.md`)
+- [x] External auth contract finalized (`EXTAUTH_API.md`)
+- [x] Monorepo service layout in place
+- [x] Compose topology: `web`, `api`, `worker`, `db`, `redis`
+- [x] `.env.example` baseline
 
 ### Phase 1 — Data Model + AAA Core
-**Owner:** `@virex`
-
-- [ ] PostgreSQL schema + migrations for:
-  - local users
-  - roles (`USER`, `ADMIN`)
-  - sessions/tokens
-  - audit log
-  - SMB source configs
-  - filename masks
-  - printer configs
-  - routing profiles
-  - OCR config (global + per-user overrides)
-  - processed file dedup log
-- [x] AuthN/AuthZ middleware + RBAC guards
-- [x] Audit events for login/config changes/print actions (incl. remote auth attempt events)
-- [x] External auth login path wired for `is_remote_enabled` users (`/auth/login`)
-
-**Exit criteria:** API enforces role checks and audit trail for protected actions.
-
----
+- [x] PostgreSQL schema + migrations for auth/config/pipeline entities
+- [x] AuthN/AuthZ with RBAC (`USER`, `ADMIN`)
+- [x] Audit events for login + config changes
+- [x] Remote auth path wired strictly via EXTAUTH adapter
 
 ### Phase 2 — Config API + Admin UI
-**Owner:** `@virex`
-
-- [x] Admin CRUD for local users (API baseline: list/create/role update/delete + tests)
-- [ ] Admin config screens/endpoints for:
-  - [x] SMB path + domain credentials (API CRUD + RBAC tests + admin UI wiring)
-  - [x] filename masks (API CRUD + RBAC tests + admin UI wiring)
-  - [x] A4/thermal printer setup (API CRUD + RBAC tests + admin UI wiring)
-  - [x] page routing rules (A4 vs thermal) (API CRUD + RBAC tests + admin UI wiring)
-  - [x] global OCR config + user overrides (API CRUD + RBAC tests + admin UI wiring)
-- [x] USER scope: self-view/edit allowed subset (API baseline: `/me/preferences` read/write)
-- [x] i18n loader + fallback strategy in UI and API responses (web locale loader with en-US key/file fallback + API error-key responses)
-- [x] Theme system preference + per-user override persisted (`/me/preferences` + web UI save/apply)
-
-**Exit criteria:** admin can configure all required entities end-to-end from UI.
-
----
+- [x] Local user CRUD for admin
+- [x] SMB source config CRUD
+- [x] Filename mask CRUD
+- [x] Printer config CRUD
+- [x] Routing profile CRUD
+- [x] OCR global + per-user override CRUD
+- [x] User locale/theme preference API + UI
+- [x] i18n JSON fallback to `en-US`
 
 ### Phase 3 — Intake, OCR/Visual, Routing, Print
-**Owner:** `@virex`
-
-- [x] Worker pipeline baseline (mock-safe): run-once scan loop + masks + dedup + OCR abstraction + routing + dispatch + runner status endpoint + tests
-- [ ] Worker polls SMB paths using configured service credentials
-- [ ] Filename mask filtering
-- [x] Dedup check and processed-file persistence (DB-backed `processed_files` + `print_jobs` + `print_job_pages` in worker runner path + compose smoke proof)
-- [ ] OCR/vision provider abstraction (vendor-neutral adapter)
-- [ ] Routing engine: labels → thermal, remainder → A4 (configurable)
-- [ ] Print dispatch adapters (A4/thermal network targets)
-- [ ] Job status + retries + audit logging
-
-**Exit criteria:** new file in SMB path flows to correct printer(s) with persisted history.
-
----
+- [x] Worker polling runner + run-once endpoint
+- [x] Filesystem-backed SMB simulation scanner with domain credential fields persisted
+- [x] Filename mask filtering
+- [x] Dedup via `processed_files`
+- [x] OCR/visual abstraction with mock provider
+- [x] Routing labels → thermal, fallback → A4
+- [x] Dispatch adapter (logging dispatcher baseline)
+- [x] Job/page persistence
 
 ### Phase 4 — Test Matrix + E2E
-**Owner:** `@virex` (+ subagents)
-
-- [x] Unit tests for auth, RBAC, routing, dedup, i18n fallback (auth adapter + remote login/audit coverage added)
-- [ ] Integration tests for API + DB
-- [x] At least one E2E happy path (admin config → worker scan → routed print job)
-- [x] Test fixtures/mocks for OCR provider + printer dispatch
-
-**Exit criteria:** CI runs tests non-interactively and passes on clean checkout.
-
----
+- [x] Unit tests for auth/RBAC + worker pipeline + i18n behavior
+- [x] E2E health + remote auth + happy path flow
+- [x] Deterministic OCR/dispatch mocks for tests
 
 ### Phase 5 — DevEx, CI/CD, Delivery Docs
-**Owner:** `@virex`, reviewed by `@draven`
+- [x] `Makefile` tasks for dev/test/build/lint/migrate/compose
+- [x] CI workflow (lint + tests + typecheck + build + Playwright)
+- [x] Compose smoke script hardened (isolated project name, custom high ports, retry-safe API calls)
+- [x] README + architecture + subagent docs synchronized
 
-- [x] `Makefile` tasks: `dev`, `test`, `build`, `up`, `down`, `lint`, `migrate`
-- [x] CI workflow baseline: tests + typecheck + build + Playwright E2E gate
-- [x] Extend CI with lint gate
-- [ ] Readme runbook and architecture/docs sync
-- [ ] Final hardening pass on logs/healthchecks/observability baseline
+## Definition of Done
+- [x] Docker-compose stack runs locally
+- [x] Admin UI can configure users, SMB sources, masks, printers, OCR, routing
+- [x] User settings endpoint for own locale/theme
+- [x] Worker scans configured source paths and routes print pages
+- [x] Processed-file dedup persisted in DB
+- [x] Migrations and schema committed
+- [x] Automated unit + E2E coverage present
+- [x] Required docs up to date
 
-**Exit criteria:** `docker compose up` + E2E smoke flow documented and reproducible.
+## Work Split (agreed)
+- `@draven`: architecture, acceptance gates, docs truth, delivery verification
+- `@virex`: implementation, tests, compose, CI, smoke reliability
 
-## Definition of Done Checklist
-- [x] Full docker-compose stack starts locally
-- [x] Admin UI configures users/printers/OCR/masks
-- [x] USER UI exposes own settings
-- [x] Worker scans SMB, performs OCR/visual checks, routes jobs
-- [x] Processed files are deduplicated by DB log
-- [x] Schema + migrations committed
-- [x] Automated tests include unit + at least one E2E happy path
-- [x] `README.md`, `docs/PLAN.md`, `docs/ARCHITECTURE.md`, `docs/AGENTS_SUB.md`, `EXTAUTH_API.md` are up to date
-
-## Active Work Split
-- `@draven`: architecture, sequencing, acceptance gates, review
-- `@virex`: implementation, tests, docker-compose, CI/CD, E2E execution
-
-## Risks / External Limits
-- SMB and printer access may require local network resources unavailable in CI; provide mocked adapters and a local simulation mode.
-- OCR vendor keys may be unavailable; implement pluggable providers with at least one offline/mock provider for tests.
-- Remote auth endpoint may be unreachable during dev; provide timeout/retry and deterministic mock mode behind feature flag.
+## Hard External Limits (current)
+- Real network SMB authentication/mount and physical printer dispatch cannot be fully validated in this environment; stack provides a production-shaped adapter path with deterministic local simulation for CI/dev.

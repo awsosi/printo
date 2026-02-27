@@ -8,9 +8,9 @@ services:
     env_file:
       - ../.env.example
     environment:
-      - PORT=${WEB_PORT:-3000}
+      - PORT=3000
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3000}:3000"
     depends_on:
       - api
     healthcheck:
@@ -28,11 +28,11 @@ services:
     env_file:
       - ../.env.example
     environment:
-      - PORT=${API_PORT:-4000}
+      - PORT=4000
       - DATABASE_URL=${DATABASE_URL:-postgres://printo:printo@db:5432/printo}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
     ports:
-      - "4000:4000"
+      - "${API_PORT:-4000}:4000"
     depends_on:
       db:
         condition: service_healthy
@@ -53,13 +53,13 @@ services:
     env_file:
       - ../.env.example
     environment:
-      - PORT=${WORKER_PORT:-5000}
+      - PORT=5000
       - DATABASE_URL=${DATABASE_URL:-postgres://printo:printo@db:5432/printo}
       - WORKER_STORE=postgres
       - WORKER_SCANNER=filesystem
       - WORKER_POLL_INTERVAL_MS=${WORKER_POLL_INTERVAL_MS:-60000}
     ports:
-      - "5000:5000"
+      - "${WORKER_PORT:-5000}:5000"
     depends_on:
       db:
         condition: service_healthy
@@ -80,7 +80,7 @@ services:
       POSTGRES_USER: printo
       POSTGRES_PASSWORD: printo
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -92,7 +92,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
 
 volumes:
   pg_data:

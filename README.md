@@ -1,27 +1,28 @@
 # printo
 
-Docker-compose-based end-to-end web application for PDF handling and printing.
+Docker-compose-based end-to-end web application for PDF intake, OCR/visual routing, and split printing (A4 + thermal).
 
-## Scope
+## Stack
 
-- Upload and manage PDF files
-- Prepare print jobs for A4 and thermal printers
-- Orchestrate services with docker-compose
-- Support implementation, testing, and deployment through coordinated agents
+- `apps/api` — TypeScript REST API (AAA + config)
+- `apps/web` — TypeScript admin/user web UI
+- `apps/worker` — TypeScript background pipeline (scan → OCR → route → dispatch)
+- `db` — PostgreSQL
+- `redis` — queue backbone placeholder
 
-## Team Workflow
+## Requirements covered
 
-- `@draven` owns roadmap and architecture docs
-- `@virex` owns implementation, tests, and DevOps execution
-- Keep chat updates short; details live in repo docs under `docs/`
+- Local users with CRUD
+- Remote auth via `EXTAUTH_API.md` contract (`/RFM_Auth`)
+- RBAC roles: `USER`, `ADMIN`
+- Audit logging for auth and configuration changes
+- SMB source config + filename masks
+- A4/thermal printer config + routing profile
+- OCR global config + per-user override
+- i18n JSON with `en-US` fallback
+- Theme mode: `system` / `light` / `dark` with user override
 
-## Assumptions
-
-- Human preferred handle is `@alukaszuk`; timezone is assumed as `CET`.
-- Architecture and implementation details will be iteratively refined in `docs/PLAN.md` and `docs/ARCHITECTURE.md`.
-- Default git branch is assumed to be `main`.
-
-## Local execution
+## Quickstart (local)
 
 ```bash
 npm install
@@ -32,20 +33,49 @@ make build
 make e2e
 ```
 
-Equivalent npm commands remain available (`npm run lint`, `npm run test`, etc.).
+## Run with docker-compose
 
-## E2E happy path tests
+```bash
+make up
+# web:    http://127.0.0.1:${WEB_PORT:-3000}
+# api:    http://127.0.0.1:${API_PORT:-4000}/health
+# worker: http://127.0.0.1:${WORKER_PORT:-5000}/health
 
-`npm run test:e2e` includes:
+make down
+```
 
-- health checks (`web` + `api`)
-- full flow happy path: admin config via API -> worker run -> routed dispatch verification (`THERMAL` + `A4`) with dedup check
+Host ports are configurable in `.env.example`:
+- `WEB_PORT`, `API_PORT`, `WORKER_PORT`, `DB_PORT`, `REDIS_PORT`
 
-## Docker compose smoke proof
+## Compose smoke validation
 
-`npm run smoke:compose` brings up the stack, seeds minimal admin config via API, runs worker once, and verifies DB persistence rows in:
+```bash
+make smoke
+# or: npm run smoke:compose
+```
 
-- `processed_files`
-- `print_jobs`
-- `print_job_pages`
+The smoke script:
+1. boots isolated compose stack
+2. seeds admin + config entities
+3. runs worker once
+4. verifies DB rows in `processed_files`, `print_jobs`, `print_job_pages`
 
+## Tests
+
+- Unit/integration-style app tests: `npm run test`
+- Playwright E2E: `npm run test:e2e`
+  - health endpoints
+  - remote auth flow
+  - happy path admin config → worker processing → routed pages (`THERMAL` + `A4`) with dedup check
+
+## Docs
+
+- `docs/PLAN.md` — roadmap and delivery status
+- `docs/ARCHITECTURE.md` — system design and boundaries
+- `docs/AGENTS_SUB.md` — subagent scopes and statuses
+- `EXTAUTH_API.md` — external auth integration contract
+
+## Environment limitation
+
+This repo includes production-shaped adapters for SMB and printer integrations.
+Physical SMB auth/mounts and real printer dispatch are not validated in CI; local/CI runs use deterministic adapter behavior for repeatable tests.
