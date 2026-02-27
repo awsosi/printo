@@ -10,7 +10,11 @@
     "build": "npm run --workspaces --if-present build",
     "typecheck": "npm run --workspaces --if-present typecheck",
     "test": "npm run --workspaces --if-present test",
+    "test:e2e": "playwright test",
     "dev": "npm run --workspaces --if-present dev",
     "migrate": "npm run -w @printo/api migrate"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
   }
 }

@@ -101,7 +101,8 @@ Deliver a production-shaped, docker-compose-based E2E web application for PDF in
 **Owner:** `@virex`, reviewed by `@draven`
 
 - [ ] `Makefile` tasks: `dev`, `test`, `build`, `up`, `down`, `lint`, `migrate`
-- [ ] CI workflow: lint + typecheck + tests + build
+- [x] CI workflow baseline: tests + typecheck + build + Playwright E2E gate
+- [ ] Extend CI with lint gate (after lint script/tooling is added)
 - [ ] Readme runbook and architecture/docs sync
 - [ ] Final hardening pass on logs/healthchecks/observability baseline
 
