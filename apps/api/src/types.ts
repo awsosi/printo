@@ -1,5 +1,9 @@
 import type { Role } from '@printo/shared';
 
+export type JsonObject = Record<string, unknown>;
+
+export type PrinterType = 'A4' | 'THERMAL';
+
 export interface UserRecord {
   id: string;
   username: string;
@@ -8,6 +12,49 @@ export interface UserRecord {
   hashAlgorithm: string;
   locale: string;
   theme: string;
+}
+
+export interface SmbSourceRecord {
+  id: string;
+  ownerUserId: string | null;
+  path: string;
+  domainUsername: string;
+  secretRef: string;
+  isActive: boolean;
+}
+
+export interface PrinterRecord {
+  id: string;
+  name: string;
+  type: PrinterType;
+  targetUri: string;
+  isActive: boolean;
+}
+
+export interface FilenameMaskRecord {
+  id: string;
+  ownerUserId: string | null;
+  pattern: string;
+  isRegex: boolean;
+  isActive: boolean;
+}
+
+export interface RoutingProfileRecord {
+  id: string;
+  name: string;
+  thermalLabelPatterns: string[];
+  fallbackPrinterId: string | null;
+}
+
+export interface OcrGlobalConfigRecord {
+  provider: string;
+  config: JsonObject;
+}
+
+export interface OcrUserOverrideRecord {
+  userId: string;
+  provider: string | null;
+  config: JsonObject;
 }
 
 export interface RefreshTokenRecord {
