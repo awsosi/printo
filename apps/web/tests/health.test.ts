@@ -18,6 +18,7 @@ describe('web app', () => {
     expect(res.status).toBe(200);
     expect(res.text).toContain('id="smbCreateForm"');
     expect(res.text).toContain('id="printerCreateForm"');
+    expect(res.text).toContain('id="userPrinterAssignmentForm"');
     expect(res.text).toContain('id="maskCreateForm"');
     expect(res.text).toContain('id="routingCreateForm"');
     expect(res.text).toContain('id="ocrGlobalForm"');
@@ -92,6 +93,34 @@ describe('web app', () => {
     expect(init.method).toBe('POST');
     expect(init.body).toBe(JSON.stringify(payload));
     expect((init.headers as Record<string, string>).authorization).toBe('Bearer admin-token');
+  });
+
+  it('proxies user printer assignment updates to API', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ userId: 'u-1', a4PrinterId: 'p-a4', thermalPrinterId: 'p-thermal' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    );
+    const app = createWebApp({ fetchImpl: fetchMock as typeof fetch, apiBaseUrl: 'http://api.internal' });
+
+    const payload = {
+      a4PrinterId: 'p-a4',
+      thermalPrinterId: 'p-thermal'
+    };
+
+    const res = await request(app)
+      .put('/admin/config/user-printer-assignments/u-1')
+      .set('authorization', 'Bearer admin-token')
+      .send(payload);
+
+    expect(res.status).toBe(200);
+    expect(res.body.userId).toBe('u-1');
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('http://api.internal/admin/config/user-printer-assignments/u-1');
+    expect(init.method).toBe('PUT');
+    expect(init.body).toBe(JSON.stringify(payload));
   });
 
   it('proxies preference updates for locale and theme', async () => {

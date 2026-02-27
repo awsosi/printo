@@ -10,6 +10,7 @@ import type {
   RefreshTokenRecord,
   RoutingProfileRecord,
   SmbSourceRecord,
+  UserPrinterAssignmentRecord,
   UserRecord
 } from '../types.js';
 
@@ -56,6 +57,15 @@ export interface AuthStore {
     isActive?: boolean;
   }): Promise<PrinterRecord | null>;
   deletePrinter(id: string): Promise<boolean>;
+
+  listUserPrinterAssignments(): Promise<UserPrinterAssignmentRecord[]>;
+  getUserPrinterAssignment(userId: string): Promise<UserPrinterAssignmentRecord | null>;
+  upsertUserPrinterAssignment(input: {
+    userId: string;
+    a4PrinterId?: string | null;
+    thermalPrinterId?: string | null;
+  }): Promise<UserPrinterAssignmentRecord>;
+  deleteUserPrinterAssignment(userId: string): Promise<boolean>;
 
   listFilenameMasks(): Promise<FilenameMaskRecord[]>;
   createFilenameMask(input: {

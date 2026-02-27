@@ -58,6 +58,10 @@ class SharedConfigWorkerStore implements WorkerConfigStore {
     return records.filter((record) => record.isActive);
   }
 
+  async getUserPrinterAssignment(userId: string) {
+    return this.apiStore.getUserPrinterAssignment(userId);
+  }
+
   async getOcrGlobalConfig(): Promise<WorkerOcrGlobalConfig> {
     return this.apiStore.getOcrGlobalConfig();
   }

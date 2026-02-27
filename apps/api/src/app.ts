@@ -157,6 +157,15 @@ export function createApiApp(store: AuthStore) {
     return res.json({ locale: updated.locale, theme: updated.theme });
   });
 
+  app.get('/me/printer-assignment', requireAuth, async (req, res) => {
+    const assignment = await store.getUserPrinterAssignment(req.user!.id);
+    if (!assignment) {
+      return res.json({ userId: req.user!.id, a4PrinterId: null, thermalPrinterId: null });
+    }
+
+    return res.json(assignment);
+  });
+
   app.get('/admin/ping', requireAuth, requireRole(ROLES.ADMIN), async (req, res) => {
     await store.writeAuditEvent({
       actorUserId: req.user!.id,
@@ -394,6 +403,61 @@ export function createApiApp(store: AuthStore) {
       status: 'SUCCESS',
       targetType: 'PRINTER',
       targetId: req.params.printerId
+    });
+
+    return res.status(204).send();
+  });
+
+  app.get('/admin/config/user-printer-assignments', requireAuth, requireRole(ROLES.ADMIN), async (_req, res) => {
+    const records = await store.listUserPrinterAssignments();
+    return res.json(records);
+  });
+
+  app.put('/admin/config/user-printer-assignments/:userId', requireAuth, requireRole(ROLES.ADMIN), async (req, res) => {
+    const a4PrinterId =
+      req.body && Object.prototype.hasOwnProperty.call(req.body, 'a4PrinterId')
+        ? req.body.a4PrinterId === null
+          ? null
+          : String(req.body.a4PrinterId)
+        : undefined;
+
+    const thermalPrinterId =
+      req.body && Object.prototype.hasOwnProperty.call(req.body, 'thermalPrinterId')
+        ? req.body.thermalPrinterId === null
+          ? null
+          : String(req.body.thermalPrinterId)
+        : undefined;
+
+    const updated = await store.upsertUserPrinterAssignment({
+      userId: req.params.userId,
+      a4PrinterId,
+      thermalPrinterId
+    });
+
+    await store.writeAuditEvent({
+      actorUserId: req.user!.id,
+      action: 'CONFIG_USER_PRINTER_ASSIGNMENT_UPSERTED',
+      status: 'SUCCESS',
+      targetType: 'USER_PRINTER_ASSIGNMENT',
+      targetId: req.params.userId,
+      metadata: { ...updated }
+    });
+
+    return res.json(updated);
+  });
+
+  app.delete('/admin/config/user-printer-assignments/:userId', requireAuth, requireRole(ROLES.ADMIN), async (req, res) => {
+    const deleted = await store.deleteUserPrinterAssignment(req.params.userId);
+    if (!deleted) {
+      return res.status(404).json({ error: 'USER_PRINTER_ASSIGNMENT_NOT_FOUND' });
+    }
+
+    await store.writeAuditEvent({
+      actorUserId: req.user!.id,
+      action: 'CONFIG_USER_PRINTER_ASSIGNMENT_DELETED',
+      status: 'SUCCESS',
+      targetType: 'USER_PRINTER_ASSIGNMENT',
+      targetId: req.params.userId
     });
 
     return res.status(204).send();

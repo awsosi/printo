@@ -32,18 +32,39 @@ describe('worker pipeline', () => {
       ],
       printers: [
         {
-          id: 'printer-a4',
+          id: 'printer-a4-default',
           name: 'Office A4',
           type: 'A4',
           targetUri: 'ipp://a4.local',
           isActive: true
         },
         {
-          id: 'printer-thermal',
+          id: 'printer-a4-user',
+          name: 'User A4',
+          type: 'A4',
+          targetUri: 'ipp://user-a4.local',
+          isActive: true
+        },
+        {
+          id: 'printer-thermal-default',
           name: 'GK420d',
           type: 'THERMAL',
           targetUri: 'socket://thermal.local:9100',
           isActive: true
+        },
+        {
+          id: 'printer-thermal-user',
+          name: 'User Thermal',
+          type: 'THERMAL',
+          targetUri: 'socket://user-thermal.local:9100',
+          isActive: true
+        }
+      ],
+      userPrinterAssignments: [
+        {
+          userId: 'user-1',
+          a4PrinterId: 'printer-a4-user',
+          thermalPrinterId: 'printer-thermal-user'
         }
       ],
       routingProfiles: [
@@ -92,7 +113,9 @@ describe('worker pipeline', () => {
 
     expect(dispatcher.calls).toHaveLength(2);
     expect(dispatcher.calls[0]?.routeType).toBe('THERMAL');
+    expect(dispatcher.calls[0]?.printer.id).toBe('printer-thermal-user');
     expect(dispatcher.calls[1]?.routeType).toBe('A4');
+    expect(dispatcher.calls[1]?.printer.id).toBe('printer-a4-user');
 
     const secondRun = await pipeline.runOnce();
     expect(secondRun.filesMatched).toBe(1);

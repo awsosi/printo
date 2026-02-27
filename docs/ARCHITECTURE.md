@@ -32,7 +32,7 @@ Host ports are configurable via compose env vars:
 ### Configuration (`api`)
 - SMB source config per user/global
 - Filename masks per user/global
-- Printer config
+- Printer config + per-user printer assignment
 - Routing profile config
 - OCR global + per-user override config
 - User preference config (`locale`, `theme`)

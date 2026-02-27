@@ -253,6 +253,21 @@ function renderAdminConfigPage() {
       </section>
 
       <section>
+        <h2 data-i18n="section.userPrinterAssignments">User printer assignments</h2>
+        <button id="userPrinterAssignmentRefresh" type="button" data-i18n="button.refresh">Refresh</button>
+        <ul id="userPrinterAssignmentList"></ul>
+        <form id="userPrinterAssignmentForm">
+          <label data-i18n="assignments.userId">User ID</label>
+          <input name="userId" required />
+          <label data-i18n="assignments.a4PrinterId">A4 printer ID</label>
+          <input name="a4PrinterId" />
+          <label data-i18n="assignments.thermalPrinterId">Thermal printer ID</label>
+          <input name="thermalPrinterId" />
+          <button type="submit" data-i18n="settings.save">Save preferences</button>
+        </form>
+      </section>
+
+      <section>
         <h2 data-i18n="section.masks">Filename masks</h2>
         <button id="maskRefresh" type="button" data-i18n="button.refresh">Refresh</button>
         <ul id="maskList"></ul>
@@ -510,6 +525,19 @@ function renderAdminConfigPage() {
           });
         }
 
+        async function refreshUserPrinterAssignments() {
+          var records = await apiRequest('/admin/config/user-printer-assignments', 'GET');
+          renderList('userPrinterAssignmentList', records, function (id) {
+            return '/admin/config/user-printer-assignments/' + id;
+          }, function (entry) {
+            return entry.userId;
+          });
+
+          document.querySelectorAll('#userPrinterAssignmentList button').forEach(function (button) {
+            button.addEventListener('deleted', refreshUserPrinterAssignments);
+          });
+        }
+
         async function refreshMasks() {
           var records = await apiRequest('/admin/config/filename-masks', 'GET');
           renderList('maskList', records, function (id) {
@@ -565,6 +593,7 @@ function renderAdminConfigPage() {
 
         document.getElementById('smbRefresh').addEventListener('click', refreshSmb);
         document.getElementById('printerRefresh').addEventListener('click', refreshPrinters);
+        document.getElementById('userPrinterAssignmentRefresh').addEventListener('click', refreshUserPrinterAssignments);
         document.getElementById('maskRefresh').addEventListener('click', refreshMasks);
         document.getElementById('routingRefresh').addEventListener('click', refreshRouting);
         document.getElementById('ocrGlobalRefresh').addEventListener('click', refreshOcrGlobal);
@@ -587,6 +616,19 @@ function renderAdminConfigPage() {
             targetUri: String(formData.get('targetUri') || '')
           });
           await refreshPrinters();
+        });
+
+        bindForm('userPrinterAssignmentForm', async function (formData) {
+          var userId = String(formData.get('userId') || '').trim();
+          var a4PrinterId = String(formData.get('a4PrinterId') || '').trim();
+          var thermalPrinterId = String(formData.get('thermalPrinterId') || '').trim();
+
+          await apiRequest('/admin/config/user-printer-assignments/' + userId, 'PUT', {
+            a4PrinterId: a4PrinterId || null,
+            thermalPrinterId: thermalPrinterId || null
+          });
+
+          await refreshUserPrinterAssignments();
         });
 
         bindForm('maskCreateForm', async function (formData) {
@@ -635,11 +677,27 @@ function renderAdminConfigPage() {
 
         tokenInput.addEventListener('change', async function () {
           await loadPreferences();
-          await Promise.all([refreshSmb(), refreshPrinters(), refreshMasks(), refreshRouting(), refreshOcrGlobal(), refreshOcrOverrides()]);
+          await Promise.all([
+            refreshSmb(),
+            refreshPrinters(),
+            refreshUserPrinterAssignments(),
+            refreshMasks(),
+            refreshRouting(),
+            refreshOcrGlobal(),
+            refreshOcrOverrides()
+          ]);
         });
 
         loadPreferences().then(function () {
-          return Promise.all([refreshSmb(), refreshPrinters(), refreshMasks(), refreshRouting(), refreshOcrGlobal(), refreshOcrOverrides()]);
+          return Promise.all([
+            refreshSmb(),
+            refreshPrinters(),
+            refreshUserPrinterAssignments(),
+            refreshMasks(),
+            refreshRouting(),
+            refreshOcrGlobal(),
+            refreshOcrOverrides()
+          ]);
         });
       })();
     </script>
@@ -695,6 +753,7 @@ export function createWebApp(options: CreateWebAppOptions = {}) {
   const proxyDefinitions: ProxyDefinition[] = [
     { method: 'get', path: '/me/preferences', upstreamPath: () => '/me/preferences' },
     { method: 'patch', path: '/me/preferences', upstreamPath: () => '/me/preferences' },
+    { method: 'get', path: '/me/printer-assignment', upstreamPath: () => '/me/printer-assignment' },
 
     { method: 'get', path: '/admin/config/smb-sources', upstreamPath: () => '/admin/config/smb-sources' },
     { method: 'post', path: '/admin/config/smb-sources', upstreamPath: () => '/admin/config/smb-sources' },
@@ -720,6 +779,18 @@ export function createWebApp(options: CreateWebAppOptions = {}) {
       method: 'delete',
       path: '/admin/config/printers/:printerId',
       upstreamPath: (req) => `/admin/config/printers/${req.params.printerId}`
+    },
+
+    { method: 'get', path: '/admin/config/user-printer-assignments', upstreamPath: () => '/admin/config/user-printer-assignments' },
+    {
+      method: 'put',
+      path: '/admin/config/user-printer-assignments/:userId',
+      upstreamPath: (req) => `/admin/config/user-printer-assignments/${req.params.userId}`
+    },
+    {
+      method: 'delete',
+      path: '/admin/config/user-printer-assignments/:userId',
+      upstreamPath: (req) => `/admin/config/user-printer-assignments/${req.params.userId}`
     },
 
     { method: 'get', path: '/admin/config/filename-masks', upstreamPath: () => '/admin/config/filename-masks' },

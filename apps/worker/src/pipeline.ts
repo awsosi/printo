@@ -45,6 +45,12 @@ export interface WorkerOcrUserOverride {
   config: Record<string, unknown>;
 }
 
+export interface WorkerUserPrinterAssignment {
+  userId: string;
+  a4PrinterId: string | null;
+  thermalPrinterId: string | null;
+}
+
 export interface ScannedFile {
   sourceId: string;
   path: string;
@@ -111,6 +117,7 @@ export interface WorkerConfigStore {
   listActiveFilenameMasks(ownerUserId: string | null): Promise<WorkerFilenameMask[]>;
   getRoutingProfile(ownerUserId: string | null): Promise<WorkerRoutingProfile | null>;
   getActivePrinters(): Promise<WorkerPrinter[]>;
+  getUserPrinterAssignment(userId: string): Promise<WorkerUserPrinterAssignment | null>;
   getOcrGlobalConfig(): Promise<WorkerOcrGlobalConfig>;
   getOcrUserOverride(userId: string): Promise<WorkerOcrUserOverride | null>;
   isProcessedFile(input: {
@@ -244,7 +251,16 @@ function selectPrinter(input: {
   routeType: RouteType;
   printers: WorkerPrinter[];
   fallbackPrinterId: string | null;
+  userAssignment: WorkerUserPrinterAssignment | null;
 }): WorkerPrinter {
+  const assignedPrinterId = input.routeType === 'A4' ? input.userAssignment?.a4PrinterId : input.userAssignment?.thermalPrinterId;
+  if (assignedPrinterId) {
+    const assigned = input.printers.find((printer) => printer.id === assignedPrinterId && printer.isActive);
+    if (assigned) {
+      return assigned;
+    }
+  }
+
   const byType = input.printers.find((printer) => printer.type === input.routeType);
   if (byType) {
     return byType;
@@ -280,6 +296,7 @@ export class WorkerPipeline {
       try {
         const masks = await this.store.listActiveFilenameMasks(source.ownerUserId);
         const routing = await this.store.getRoutingProfile(source.ownerUserId);
+        const userPrinterAssignment = source.ownerUserId ? await this.store.getUserPrinterAssignment(source.ownerUserId) : null;
         const ocrOverride = source.ownerUserId ? await this.store.getOcrUserOverride(source.ownerUserId) : null;
         const ocrProviderName = ocrOverride?.provider ?? globalOcrConfig.provider;
         const ocrConfig = {
@@ -327,7 +344,8 @@ export class WorkerPipeline {
               const printer = selectPrinter({
                 routeType,
                 printers,
-                fallbackPrinterId: routing?.fallbackPrinterId ?? null
+                fallbackPrinterId: routing?.fallbackPrinterId ?? null,
+                userAssignment: userPrinterAssignment
               });
 
               await this.dispatcher.dispatch({
@@ -400,6 +418,7 @@ interface InMemoryWorkerStoreInput {
   sources?: WorkerSmbSource[];
   masks?: WorkerFilenameMask[];
   printers?: WorkerPrinter[];
+  userPrinterAssignments?: WorkerUserPrinterAssignment[];
   routingProfiles?: WorkerRoutingProfile[];
   ocrGlobalConfig?: WorkerOcrGlobalConfig;
   ocrUserOverrides?: WorkerOcrUserOverride[];
@@ -410,6 +429,7 @@ export class InMemoryWorkerStore implements WorkerConfigStore {
   public readonly sources: WorkerSmbSource[];
   public readonly masks: WorkerFilenameMask[];
   public readonly printers: WorkerPrinter[];
+  public readonly userPrinterAssignments: WorkerUserPrinterAssignment[];
   public readonly routingProfiles: WorkerRoutingProfile[];
   public ocrGlobalConfig: WorkerOcrGlobalConfig;
   public readonly ocrUserOverrides: WorkerOcrUserOverride[];
@@ -421,6 +441,7 @@ export class InMemoryWorkerStore implements WorkerConfigStore {
     this.sources = input.sources ?? [];
     this.masks = input.masks ?? [];
     this.printers = input.printers ?? [];
+    this.userPrinterAssignments = input.userPrinterAssignments ?? [];
     this.routingProfiles = input.routingProfiles ?? [];
     this.ocrGlobalConfig = input.ocrGlobalConfig ?? { provider: 'mock', config: {} };
     this.ocrUserOverrides = input.ocrUserOverrides ?? [];
@@ -451,6 +472,10 @@ export class InMemoryWorkerStore implements WorkerConfigStore {
 
   async getActivePrinters(): Promise<WorkerPrinter[]> {
     return this.printers.filter((printer) => printer.isActive);
+  }
+
+  async getUserPrinterAssignment(userId: string): Promise<WorkerUserPrinterAssignment | null> {
+    return this.userPrinterAssignments.find((assignment) => assignment.userId === userId) ?? null;
   }
 
   async getOcrGlobalConfig(): Promise<WorkerOcrGlobalConfig> {

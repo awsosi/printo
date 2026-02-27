@@ -32,6 +32,12 @@ export interface PrinterRecord {
   isActive: boolean;
 }
 
+export interface UserPrinterAssignmentRecord {
+  userId: string;
+  a4PrinterId: string | null;
+  thermalPrinterId: string | null;
+}
+
 export interface FilenameMaskRecord {
   id: string;
   ownerUserId: string | null;

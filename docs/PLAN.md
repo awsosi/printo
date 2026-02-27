@@ -28,7 +28,7 @@ Deliver a docker-compose, TypeScript + PostgreSQL E2E application for PDF intake
 - [x] Local user CRUD for admin
 - [x] SMB source config CRUD
 - [x] Filename mask CRUD
-- [x] Printer config CRUD
+- [x] Printer config CRUD + per-user assignment CRUD
 - [x] Routing profile CRUD
 - [x] OCR global + per-user override CRUD
 - [x] User locale/theme preference API + UI
@@ -57,7 +57,7 @@ Deliver a docker-compose, TypeScript + PostgreSQL E2E application for PDF intake
 
 ## Definition of Done
 - [x] Docker-compose stack runs locally
-- [x] Admin UI can configure users, SMB sources, masks, printers, OCR, routing
+- [x] Admin UI can configure users, SMB sources, masks, printers, user printer assignments, OCR, routing
 - [x] User settings endpoint for own locale/theme
 - [x] Worker scans configured source paths and routes print pages
 - [x] Processed-file dedup persisted in DB

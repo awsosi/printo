@@ -351,6 +351,53 @@ describe('auth + rbac', () => {
     expect(deleted.status).toBe(204);
   });
 
+  it('supports user printer assignment CRUD for ADMIN and exposes self assignment for USER', async () => {
+    const { app, adminToken, userToken, userId } = await bootstrapAppWithAdminAndUser();
+
+    const a4Printer = await request(app)
+      .post('/admin/config/printers')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'A4 Assigned', type: 'A4', targetUri: 'ipp://assigned-a4.local/queue' });
+    expect(a4Printer.status).toBe(201);
+
+    const thermalPrinter = await request(app)
+      .post('/admin/config/printers')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Thermal Assigned', type: 'THERMAL', targetUri: 'socket://assigned-thermal.local:9100' });
+    expect(thermalPrinter.status).toBe(201);
+
+    const forbiddenList = await request(app)
+      .get('/admin/config/user-printer-assignments')
+      .set('Authorization', `Bearer ${userToken}`);
+    expect(forbiddenList.status).toBe(403);
+
+    const upsert = await request(app)
+      .put(`/admin/config/user-printer-assignments/${userId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ a4PrinterId: a4Printer.body.id, thermalPrinterId: thermalPrinter.body.id });
+    expect(upsert.status).toBe(200);
+    expect(upsert.body.userId).toBe(userId);
+
+    const list = await request(app)
+      .get('/admin/config/user-printer-assignments')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(list.status).toBe(200);
+    expect(list.body).toHaveLength(1);
+
+    const selfAssignment = await request(app)
+      .get('/me/printer-assignment')
+      .set('Authorization', `Bearer ${userToken}`);
+    expect(selfAssignment.status).toBe(200);
+    expect(selfAssignment.body.userId).toBe(userId);
+    expect(selfAssignment.body.a4PrinterId).toBe(a4Printer.body.id);
+    expect(selfAssignment.body.thermalPrinterId).toBe(thermalPrinter.body.id);
+
+    const deleted = await request(app)
+      .delete(`/admin/config/user-printer-assignments/${userId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(deleted.status).toBe(204);
+  });
+
   it('supports filename mask CRUD for ADMIN and blocks USER', async () => {
     const { app, adminToken, userToken } = await bootstrapAppWithAdminAndUser();
 

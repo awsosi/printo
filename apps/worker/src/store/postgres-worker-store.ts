@@ -9,7 +9,8 @@ import type {
   WorkerOcrUserOverride,
   WorkerPrinter,
   WorkerRoutingProfile,
-  WorkerSmbSource
+  WorkerSmbSource,
+  WorkerUserPrinterAssignment
 } from '../pipeline.js';
 
 type SmbSourceRow = {
@@ -42,6 +43,12 @@ type RoutingProfileRow = {
   name: string;
   thermal_label_patterns: unknown;
   fallback_printer_id: string | null;
+};
+
+type UserPrinterAssignmentRow = {
+  user_id: string;
+  a4_printer_id: string | null;
+  thermal_printer_id: string | null;
 };
 
 type OcrGlobalRow = {
@@ -177,6 +184,30 @@ export class PostgresWorkerStore implements WorkerConfigStore {
     );
 
     return result.rows.map(mapPrinter);
+  }
+
+  async getUserPrinterAssignment(userId: string): Promise<WorkerUserPrinterAssignment | null> {
+    const result = await this.db.query<UserPrinterAssignmentRow>(
+      `SELECT a.user_id,
+              MAX(CASE WHEN p.type = 'A4' THEN a.printer_id END) AS a4_printer_id,
+              MAX(CASE WHEN p.type = 'THERMAL' THEN a.printer_id END) AS thermal_printer_id
+       FROM user_printer_assignments a
+       JOIN printers p ON p.id = a.printer_id
+       WHERE a.user_id = $1
+       GROUP BY a.user_id
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (!result.rows[0]) {
+      return null;
+    }
+
+    return {
+      userId: result.rows[0].user_id,
+      a4PrinterId: result.rows[0].a4_printer_id,
+      thermalPrinterId: result.rows[0].thermal_printer_id
+    };
   }
 
   async getOcrGlobalConfig(): Promise<WorkerOcrGlobalConfig> {

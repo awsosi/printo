@@ -11,6 +11,7 @@ import type {
   RefreshTokenRecord,
   RoutingProfileRecord,
   SmbSourceRecord,
+  UserPrinterAssignmentRecord,
   UserRecord
 } from '../types.js';
 import type { AuthStore } from './auth-store.js';
@@ -41,6 +42,12 @@ type PrinterRow = {
   type: PrinterType;
   target_uri: string;
   is_active: boolean;
+};
+
+type UserPrinterAssignmentRow = {
+  user_id: string;
+  a4_printer_id: string | null;
+  thermal_printer_id: string | null;
 };
 
 type FilenameMaskRow = {
@@ -116,6 +123,14 @@ function mapPrinterRow(row: PrinterRow): PrinterRecord {
     type: row.type,
     targetUri: row.target_uri,
     isActive: row.is_active
+  };
+}
+
+function mapUserPrinterAssignmentRow(row: UserPrinterAssignmentRow): UserPrinterAssignmentRecord {
+  return {
+    userId: row.user_id,
+    a4PrinterId: row.a4_printer_id,
+    thermalPrinterId: row.thermal_printer_id
   };
 }
 
@@ -507,6 +522,131 @@ export class PostgresAuthStore implements AuthStore {
 
   async deletePrinter(id: string): Promise<boolean> {
     const result = await this.db.query('DELETE FROM printers WHERE id = $1', [id]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async listUserPrinterAssignments(): Promise<UserPrinterAssignmentRecord[]> {
+    const result = await this.db.query<UserPrinterAssignmentRow>(
+      `SELECT a.user_id,
+              MAX(CASE WHEN p.type = 'A4' THEN a.printer_id END) AS a4_printer_id,
+              MAX(CASE WHEN p.type = 'THERMAL' THEN a.printer_id END) AS thermal_printer_id
+       FROM user_printer_assignments a
+       JOIN printers p ON p.id = a.printer_id
+       GROUP BY a.user_id
+       ORDER BY a.user_id ASC`
+    );
+
+    return result.rows.map(mapUserPrinterAssignmentRow);
+  }
+
+  async getUserPrinterAssignment(userId: string): Promise<UserPrinterAssignmentRecord | null> {
+    const result = await this.db.query<UserPrinterAssignmentRow>(
+      `SELECT a.user_id,
+              MAX(CASE WHEN p.type = 'A4' THEN a.printer_id END) AS a4_printer_id,
+              MAX(CASE WHEN p.type = 'THERMAL' THEN a.printer_id END) AS thermal_printer_id
+       FROM user_printer_assignments a
+       JOIN printers p ON p.id = a.printer_id
+       WHERE a.user_id = $1
+       GROUP BY a.user_id
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (!result.rows[0]) {
+      return null;
+    }
+
+    return mapUserPrinterAssignmentRow(result.rows[0]);
+  }
+
+  async upsertUserPrinterAssignment(input: {
+    userId: string;
+    a4PrinterId?: string | null;
+    thermalPrinterId?: string | null;
+  }): Promise<UserPrinterAssignmentRecord> {
+    const client = await this.db.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const rows = await client.query<{ printer_id: string }>('SELECT printer_id FROM user_printer_assignments WHERE user_id = $1', [
+        input.userId
+      ]);
+      const current = rows.rows.map((row) => row.printer_id);
+
+      const desired = new Set<string>();
+
+      if (input.a4PrinterId === undefined) {
+        const existingA4 = await client.query<{ printer_id: string }>(
+          `SELECT a.printer_id
+           FROM user_printer_assignments a
+           JOIN printers p ON p.id = a.printer_id
+           WHERE a.user_id = $1 AND p.type = 'A4'
+           LIMIT 1`,
+          [input.userId]
+        );
+
+        if (existingA4.rows[0]) {
+          desired.add(existingA4.rows[0].printer_id);
+        }
+      } else if (input.a4PrinterId) {
+        desired.add(input.a4PrinterId);
+      }
+
+      if (input.thermalPrinterId === undefined) {
+        const existingThermal = await client.query<{ printer_id: string }>(
+          `SELECT a.printer_id
+           FROM user_printer_assignments a
+           JOIN printers p ON p.id = a.printer_id
+           WHERE a.user_id = $1 AND p.type = 'THERMAL'
+           LIMIT 1`,
+          [input.userId]
+        );
+
+        if (existingThermal.rows[0]) {
+          desired.add(existingThermal.rows[0].printer_id);
+        }
+      } else if (input.thermalPrinterId) {
+        desired.add(input.thermalPrinterId);
+      }
+
+      for (const printerId of desired) {
+        await client.query(
+          `INSERT INTO user_printer_assignments(user_id, printer_id)
+           VALUES ($1, $2)
+           ON CONFLICT DO NOTHING`,
+          [input.userId, printerId]
+        );
+      }
+
+      for (const existingPrinterId of current) {
+        if (!desired.has(existingPrinterId)) {
+          await client.query('DELETE FROM user_printer_assignments WHERE user_id = $1 AND printer_id = $2', [
+            input.userId,
+            existingPrinterId
+          ]);
+        }
+      }
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return (
+      (await this.getUserPrinterAssignment(input.userId)) ?? {
+        userId: input.userId,
+        a4PrinterId: null,
+        thermalPrinterId: null
+      }
+    );
+  }
+
+  async deleteUserPrinterAssignment(userId: string): Promise<boolean> {
+    const result = await this.db.query('DELETE FROM user_printer_assignments WHERE user_id = $1', [userId]);
     return (result.rowCount ?? 0) > 0;
   }
 

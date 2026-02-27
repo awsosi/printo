@@ -11,6 +11,7 @@ import type {
   RefreshTokenRecord,
   RoutingProfileRecord,
   SmbSourceRecord,
+  UserPrinterAssignmentRecord,
   UserRecord
 } from '../types.js';
 import type { AuthStore } from './auth-store.js';
@@ -21,6 +22,7 @@ export class InMemoryAuthStore implements AuthStore {
 
   private smbSources: SmbSourceRecord[] = [];
   private printers: PrinterRecord[] = [];
+  private userPrinterAssignments: UserPrinterAssignmentRecord[] = [];
   private filenameMasks: FilenameMaskRecord[] = [];
   private routingProfiles: RoutingProfileRecord[] = [];
   private ocrGlobal: OcrGlobalConfigRecord = { provider: 'mock', config: {} };
@@ -98,6 +100,7 @@ export class InMemoryAuthStore implements AuthStore {
     this.users = this.users.filter((user) => user.id !== userId);
     this.refreshTokens = this.refreshTokens.filter((token) => token.userId !== userId);
     this.ocrOverrides = this.ocrOverrides.filter((override) => override.userId !== userId);
+    this.userPrinterAssignments = this.userPrinterAssignments.filter((assignment) => assignment.userId !== userId);
     return this.users.length !== previousLength;
   }
 
@@ -191,7 +194,56 @@ export class InMemoryAuthStore implements AuthStore {
   async deletePrinter(id: string): Promise<boolean> {
     const initialCount = this.printers.length;
     this.printers = this.printers.filter((record) => record.id !== id);
+    this.userPrinterAssignments = this.userPrinterAssignments.map((assignment) => ({
+      userId: assignment.userId,
+      a4PrinterId: assignment.a4PrinterId === id ? null : assignment.a4PrinterId,
+      thermalPrinterId: assignment.thermalPrinterId === id ? null : assignment.thermalPrinterId
+    }));
     return this.printers.length !== initialCount;
+  }
+
+  async listUserPrinterAssignments(): Promise<UserPrinterAssignmentRecord[]> {
+    return this.userPrinterAssignments.map((assignment) => ({ ...assignment }));
+  }
+
+  async getUserPrinterAssignment(userId: string): Promise<UserPrinterAssignmentRecord | null> {
+    const assignment = this.userPrinterAssignments.find((candidate) => candidate.userId === userId);
+    return assignment ? { ...assignment } : null;
+  }
+
+  async upsertUserPrinterAssignment(input: {
+    userId: string;
+    a4PrinterId?: string | null;
+    thermalPrinterId?: string | null;
+  }): Promise<UserPrinterAssignmentRecord> {
+    const existing = this.userPrinterAssignments.find((candidate) => candidate.userId === input.userId);
+
+    if (existing) {
+      if (input.a4PrinterId !== undefined) {
+        existing.a4PrinterId = input.a4PrinterId;
+      }
+
+      if (input.thermalPrinterId !== undefined) {
+        existing.thermalPrinterId = input.thermalPrinterId;
+      }
+
+      return { ...existing };
+    }
+
+    const created: UserPrinterAssignmentRecord = {
+      userId: input.userId,
+      a4PrinterId: input.a4PrinterId ?? null,
+      thermalPrinterId: input.thermalPrinterId ?? null
+    };
+
+    this.userPrinterAssignments.push(created);
+    return { ...created };
+  }
+
+  async deleteUserPrinterAssignment(userId: string): Promise<boolean> {
+    const initialCount = this.userPrinterAssignments.length;
+    this.userPrinterAssignments = this.userPrinterAssignments.filter((assignment) => assignment.userId !== userId);
+    return this.userPrinterAssignments.length !== initialCount;
   }
 
   async listFilenameMasks(): Promise<FilenameMaskRecord[]> {

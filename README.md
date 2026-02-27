@@ -17,7 +17,7 @@ Docker-compose-based end-to-end web application for PDF intake, OCR/visual routi
 - RBAC roles: `USER`, `ADMIN`
 - Audit logging for auth and configuration changes
 - SMB source config + filename masks
-- A4/thermal printer config + routing profile
+- A4/thermal printer config + per-user assignment + routing profile
 - OCR global config + per-user override
 - i18n JSON with `en-US` fallback
 - Theme mode: `system` / `light` / `dark` with user override
