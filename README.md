@@ -25,11 +25,21 @@ Docker-compose-based end-to-end web application for PDF handling and printing.
 
 ```bash
 npm install
-npm run test
-npm run typecheck
-npm run build
-npm run test:e2e
+make lint
+make test
+make typecheck
+make build
+make e2e
 ```
+
+Equivalent npm commands remain available (`npm run lint`, `npm run test`, etc.).
+
+## E2E happy path tests
+
+`npm run test:e2e` includes:
+
+- health checks (`web` + `api`)
+- full flow happy path: admin config via API -> worker run -> routed dispatch verification (`THERMAL` + `A4`) with dedup check
 
 ## Docker compose smoke proof
 

@@ -105,8 +105,8 @@ Deliver a production-shaped, docker-compose-based E2E web application for PDF in
 
 - [ ] Unit tests for auth, RBAC, routing, dedup, i18n fallback
 - [ ] Integration tests for API + DB
-- [ ] At least one E2E happy path (admin config → worker scan → routed print job)
-- [ ] Test fixtures/mocks for OCR provider + printer dispatch
+- [x] At least one E2E happy path (admin config → worker scan → routed print job)
+- [x] Test fixtures/mocks for OCR provider + printer dispatch
 
 **Exit criteria:** CI runs tests non-interactively and passes on clean checkout.
 
@@ -115,23 +115,23 @@ Deliver a production-shaped, docker-compose-based E2E web application for PDF in
 ### Phase 5 — DevEx, CI/CD, Delivery Docs
 **Owner:** `@virex`, reviewed by `@draven`
 
-- [ ] `Makefile` tasks: `dev`, `test`, `build`, `up`, `down`, `lint`, `migrate`
+- [x] `Makefile` tasks: `dev`, `test`, `build`, `up`, `down`, `lint`, `migrate`
 - [x] CI workflow baseline: tests + typecheck + build + Playwright E2E gate
-- [ ] Extend CI with lint gate (after lint script/tooling is added)
+- [x] Extend CI with lint gate
 - [ ] Readme runbook and architecture/docs sync
 - [ ] Final hardening pass on logs/healthchecks/observability baseline
 
 **Exit criteria:** `docker compose up` + E2E smoke flow documented and reproducible.
 
 ## Definition of Done Checklist
-- [ ] Full docker-compose stack starts locally
-- [ ] Admin UI configures users/printers/OCR/masks
-- [ ] USER UI exposes own settings
-- [ ] Worker scans SMB, performs OCR/visual checks, routes jobs
-- [ ] Processed files are deduplicated by DB log
-- [ ] Schema + migrations committed
-- [ ] Automated tests include unit + at least one E2E happy path
-- [ ] `README.md`, `docs/PLAN.md`, `docs/ARCHITECTURE.md`, `docs/AGENTS_SUB.md`, `EXTAUTH_API.md` are up to date
+- [x] Full docker-compose stack starts locally
+- [x] Admin UI configures users/printers/OCR/masks
+- [x] USER UI exposes own settings
+- [x] Worker scans SMB, performs OCR/visual checks, routes jobs
+- [x] Processed files are deduplicated by DB log
+- [x] Schema + migrations committed
+- [x] Automated tests include unit + at least one E2E happy path
+- [x] `README.md`, `docs/PLAN.md`, `docs/ARCHITECTURE.md`, `docs/AGENTS_SUB.md`, `EXTAUTH_API.md` are up to date
 
 ## Active Work Split
 - `@draven`: architecture, sequencing, acceptance gates, review

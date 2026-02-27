@@ -9,6 +9,7 @@
   "scripts": {
     "build": "npm run --workspaces --if-present build",
     "typecheck": "npm run --workspaces --if-present typecheck",
+    "lint": "eslint \"apps/**/*.ts\" \"packages/**/*.ts\" \"tests/**/*.ts\" \"*.ts\"",
     "test": "npm run --workspaces --if-present test",
     "test:e2e": "playwright test",
     "smoke:compose": "bash scripts/compose-smoke.sh",
@@ -16,6 +17,10 @@
     "migrate": "npm run -w @printo/api migrate"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2"
+    "@eslint/js": "^9.20.0",
+    "@playwright/test": "^1.58.2",
+    "eslint": "^9.20.1",
+    "globals": "^16.3.0",
+    "typescript-eslint": "^8.24.0"
   }
 }

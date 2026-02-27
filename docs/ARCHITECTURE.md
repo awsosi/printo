@@ -2,7 +2,7 @@
 
 Owner: `@draven`
 Status: `ACTIVE`
-Last updated: `2026-02-27`
+Last updated: `2026-02-27` (DoD sync)
 
 Defines service boundaries, data flow, and docker-compose topology for `printo`.
 
@@ -43,12 +43,12 @@ Responsibilities:
 
 ### Processing Pipeline (Worker)
 Responsibilities:
-- Scheduled/continuous SMB polling
+- Scheduled/continuous SMB polling (`runner` + `run-once` endpoint)
 - Candidate file filtering by masks
 - Dedup via `processed_files`
 - OCR/visual classification through provider interface
 - Route pages/documents to A4/thermal printer queues
-- Persist job statuses + audit events
+- Persist job statuses in `print_jobs` + `print_job_pages` and emit structured dispatch logs
 
 ### Presentation (Web)
 Responsibilities:
