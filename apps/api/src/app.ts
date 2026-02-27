@@ -31,7 +31,8 @@ function toPublicUser(user: UserRecord) {
     username: user.username,
     roles: user.roles,
     locale: user.locale,
-    theme: user.theme
+    theme: user.theme,
+    isRemoteEnabled: user.isRemoteEnabled
   };
 }
 
@@ -67,13 +68,14 @@ export function createApiApp(store: AuthStore) {
       const username = String(req.body?.username ?? '');
       const password = String(req.body?.password ?? '');
       const requestedRoles = parseRoles(req.body?.roles);
+      const isRemoteEnabled = typeof req.body?.isRemoteEnabled === 'boolean' ? req.body.isRemoteEnabled : false;
 
       if (!username || !password) {
         return res.status(400).json({ error: 'INVALID_INPUT' });
       }
 
       const roles = requestedRoles ?? [ROLES.USER];
-      const user = await authService.register({ username, password, roles });
+      const user = await authService.register({ username, password, roles, isRemoteEnabled });
       return res.status(201).json(user);
     } catch (error) {
       if ((error as Error).message === 'USER_EXISTS') {
@@ -176,12 +178,13 @@ export function createApiApp(store: AuthStore) {
       const username = String(req.body?.username ?? '');
       const password = String(req.body?.password ?? '');
       const roles = parseRoles(req.body?.roles) ?? [ROLES.USER];
+      const isRemoteEnabled = typeof req.body?.isRemoteEnabled === 'boolean' ? req.body.isRemoteEnabled : false;
 
       if (!username || !password) {
         return res.status(400).json({ error: 'INVALID_INPUT' });
       }
 
-      const user = await authService.register({ username, password, roles });
+      const user = await authService.register({ username, password, roles, isRemoteEnabled });
 
       await store.writeAuditEvent({
         actorUserId: req.user!.id,
@@ -189,7 +192,7 @@ export function createApiApp(store: AuthStore) {
         status: 'SUCCESS',
         targetType: 'USER',
         targetId: user.id,
-        metadata: { username: user.username, roles: user.roles }
+        metadata: { username: user.username, roles: user.roles, isRemoteEnabled: user.isRemoteEnabled }
       });
 
       return res.status(201).json(user);

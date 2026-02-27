@@ -20,8 +20,9 @@ type UserRow = {
   username: string;
   locale: string;
   theme: string;
-  password_hash: string;
-  algorithm: string;
+  is_remote_enabled: boolean;
+  password_hash: string | null;
+  algorithm: string | null;
   roles: Role[];
 };
 
@@ -92,7 +93,8 @@ function mapUserRow(row: UserRow): UserRecord {
     theme: row.theme,
     roles: row.roles,
     passwordHash: row.password_hash,
-    hashAlgorithm: row.algorithm
+    hashAlgorithm: row.algorithm,
+    isRemoteEnabled: row.is_remote_enabled
   };
 }
 
@@ -156,17 +158,17 @@ export class PostgresAuthStore implements AuthStore {
 
   async getUserByUsername(username: string): Promise<UserRecord | null> {
     const result = await this.db.query<UserRow>(
-      `SELECT u.id, u.username, u.locale, u.theme, c.password_hash, c.algorithm,
+      `SELECT u.id, u.username, u.locale, u.theme, u.is_remote_enabled, c.password_hash, c.algorithm,
               COALESCE(array_agg(r.role) FILTER (WHERE r.role IS NOT NULL), '{}') AS roles
        FROM users u
        LEFT JOIN user_credentials_local c ON c.user_id = u.id
        LEFT JOIN user_roles r ON r.user_id = u.id
        WHERE lower(u.username) = lower($1)
-       GROUP BY u.id, c.password_hash, c.algorithm`,
+       GROUP BY u.id, u.is_remote_enabled, c.password_hash, c.algorithm`,
       [username]
     );
 
-    if (!result.rows[0] || !result.rows[0].password_hash) {
+    if (!result.rows[0]) {
       return null;
     }
 
@@ -175,13 +177,13 @@ export class PostgresAuthStore implements AuthStore {
 
   async getUserById(userId: string): Promise<UserRecord | null> {
     const result = await this.db.query<UserRow>(
-      `SELECT u.id, u.username, u.locale, u.theme, c.password_hash, c.algorithm,
+      `SELECT u.id, u.username, u.locale, u.theme, u.is_remote_enabled, c.password_hash, c.algorithm,
               COALESCE(array_agg(r.role) FILTER (WHERE r.role IS NOT NULL), '{}') AS roles
        FROM users u
        LEFT JOIN user_credentials_local c ON c.user_id = u.id
        LEFT JOIN user_roles r ON r.user_id = u.id
        WHERE u.id = $1
-       GROUP BY u.id, c.password_hash, c.algorithm`,
+       GROUP BY u.id, u.is_remote_enabled, c.password_hash, c.algorithm`,
       [userId]
     );
 
@@ -194,26 +196,32 @@ export class PostgresAuthStore implements AuthStore {
 
   async listUsers(): Promise<UserRecord[]> {
     const result = await this.db.query<UserRow>(
-      `SELECT u.id, u.username, u.locale, u.theme, c.password_hash, c.algorithm,
+      `SELECT u.id, u.username, u.locale, u.theme, u.is_remote_enabled, c.password_hash, c.algorithm,
               COALESCE(array_agg(r.role) FILTER (WHERE r.role IS NOT NULL), '{}') AS roles
        FROM users u
        LEFT JOIN user_credentials_local c ON c.user_id = u.id
        LEFT JOIN user_roles r ON r.user_id = u.id
-       GROUP BY u.id, c.password_hash, c.algorithm
+       GROUP BY u.id, u.is_remote_enabled, c.password_hash, c.algorithm
        ORDER BY u.created_at ASC`
     );
 
     return result.rows.map(mapUserRow);
   }
 
-  async createUser(input: { username: string; passwordHash: string; hashAlgorithm: string; roles: Role[] }): Promise<UserRecord> {
+  async createUser(input: {
+    username: string;
+    passwordHash: string;
+    hashAlgorithm: string;
+    roles: Role[];
+    isRemoteEnabled?: boolean;
+  }): Promise<UserRecord> {
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
-      const userRes = await client.query<Pick<UserRow, 'id' | 'username' | 'locale' | 'theme'>>(
-        `INSERT INTO users(username) VALUES ($1)
-         RETURNING id, username, locale, theme`,
-        [input.username]
+      const userRes = await client.query<Pick<UserRow, 'id' | 'username' | 'locale' | 'theme' | 'is_remote_enabled'>>(
+        `INSERT INTO users(username, is_remote_enabled) VALUES ($1, $2)
+         RETURNING id, username, locale, theme, is_remote_enabled`,
+        [input.username, input.isRemoteEnabled ?? false]
       );
       const user = userRes.rows[0];
 
@@ -236,7 +244,8 @@ export class PostgresAuthStore implements AuthStore {
         theme: user.theme,
         roles: input.roles,
         passwordHash: input.passwordHash,
-        hashAlgorithm: input.hashAlgorithm
+        hashAlgorithm: input.hashAlgorithm,
+        isRemoteEnabled: user.is_remote_enabled
       };
     } catch (error) {
       await client.query('ROLLBACK');

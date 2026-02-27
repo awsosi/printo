@@ -17,7 +17,13 @@ export interface AuthStore {
   getUserByUsername(username: string): Promise<UserRecord | null>;
   getUserById(userId: string): Promise<UserRecord | null>;
   listUsers(): Promise<UserRecord[]>;
-  createUser(input: { username: string; passwordHash: string; hashAlgorithm: string; roles: Role[] }): Promise<UserRecord>;
+  createUser(input: {
+    username: string;
+    passwordHash: string;
+    hashAlgorithm: string;
+    roles: Role[];
+    isRemoteEnabled?: boolean;
+  }): Promise<UserRecord>;
   updateUserPreferences(input: { userId: string; locale?: string; theme?: string }): Promise<UserRecord | null>;
   setUserRoles(input: { userId: string; roles: Role[] }): Promise<UserRecord | null>;
   deleteUser(userId: string): Promise<boolean>;

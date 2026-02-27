@@ -40,7 +40,13 @@ export class InMemoryAuthStore implements AuthStore {
     return [...this.users];
   }
 
-  async createUser(input: { username: string; passwordHash: string; hashAlgorithm: string; roles: Role[] }): Promise<UserRecord> {
+  async createUser(input: {
+    username: string;
+    passwordHash: string;
+    hashAlgorithm: string;
+    roles: Role[];
+    isRemoteEnabled?: boolean;
+  }): Promise<UserRecord> {
     const existing = await this.getUserByUsername(input.username);
     if (existing) {
       throw new Error('USER_EXISTS');
@@ -53,7 +59,8 @@ export class InMemoryAuthStore implements AuthStore {
       passwordHash: input.passwordHash,
       hashAlgorithm: input.hashAlgorithm,
       locale: 'en-US',
-      theme: 'system'
+      theme: 'system',
+      isRemoteEnabled: input.isRemoteEnabled ?? false
     };
     this.users.push(user);
     return user;

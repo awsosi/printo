@@ -8,10 +8,11 @@ export interface UserRecord {
   id: string;
   username: string;
   roles: Role[];
-  passwordHash: string;
-  hashAlgorithm: string;
+  passwordHash: string | null;
+  hashAlgorithm: string | null;
   locale: string;
   theme: string;
+  isRemoteEnabled: boolean;
 }
 
 export interface SmbSourceRecord {

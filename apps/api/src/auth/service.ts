@@ -1,20 +1,22 @@
 import { ROLES } from '@printo/shared';
 import type { Role } from '@printo/shared';
-import { hashPassword, hashToken, verifyPassword } from './password.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from './jwt.js';
+import { authenticateExternal } from './external-auth-adapter.js';
+import { hashPassword, hashToken, verifyPassword } from './password.js';
 import type { AuthStore } from '../store/auth-store.js';
 
 export class AuthService {
   constructor(private readonly store: AuthStore) {}
 
-  async register(input: { username: string; password: string; roles?: Role[] }) {
+  async register(input: { username: string; password: string; roles?: Role[]; isRemoteEnabled?: boolean }) {
     const { hash, algorithm } = await hashPassword(input.password);
     const roles = input.roles && input.roles.length > 0 ? input.roles : [ROLES.USER];
     const user = await this.store.createUser({
       username: input.username,
       passwordHash: hash,
       hashAlgorithm: algorithm,
-      roles
+      roles,
+      isRemoteEnabled: input.isRemoteEnabled ?? false
     });
 
     await this.store.writeAuditEvent({
@@ -23,10 +25,15 @@ export class AuthService {
       status: 'SUCCESS',
       targetType: 'USER',
       targetId: user.id,
-      metadata: { roles }
+      metadata: { roles, isRemoteEnabled: user.isRemoteEnabled }
     });
 
-    return { id: user.id, username: user.username, roles: user.roles };
+    return {
+      id: user.id,
+      username: user.username,
+      roles: user.roles,
+      isRemoteEnabled: user.isRemoteEnabled
+    };
   }
 
   async login(input: { username: string; password: string }) {
@@ -40,15 +47,58 @@ export class AuthService {
       throw new Error('INVALID_CREDENTIALS');
     }
 
-    const validPassword = await verifyPassword(input.password, user.passwordHash, user.hashAlgorithm);
-    if (!validPassword) {
+    if (user.isRemoteEnabled) {
+      const remoteResult = await authenticateExternal(input.username, input.password);
+      const remoteAttemptStatus = remoteResult.ok && remoteResult.authenticated ? 'SUCCESS' : 'FAILURE';
+
       await this.store.writeAuditEvent({
         actorUserId: user.id,
-        action: 'AUTH_LOGIN',
-        status: 'FAILURE',
-        metadata: { username: input.username, reason: 'BAD_PASSWORD' }
+        action: 'AUTH_REMOTE_ATTEMPT',
+        status: remoteAttemptStatus,
+        targetType: 'USER',
+        targetId: user.id,
+        metadata: {
+          username: input.username,
+          ok: remoteResult.ok,
+          authenticated: remoteResult.authenticated,
+          reason: remoteResult.reason
+        }
       });
-      throw new Error('INVALID_CREDENTIALS');
+
+      if (!remoteResult.ok || !remoteResult.authenticated) {
+        await this.store.writeAuditEvent({
+          actorUserId: user.id,
+          action: 'AUTH_LOGIN',
+          status: 'FAILURE',
+          metadata: {
+            username: input.username,
+            mode: 'remote',
+            reason: remoteResult.reason ?? 'REMOTE_AUTH_FAILED'
+          }
+        });
+        throw new Error('INVALID_CREDENTIALS');
+      }
+    } else {
+      if (!user.passwordHash || !user.hashAlgorithm) {
+        await this.store.writeAuditEvent({
+          actorUserId: user.id,
+          action: 'AUTH_LOGIN',
+          status: 'FAILURE',
+          metadata: { username: input.username, reason: 'MISSING_LOCAL_CREDENTIALS' }
+        });
+        throw new Error('INVALID_CREDENTIALS');
+      }
+
+      const validPassword = await verifyPassword(input.password, user.passwordHash, user.hashAlgorithm);
+      if (!validPassword) {
+        await this.store.writeAuditEvent({
+          actorUserId: user.id,
+          action: 'AUTH_LOGIN',
+          status: 'FAILURE',
+          metadata: { username: input.username, reason: 'BAD_PASSWORD' }
+        });
+        throw new Error('INVALID_CREDENTIALS');
+      }
     }
 
     const accessToken = signAccessToken({ sub: user.id, username: user.username, roles: user.roles });
@@ -60,7 +110,8 @@ export class AuthService {
     await this.store.writeAuditEvent({
       actorUserId: user.id,
       action: 'AUTH_LOGIN',
-      status: 'SUCCESS'
+      status: 'SUCCESS',
+      metadata: { mode: user.isRemoteEnabled ? 'remote' : 'local' }
     });
 
     return {
@@ -69,7 +120,8 @@ export class AuthService {
       user: {
         id: user.id,
         username: user.username,
-        roles: user.roles
+        roles: user.roles,
+        isRemoteEnabled: user.isRemoteEnabled
       }
     };
   }

@@ -1,7 +1,11 @@
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApiApp } from '../src/app.js';
 import { InMemoryAuthStore } from '../src/store/in-memory-auth-store.js';
+
+const originalExtAuthBaseUrl = process.env.EXTAUTH_BASE_URL;
+const originalExtAuthApiKey = process.env.EXTAUTH_API_KEY;
+const originalExtAuthRetryBaseMs = process.env.EXTAUTH_RETRY_BASE_MS;
 
 async function bootstrapAppWithAdminAndUser() {
   const app = createApiApp(new InMemoryAuthStore());
@@ -45,6 +49,13 @@ describe('api health', () => {
 });
 
 describe('auth + rbac', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    process.env.EXTAUTH_BASE_URL = originalExtAuthBaseUrl;
+    process.env.EXTAUTH_API_KEY = originalExtAuthApiKey;
+    process.env.EXTAUTH_RETRY_BASE_MS = originalExtAuthRetryBaseMs;
+  });
+
   it('allows ADMIN route only for admin users', async () => {
     const { app, adminToken, userToken } = await bootstrapAppWithAdminAndUser();
 
@@ -65,6 +76,56 @@ describe('auth + rbac', () => {
     expect(refresh.status).toBe(200);
     expect(typeof refresh.body.accessToken).toBe('string');
     expect(typeof refresh.body.refreshToken).toBe('string');
+  });
+
+  it('logs remote auth attempt and allows login for remote-enabled users', async () => {
+    const store = new InMemoryAuthStore();
+    const app = createApiApp(store);
+
+    await request(app).post('/auth/register').send({
+      username: 'remote_user',
+      password: 'PlaceholderPass123!',
+      isRemoteEnabled: true
+    });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            success: true,
+            authenticated: true,
+            error: null,
+            user_id: 501,
+            username: 'remote_user'
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          }
+        )
+      )
+    );
+
+    process.env.EXTAUTH_BASE_URL = 'https://extauth.example';
+    process.env.EXTAUTH_API_KEY = 'extauth-key';
+    process.env.EXTAUTH_RETRY_BASE_MS = '0';
+
+    const login = await request(app).post('/auth/login').send({
+      username: 'remote_user',
+      password: 'RemotePass123!'
+    });
+
+    expect(login.status).toBe(200);
+    expect(login.body.user.isRemoteEnabled).toBe(true);
+    expect(typeof login.body.accessToken).toBe('string');
+
+    const remoteAttempts = store.auditEvents.filter((event) => event.action === 'AUTH_REMOTE_ATTEMPT');
+    expect(remoteAttempts).toHaveLength(1);
+    expect(remoteAttempts[0]?.status).toBe('SUCCESS');
+
+    const authLogins = store.auditEvents.filter((event) => event.action === 'AUTH_LOGIN');
+    expect(authLogins.some((event) => event.status === 'SUCCESS' && event.metadata?.mode === 'remote')).toBe(true);
   });
 
   it('supports admin user lifecycle operations', async () => {
