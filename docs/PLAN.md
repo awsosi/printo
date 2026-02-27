@@ -36,7 +36,7 @@ Deliver a production-shaped, docker-compose-based E2E web application for PDF in
 **Owner:** `@draven` (design), `@virex` (repo bootstrap)
 
 - [ ] Finalize architecture boundaries in `docs/ARCHITECTURE.md`
-- [ ] Finalize external auth contract in `EXTAUTH_API.md`
+- [x] Finalize external auth contract in `EXTAUTH_API.md`
 - [ ] Create monorepo/service structure and shared TS config
 - [ ] Create docker-compose baseline (web, api, worker, postgres, redis)
 - [ ] Add `.env.example` and secrets handling pattern
@@ -59,8 +59,9 @@ Deliver a production-shaped, docker-compose-based E2E web application for PDF in
   - routing profiles
   - OCR config (global + per-user overrides)
   - processed file dedup log
-- [ ] AuthN/AuthZ middleware + RBAC guards
-- [ ] Audit events for login/config changes/print actions
+- [x] AuthN/AuthZ middleware + RBAC guards
+- [x] Audit events for login/config changes/print actions (incl. remote auth attempt events)
+- [x] External auth login path wired for `is_remote_enabled` users (`/auth/login`)
 
 **Exit criteria:** API enforces role checks and audit trail for protected actions.
 
@@ -103,7 +104,7 @@ Deliver a production-shaped, docker-compose-based E2E web application for PDF in
 ### Phase 4 — Test Matrix + E2E
 **Owner:** `@virex` (+ subagents)
 
-- [ ] Unit tests for auth, RBAC, routing, dedup, i18n fallback
+- [x] Unit tests for auth, RBAC, routing, dedup, i18n fallback (auth adapter + remote login/audit coverage added)
 - [ ] Integration tests for API + DB
 - [x] At least one E2E happy path (admin config → worker scan → routed print job)
 - [x] Test fixtures/mocks for OCR provider + printer dispatch

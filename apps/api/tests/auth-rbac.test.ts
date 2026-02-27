@@ -6,6 +6,8 @@ import { InMemoryAuthStore } from '../src/store/in-memory-auth-store.js';
 const originalExtAuthBaseUrl = process.env.EXTAUTH_BASE_URL;
 const originalExtAuthApiKey = process.env.EXTAUTH_API_KEY;
 const originalExtAuthRetryBaseMs = process.env.EXTAUTH_RETRY_BASE_MS;
+const originalExtAuthTimeoutMs = process.env.EXTAUTH_TIMEOUT_MS;
+const originalExtAuthMaxRetries = process.env.EXTAUTH_MAX_RETRIES;
 
 async function bootstrapAppWithAdminAndUser() {
   const app = createApiApp(new InMemoryAuthStore());
@@ -54,7 +56,27 @@ describe('auth + rbac', () => {
     process.env.EXTAUTH_BASE_URL = originalExtAuthBaseUrl;
     process.env.EXTAUTH_API_KEY = originalExtAuthApiKey;
     process.env.EXTAUTH_RETRY_BASE_MS = originalExtAuthRetryBaseMs;
+    process.env.EXTAUTH_TIMEOUT_MS = originalExtAuthTimeoutMs;
+    process.env.EXTAUTH_MAX_RETRIES = originalExtAuthMaxRetries;
   });
+
+  async function setupRemoteUser() {
+    const store = new InMemoryAuthStore();
+    const app = createApiApp(store);
+
+    await request(app).post('/auth/register').send({
+      username: 'remote_user',
+      password: 'PlaceholderPass123!',
+      isRemoteEnabled: true
+    });
+
+    process.env.EXTAUTH_BASE_URL = 'https://extauth.example';
+    process.env.EXTAUTH_API_KEY = 'extauth-key';
+    process.env.EXTAUTH_RETRY_BASE_MS = '0';
+    process.env.EXTAUTH_TIMEOUT_MS = '25';
+
+    return { app, store };
+  }
 
   it('allows ADMIN route only for admin users', async () => {
     const { app, adminToken, userToken } = await bootstrapAppWithAdminAndUser();
@@ -79,14 +101,7 @@ describe('auth + rbac', () => {
   });
 
   it('logs remote auth attempt and allows login for remote-enabled users', async () => {
-    const store = new InMemoryAuthStore();
-    const app = createApiApp(store);
-
-    await request(app).post('/auth/register').send({
-      username: 'remote_user',
-      password: 'PlaceholderPass123!',
-      isRemoteEnabled: true
-    });
+    const { app, store } = await setupRemoteUser();
 
     vi.stubGlobal(
       'fetch',
@@ -107,10 +122,6 @@ describe('auth + rbac', () => {
       )
     );
 
-    process.env.EXTAUTH_BASE_URL = 'https://extauth.example';
-    process.env.EXTAUTH_API_KEY = 'extauth-key';
-    process.env.EXTAUTH_RETRY_BASE_MS = '0';
-
     const login = await request(app).post('/auth/login').send({
       username: 'remote_user',
       password: 'RemotePass123!'
@@ -126,6 +137,104 @@ describe('auth + rbac', () => {
 
     const authLogins = store.auditEvents.filter((event) => event.action === 'AUTH_LOGIN');
     expect(authLogins.some((event) => event.status === 'SUCCESS' && event.metadata?.mode === 'remote')).toBe(true);
+  });
+
+  it('denies remote login with INVALID_CREDENTIALS and audits failure', async () => {
+    const { app, store } = await setupRemoteUser();
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ success: true, authenticated: false, error: null }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+    );
+
+    const login = await request(app).post('/auth/login').send({
+      username: 'remote_user',
+      password: 'WrongPass123!'
+    });
+
+    expect(login.status).toBe(401);
+    expect(login.body.error).toBe('INVALID_CREDENTIALS');
+
+    const remoteAttempt = store.auditEvents.find((event) => event.action === 'AUTH_REMOTE_ATTEMPT');
+    expect(remoteAttempt?.status).toBe('FAILURE');
+    expect(remoteAttempt?.metadata?.reason).toBe('INVALID_CREDENTIALS');
+  });
+
+  it('denies remote login with ACCOUNT_DISABLED and audits failure', async () => {
+    const { app, store } = await setupRemoteUser();
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ success: true, authenticated: false, error: 'ACCOUNT_DISABLED' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+    );
+
+    const login = await request(app).post('/auth/login').send({
+      username: 'remote_user',
+      password: 'RemotePass123!'
+    });
+
+    expect(login.status).toBe(401);
+    expect(login.body.error).toBe('INVALID_CREDENTIALS');
+
+    const remoteAttempt = store.auditEvents.find((event) => event.action === 'AUTH_REMOTE_ATTEMPT');
+    expect(remoteAttempt?.status).toBe('FAILURE');
+    expect(remoteAttempt?.metadata?.reason).toBe('ACCOUNT_DISABLED');
+  });
+
+  it('denies remote login with ACCESS_DENIED and audits failure', async () => {
+    const { app, store } = await setupRemoteUser();
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ success: true, authenticated: false, error: 'ACCESS_DENIED' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+    );
+
+    const login = await request(app).post('/auth/login').send({
+      username: 'remote_user',
+      password: 'RemotePass123!'
+    });
+
+    expect(login.status).toBe(401);
+    expect(login.body.error).toBe('INVALID_CREDENTIALS');
+
+    const remoteAttempt = store.auditEvents.find((event) => event.action === 'AUTH_REMOTE_ATTEMPT');
+    expect(remoteAttempt?.status).toBe('FAILURE');
+    expect(remoteAttempt?.metadata?.reason).toBe('ACCESS_DENIED');
+  });
+
+  it('denies remote login on retry exhaustion and audits upstream failure', async () => {
+    const { app, store } = await setupRemoteUser();
+    process.env.EXTAUTH_MAX_RETRIES = '2';
+
+    const fetchMock = vi.fn<typeof fetch>().mockRejectedValue(new Error('network down'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const login = await request(app).post('/auth/login').send({
+      username: 'remote_user',
+      password: 'RemotePass123!'
+    });
+
+    expect(login.status).toBe(401);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    const remoteAttempt = store.auditEvents.find((event) => event.action === 'AUTH_REMOTE_ATTEMPT');
+    expect(remoteAttempt?.status).toBe('FAILURE');
+    expect(remoteAttempt?.metadata?.reason).toBe('UPSTREAM_UNREACHABLE');
   });
 
   it('supports admin user lifecycle operations', async () => {

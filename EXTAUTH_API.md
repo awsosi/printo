@@ -91,3 +91,19 @@ Write audit event on each call:
 ## 8) Compatibility Notes
 
 Current provider returns HTTP `200` for both success and auth failures. Adapter must inspect JSON body fields and not rely on HTTP code for auth decision.
+
+## 9) Implementation Status (live)
+
+Implemented in `apps/api`:
+
+- `/auth/login` routes `is_remote_enabled` users through `authenticateExternal(...)`.
+- Remote auth attempts are audited as `AUTH_REMOTE_ATTEMPT` with `{ ok, authenticated, reason }` metadata.
+- Failures map to normalized reasons:
+  - `INVALID_CREDENTIALS`
+  - `ACCOUNT_DISABLED`
+  - `ACCESS_DENIED`
+  - `UPSTREAM_UNREACHABLE`
+- Retry/backoff and timeout are configurable via env:
+  - `EXTAUTH_TIMEOUT_MS` (default `3000`)
+  - `EXTAUTH_MAX_RETRIES` (default `2`)
+  - `EXTAUTH_RETRY_BASE_MS` (default `200`)
