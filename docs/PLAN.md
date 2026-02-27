@@ -87,6 +87,7 @@ Deliver a production-shaped, docker-compose-based E2E web application for PDF in
 ### Phase 3 — Intake, OCR/Visual, Routing, Print
 **Owner:** `@virex`
 
+- [x] Worker pipeline baseline (mock-safe): run-once scan loop + masks + dedup + OCR abstraction + routing + dispatch + tests
 - [ ] Worker polls SMB paths using configured service credentials
 - [ ] Filename mask filtering
 - [ ] Dedup check and processed-file persistence
