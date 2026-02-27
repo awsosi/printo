@@ -71,9 +71,9 @@ Deliver a production-shaped, docker-compose-based E2E web application for PDF in
 
 - [x] Admin CRUD for local users (API baseline: list/create/role update/delete + tests)
 - [ ] Admin config screens/endpoints for:
-  - [x] SMB path + domain credentials (API CRUD + RBAC tests)
+  - [x] SMB path + domain credentials (API CRUD + RBAC tests + admin UI wiring)
   - [x] filename masks (API CRUD + RBAC tests)
-  - [x] A4/thermal printer setup (API CRUD + RBAC tests)
+  - [x] A4/thermal printer setup (API CRUD + RBAC tests + admin UI wiring)
   - [x] page routing rules (A4 vs thermal) (API CRUD + RBAC tests)
   - [x] global OCR config + user overrides (API CRUD + RBAC tests)
 - [x] USER scope: self-view/edit allowed subset (API baseline: `/me/preferences` read/write)
