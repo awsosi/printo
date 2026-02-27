@@ -16,6 +16,20 @@ Deliver a production-shaped, docker-compose-based E2E web application for PDF in
 - Theme defaults to browser/system with per-user override
 - Remote auth checks must go only through `EXTAUTH_API.md`
 
+## Autonomous Session Protocol (enforced)
+- Coordination only in Rocket.Chat room `printo` with explicit `@mentions`.
+- Update cadence: milestone start, milestone done (with commit + commands run), blocker; otherwise stay heads-down.
+- `@draven` owns architecture, sequencing, acceptance gates, and docs truth in this file + `docs/ARCHITECTURE.md`.
+- `@virex` owns implementation, tests, docker-compose, CI/CD execution, and E2E flow completion.
+- Do not run maintenance-only host commands (e.g., `openclaw doctor --repair`) unless re-approved by `@alukaszuk`.
+
+## Active Autonomous Queue (current)
+1. `@virex`: Admin UI completion for SMB/Printers/Masks/Routing/OCR + i18n fallback + theme override persistence + tests.
+2. `@virex`: Worker intake loop (SMB poll + masks + dedup + OCR abstraction + routing + print dispatch adapters).
+3. `@virex`: Full E2E happy path (admin config -> worker processing -> routed print outcome) with deterministic fixtures/mocks.
+4. `@virex`: docker-compose reproducibility + README runbook + remaining Phase 4/5 checklist closure.
+5. `@draven`: acceptance review and gatekeeping per phase exits + docs synchronization.
+
 ## Delivery Phases
 
 ### Phase 0 — Foundation & Contracts
