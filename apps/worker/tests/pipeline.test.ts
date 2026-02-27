@@ -100,4 +100,60 @@ describe('worker pipeline', () => {
     expect(secondRun.filesSkippedDedup).toBe(1);
     expect(dispatcher.calls).toHaveLength(2);
   });
+
+  it('continues processing when one source scan fails', async () => {
+    const store = new InMemoryWorkerStore({
+      sources: [
+        {
+          id: 'source-ok',
+          ownerUserId: 'user-1',
+          path: '/ok',
+          domainUsername: 'EXAMPLE\\\\serviceuser',
+          secretRef: 'secret/smb/ok',
+          isActive: true
+        },
+        {
+          id: 'source-fail',
+          ownerUserId: 'user-1',
+          path: '/fail',
+          domainUsername: 'EXAMPLE\\\\serviceuser',
+          secretRef: 'secret/smb/fail',
+          isActive: true
+        }
+      ],
+      printers: [
+        {
+          id: 'printer-a4',
+          name: 'Office A4',
+          type: 'A4',
+          targetUri: 'ipp://a4.local',
+          isActive: true
+        }
+      ]
+    });
+
+    const scanner = {
+      scanSource: async (source: { id: string }) => {
+        if (source.id === 'source-fail') {
+          throw new Error('SMB_SCAN_FAILED');
+        }
+
+        return [
+          {
+            sourceId: 'source-ok',
+            path: '/ok/doc.pdf',
+            content: 'plain page',
+            modifiedAt: new Date('2026-02-27T15:10:00.000Z')
+          }
+        ];
+      }
+    };
+
+    const pipeline = new WorkerPipeline(store, scanner, new MockOcrProvider(), new RecordingPrinterDispatcher());
+    const summary = await pipeline.runOnce();
+
+    expect(summary.sourcesScanned).toBe(2);
+    expect(summary.filesProcessed).toBe(1);
+    expect(summary.failures).toBe(1);
+  });
 });

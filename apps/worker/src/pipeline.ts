@@ -272,106 +272,111 @@ export class WorkerPipeline {
 
     for (const source of sources) {
       summary.sourcesScanned += 1;
-      const masks = await this.store.listActiveFilenameMasks(source.ownerUserId);
-      const routing = await this.store.getRoutingProfile(source.ownerUserId);
-      const ocrOverride = source.ownerUserId ? await this.store.getOcrUserOverride(source.ownerUserId) : null;
-      const ocrProviderName = ocrOverride?.provider ?? globalOcrConfig.provider;
-      const ocrConfig = {
-        ...globalOcrConfig.config,
-        ...(ocrOverride?.config ?? {})
-      };
 
-      const files = await this.scanner.scanSource(source);
-      summary.filesDiscovered += files.length;
+      try {
+        const masks = await this.store.listActiveFilenameMasks(source.ownerUserId);
+        const routing = await this.store.getRoutingProfile(source.ownerUserId);
+        const ocrOverride = source.ownerUserId ? await this.store.getOcrUserOverride(source.ownerUserId) : null;
+        const ocrProviderName = ocrOverride?.provider ?? globalOcrConfig.provider;
+        const ocrConfig = {
+          ...globalOcrConfig.config,
+          ...(ocrOverride?.config ?? {})
+        };
 
-      for (const file of files) {
-        if (!isMaskedIn(file.path, masks)) {
-          continue;
-        }
+        const files = await this.scanner.scanSource(source);
+        summary.filesDiscovered += files.length;
 
-        summary.filesMatched += 1;
-        const checksumSha256 = toSha256(file.content);
-        const isProcessed = await this.store.isProcessedFile({
-          filePath: file.path,
-          checksumSha256,
-          fileMtime: file.modifiedAt
-        });
-
-        if (isProcessed) {
-          summary.filesSkippedDedup += 1;
-          continue;
-        }
-
-        const job = await this.store.createPrintJob({
-          sourceId: source.id,
-          sourceFileId: null,
-          filePath: file.path
-        });
-        summary.jobsCreated += 1;
-
-        try {
-          const ocrResult = await this.ocrProvider.analyze({
-            file,
-            provider: ocrProviderName,
-            config: ocrConfig
-          });
-
-          for (const page of ocrResult.pages) {
-            const routeType = resolveRouteType(page, routing);
-            const printer = selectPrinter({
-              routeType,
-              printers,
-              fallbackPrinterId: routing?.fallbackPrinterId ?? null
-            });
-
-            await this.dispatcher.dispatch({
-              routeType,
-              printer,
-              file,
-              page
-            });
-
-            await this.store.addPrintJobPage({
-              printJobId: job.id,
-              pageNumber: page.pageNumber,
-              routeType,
-              printerId: printer.id,
-              status: 'SUCCESS'
-            });
-            summary.pageDispatches += 1;
+        for (const file of files) {
+          if (!isMaskedIn(file.path, masks)) {
+            continue;
           }
 
-          const processedFile = await this.store.markProcessedFile({
-            sourceId: source.id,
+          summary.filesMatched += 1;
+          const checksumSha256 = toSha256(file.content);
+          const isProcessed = await this.store.isProcessedFile({
             filePath: file.path,
             checksumSha256,
             fileMtime: file.modifiedAt
           });
 
-          await this.store.finishPrintJob({
-            jobId: job.id,
-            status: 'SUCCESS'
-          });
+          if (isProcessed) {
+            summary.filesSkippedDedup += 1;
+            continue;
+          }
 
-          job.sourceFileId = processedFile.id;
-          summary.filesProcessed += 1;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'UNKNOWN_PIPELINE_ERROR';
-          await this.store.addPrintJobPage({
-            printJobId: job.id,
-            pageNumber: 0,
-            routeType: 'A4',
-            printerId: null,
-            status: 'FAILURE',
-            errorMessage: message
+          const job = await this.store.createPrintJob({
+            sourceId: source.id,
+            sourceFileId: null,
+            filePath: file.path
           });
-          await this.store.finishPrintJob({
-            jobId: job.id,
-            status: 'FAILURE',
-            errorMessage: message
-          });
-          summary.failures += 1;
+          summary.jobsCreated += 1;
+
+          try {
+            const ocrResult = await this.ocrProvider.analyze({
+              file,
+              provider: ocrProviderName,
+              config: ocrConfig
+            });
+
+            for (const page of ocrResult.pages) {
+              const routeType = resolveRouteType(page, routing);
+              const printer = selectPrinter({
+                routeType,
+                printers,
+                fallbackPrinterId: routing?.fallbackPrinterId ?? null
+              });
+
+              await this.dispatcher.dispatch({
+                routeType,
+                printer,
+                file,
+                page
+              });
+
+              await this.store.addPrintJobPage({
+                printJobId: job.id,
+                pageNumber: page.pageNumber,
+                routeType,
+                printerId: printer.id,
+                status: 'SUCCESS'
+              });
+              summary.pageDispatches += 1;
+            }
+
+            const processedFile = await this.store.markProcessedFile({
+              sourceId: source.id,
+              filePath: file.path,
+              checksumSha256,
+              fileMtime: file.modifiedAt
+            });
+
+            await this.store.finishPrintJob({
+              jobId: job.id,
+              status: 'SUCCESS'
+            });
+
+            job.sourceFileId = processedFile.id;
+            summary.filesProcessed += 1;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'UNKNOWN_PIPELINE_ERROR';
+            await this.store.addPrintJobPage({
+              printJobId: job.id,
+              pageNumber: 0,
+              routeType: 'A4',
+              printerId: null,
+              status: 'FAILURE',
+              errorMessage: message
+            });
+            await this.store.finishPrintJob({
+              jobId: job.id,
+              status: 'FAILURE',
+              errorMessage: message
+            });
+            summary.failures += 1;
+          }
         }
+      } catch {
+        summary.failures += 1;
       }
     }
 
