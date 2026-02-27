@@ -90,7 +90,7 @@ Deliver a production-shaped, docker-compose-based E2E web application for PDF in
 - [x] Worker pipeline baseline (mock-safe): run-once scan loop + masks + dedup + OCR abstraction + routing + dispatch + runner status endpoint + tests
 - [ ] Worker polls SMB paths using configured service credentials
 - [ ] Filename mask filtering
-- [ ] Dedup check and processed-file persistence
+- [x] Dedup check and processed-file persistence (DB-backed `processed_files` + `print_jobs` + `print_job_pages` in worker runner path + compose smoke proof)
 - [ ] OCR/vision provider abstraction (vendor-neutral adapter)
 - [ ] Routing engine: labels → thermal, remainder → A4 (configurable)
 - [ ] Print dispatch adapters (A4/thermal network targets)

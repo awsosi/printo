@@ -1,11 +1,14 @@
 import 'dotenv/config';
 import { readFile, readdir } from 'node:fs/promises';
-import path from 'node:path';
+import path, { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { pool } from './pool.js';
 
 async function run() {
-  const migrationsDir = path.resolve(process.cwd(), 'infra/migrations');
-  const files = (await readdir(migrationsDir)).filter((f) => f.endsWith('.sql')).sort();
+  const currentDir = dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(currentDir, '../../../../');
+  const migrationsDir = path.resolve(repoRoot, 'infra/migrations');
+  const files = (await readdir(migrationsDir)).filter((file) => file.endsWith('.sql')).sort();
 
   const client = await pool.connect();
   try {

@@ -1,24 +1,59 @@
 import express from 'express';
+import { pool } from './db/pool.js';
+import { LoggingPrinterDispatcher } from './dispatch/logging-printer-dispatcher.js';
 import {
   InMemoryWorkerStore,
   MockOcrProvider,
-  RecordingPrinterDispatcher,
   StaticSmbScanner,
   WorkerPipeline,
-  type PipelineRunSummary
+  type PipelineRunSummary,
+  type WorkerConfigStore,
+  type SmbScanner,
+  type PrinterDispatcher,
+  type OcrProvider
 } from './pipeline.js';
 import { WorkerRunner } from './runner.js';
+import { FilesystemSmbScanner } from './scanner/filesystem-smb-scanner.js';
+import { PostgresWorkerStore } from './store/postgres-worker-store.js';
 
 export interface WorkerAppOptions {
   pipeline?: WorkerPipeline;
   runner?: WorkerRunner;
 }
 
+function createDefaultStore(): WorkerConfigStore {
+  const storeMode = process.env.WORKER_STORE ?? 'memory';
+
+  if (storeMode === 'postgres') {
+    return new PostgresWorkerStore(pool);
+  }
+
+  return new InMemoryWorkerStore();
+}
+
+function createDefaultScanner(): SmbScanner {
+  const scannerMode = process.env.WORKER_SCANNER ?? 'filesystem';
+
+  if (scannerMode === 'static') {
+    return new StaticSmbScanner({});
+  }
+
+  return new FilesystemSmbScanner();
+}
+
+function createDefaultDispatcher(): PrinterDispatcher {
+  return new LoggingPrinterDispatcher();
+}
+
+function createDefaultOcrProvider(): OcrProvider {
+  return new MockOcrProvider();
+}
+
 function createDefaultPipeline(): WorkerPipeline {
-  const store = new InMemoryWorkerStore();
-  const scanner = new StaticSmbScanner({});
-  const ocrProvider = new MockOcrProvider();
-  const dispatcher = new RecordingPrinterDispatcher();
+  const store = createDefaultStore();
+  const scanner = createDefaultScanner();
+  const ocrProvider = createDefaultOcrProvider();
+  const dispatcher = createDefaultDispatcher();
 
   return new WorkerPipeline(store, scanner, ocrProvider, dispatcher);
 }

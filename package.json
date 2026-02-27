@@ -11,6 +11,7 @@
     "typecheck": "npm run --workspaces --if-present typecheck",
     "test": "npm run --workspaces --if-present test",
     "test:e2e": "playwright test",
+    "smoke:compose": "bash scripts/compose-smoke.sh",
     "dev": "npm run --workspaces --if-present dev",
     "migrate": "npm run -w @printo/api migrate"
   },

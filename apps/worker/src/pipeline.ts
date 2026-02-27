@@ -91,7 +91,7 @@ export interface PrintJobRecord {
   sourceId: string;
   sourceFileId: string | null;
   filePath: string;
-  status: 'SUCCESS' | 'FAILURE';
+  status: 'PENDING' | 'SUCCESS' | 'FAILURE';
   errorMessage: string | null;
 }
 
@@ -134,6 +134,10 @@ export interface WorkerConfigStore {
     jobId: string;
     status: 'SUCCESS' | 'FAILURE';
     errorMessage?: string;
+  }): Promise<void>;
+  linkProcessedFileToJob(input: {
+    jobId: string;
+    sourceFileId: string;
   }): Promise<void>;
 }
 
@@ -350,12 +354,18 @@ export class WorkerPipeline {
               fileMtime: file.modifiedAt
             });
 
+            await this.store.linkProcessedFileToJob({
+              jobId: job.id,
+              sourceFileId: processedFile.id
+            });
+
             await this.store.finishPrintJob({
               jobId: job.id,
               status: 'SUCCESS'
             });
 
             job.sourceFileId = processedFile.id;
+            job.status = 'SUCCESS';
             summary.filesProcessed += 1;
           } catch (error) {
             const message = error instanceof Error ? error.message : 'UNKNOWN_PIPELINE_ERROR';
@@ -372,6 +382,8 @@ export class WorkerPipeline {
               status: 'FAILURE',
               errorMessage: message
             });
+            job.status = 'FAILURE';
+            job.errorMessage = message;
             summary.failures += 1;
           }
         }
@@ -491,11 +503,20 @@ export class InMemoryWorkerStore implements WorkerConfigStore {
       sourceId: input.sourceId,
       sourceFileId: input.sourceFileId,
       filePath: input.filePath,
-      status: 'SUCCESS',
+      status: 'PENDING',
       errorMessage: null
     };
     this.printJobs.push(created);
     return created;
+  }
+
+  async linkProcessedFileToJob(input: { jobId: string; sourceFileId: string }): Promise<void> {
+    const job = this.printJobs.find((record) => record.id === input.jobId);
+    if (!job) {
+      return;
+    }
+
+    job.sourceFileId = input.sourceFileId;
   }
 
   async addPrintJobPage(input: PrintJobPageRecord): Promise<void> {

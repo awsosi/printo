@@ -1,4 +1,5 @@
 import { createWorkerApp } from './app.js';
+import { pool } from './db/pool.js';
 
 const port = Number(process.env.PORT ?? process.env.WORKER_PORT ?? 5000);
 const intervalMs = Number(process.env.WORKER_POLL_INTERVAL_MS ?? 60_000);
@@ -15,12 +16,21 @@ const server = app.listen(port, () => {
   console.log(JSON.stringify({ service: 'worker', event: 'listening', port, autostart, intervalMs }));
 });
 
-function shutdown() {
+async function shutdown() {
   runner.stop();
-  server.close(() => {
-    process.exit(0);
+
+  await new Promise<void>((resolve) => {
+    server.close(() => resolve());
   });
+
+  await pool.end();
+  process.exit(0);
 }
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+process.on('SIGINT', () => {
+  void shutdown();
+});
+
+process.on('SIGTERM', () => {
+  void shutdown();
+});

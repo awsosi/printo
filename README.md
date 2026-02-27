@@ -20,3 +20,22 @@ Docker-compose-based end-to-end web application for PDF handling and printing.
 - Human preferred handle is `@alukaszuk`; timezone is assumed as `CET`.
 - Architecture and implementation details will be iteratively refined in `docs/PLAN.md` and `docs/ARCHITECTURE.md`.
 - Default git branch is assumed to be `main`.
+
+## Local execution
+
+```bash
+npm install
+npm run test
+npm run typecheck
+npm run build
+npm run test:e2e
+```
+
+## Docker compose smoke proof
+
+`npm run smoke:compose` brings up the stack, seeds minimal admin config via API, runs worker once, and verifies DB persistence rows in:
+
+- `processed_files`
+- `print_jobs`
+- `print_job_pages`
+

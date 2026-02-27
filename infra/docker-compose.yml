@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   web:
     image: node:24-alpine
@@ -56,11 +54,19 @@ services:
       - ../.env.example
     environment:
       - PORT=${WORKER_PORT:-5000}
+      - DATABASE_URL=${DATABASE_URL:-postgres://printo:printo@db:5432/printo}
+      - WORKER_STORE=postgres
+      - WORKER_SCANNER=filesystem
+      - WORKER_POLL_INTERVAL_MS=${WORKER_POLL_INTERVAL_MS:-60000}
     ports:
       - "5000:5000"
     depends_on:
-      - api
-      - redis
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5000/health"]
       interval: 10s
