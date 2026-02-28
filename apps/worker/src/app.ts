@@ -1,6 +1,6 @@
 import express from 'express';
 import { pool } from './db/pool.js';
-import { LoggingPrinterDispatcher } from './dispatch/logging-printer-dispatcher.js';
+import { ProviderPrinterDispatcher } from './dispatch/provider-printer-dispatcher.js';
 import {
   InMemoryWorkerStore,
   MockOcrProvider,
@@ -13,7 +13,9 @@ import {
   type OcrProvider
 } from './pipeline.js';
 import { WorkerRunner } from './runner.js';
+import { AutoSmbScanner } from './scanner/auto-smb-scanner.js';
 import { FilesystemSmbScanner } from './scanner/filesystem-smb-scanner.js';
+import { SmbClientScanner } from './scanner/smb-client-scanner.js';
 import { PostgresWorkerStore } from './store/postgres-worker-store.js';
 
 export interface WorkerAppOptions {
@@ -32,17 +34,25 @@ function createDefaultStore(): WorkerConfigStore {
 }
 
 function createDefaultScanner(): SmbScanner {
-  const scannerMode = process.env.WORKER_SCANNER ?? 'filesystem';
+  const scannerMode = process.env.WORKER_SCANNER ?? 'auto';
 
   if (scannerMode === 'static') {
     return new StaticSmbScanner({});
   }
 
-  return new FilesystemSmbScanner();
+  if (scannerMode === 'smb') {
+    return new SmbClientScanner();
+  }
+
+  if (scannerMode === 'filesystem') {
+    return new FilesystemSmbScanner();
+  }
+
+  return new AutoSmbScanner();
 }
 
 function createDefaultDispatcher(): PrinterDispatcher {
-  return new LoggingPrinterDispatcher();
+  return new ProviderPrinterDispatcher();
 }
 
 function createDefaultOcrProvider(): OcrProvider {
