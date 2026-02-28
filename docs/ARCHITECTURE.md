@@ -39,11 +39,11 @@ Host ports are configurable via compose env vars:
 
 ### Processing (`worker`)
 - Continuous interval runner + manual run endpoint
-- Source scan adapter (`filesystem` baseline, SMB-compatible contract)
+- Source scan adapter (`auto` mode with filesystem + `smbclient` UNC path support)
 - Mask filtering + dedup guard
 - OCR provider abstraction (`mock` baseline)
 - Routing decision engine (thermal labels vs A4 fallback)
-- Dispatch adapter (`logging` baseline)
+- Dispatch provider abstraction (`mock`, `socket`, `ipp`) configurable per printer
 - Persistent print job/page records
 
 ### Presentation (`web`)
@@ -98,7 +98,7 @@ No direct `web`/`worker` calls are allowed.
 4. Dedup check prevents re-processing.
 5. OCR adapter normalizes page labels/text.
 6. Routing maps each page to `THERMAL` or `A4`.
-7. Dispatcher submits print actions.
+7. Dispatcher resolves provider per printer (`mock`/`socket`/`ipp`) and submits print actions.
 8. Worker stores processed file + job/page outcomes.
 
 ## 7. OCR/Vision Abstraction
@@ -154,4 +154,4 @@ Compose smoke validation is available via `npm run smoke:compose` and `make smok
 ## 12. External Validation Limits
 
 In this environment, physical network SMB auth and real printer dispatch are not directly testable end-to-end.
-Architecture keeps those concerns behind scanner/dispatcher adapters so production integrations can be attached without changing core pipeline logic.
+Architecture keeps those concerns behind scanner/dispatcher adapters so production integrations can be attached without changing core pipeline logic; compose defaults to deterministic mock dispatch while preserving opt-in real `smbclient`/`socket`/`ipp` paths.

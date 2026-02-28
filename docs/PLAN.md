@@ -36,12 +36,12 @@ Deliver a docker-compose, TypeScript + PostgreSQL E2E application for PDF intake
 
 ### Phase 3 — Intake, OCR/Visual, Routing, Print
 - [x] Worker polling runner + run-once endpoint
-- [x] Filesystem-backed SMB simulation scanner with domain credential fields persisted
+- [x] SMB scanner adapter path: `auto` mode + `smbclient` UNC scanner + filesystem fallback
 - [x] Filename mask filtering
 - [x] Dedup via `processed_files`
 - [x] OCR/visual abstraction with mock provider
 - [x] Routing labels → thermal, fallback → A4
-- [x] Dispatch adapter (logging dispatcher baseline)
+- [x] Printer dispatch provider abstraction hardened (`mock` / `socket` / `ipp`) with per-printer overrides
 - [x] Job/page persistence
 
 ### Phase 4 — Test Matrix + E2E

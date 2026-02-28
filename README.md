@@ -47,6 +47,21 @@ make down
 Host ports are configurable in `.env.example`:
 - `WEB_PORT`, `API_PORT`, `WORKER_PORT`, `DB_PORT`, `REDIS_PORT`
 
+Worker adapter knobs (also in `.env.example`):
+- `WORKER_SCANNER=auto|filesystem|smb|static`
+  - `auto`: local filesystem for non-UNC paths, `smbclient` scanner for UNC paths (`\\server\\share\\...`)
+- `WORKER_DISPATCH_PROVIDER_MODE=mock|auto|socket|ipp`
+  - `mock` is deterministic/default for local + CI
+  - `auto` infers provider per printer from `targetUri` scheme (`socket://`, `ipp://`, `http(s)://`)
+- `WORKER_PRINTER_PROVIDER_OVERRIDES` JSON for per-printer hard overrides (by printer id or name)
+- `WORKER_DISPATCH_TIMEOUT_MS` default timeout for socket/IPP adapters
+- SMB secrets can be referenced as `env:YOUR_VAR` or `WORKER_SECRET_<NORMALIZED_SECRET_REF>`
+
+Example printer URIs:
+- `mock://a4` (mock provider)
+- `socket://10.0.0.45:9100` (raw socket)
+- `ipp://10.0.0.60/ipp/print` (IPP-over-HTTP adapter)
+
 ## Compose smoke validation
 
 ```bash
