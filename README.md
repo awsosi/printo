@@ -33,20 +33,23 @@ make build
 make e2e
 ```
 
-## Run with docker-compose
+## Run with docker compose
+
+Compose file location: `infra/docker-compose.yml`
 
 ```bash
-# easiest (root alias)
-docker compose up -d
+# start
+docker compose -f infra/docker-compose.yml up -d
 
 # web:    http://127.0.0.1:${WEB_PORT:-3000}
 # api:    http://127.0.0.1:${API_PORT:-4000}/health
 # worker: http://127.0.0.1:${WORKER_PORT:-5000}/health
 
-docker compose down -v --remove-orphans
+# stop + cleanup
+docker compose -f infra/docker-compose.yml down -v --remove-orphans
 ```
 
-Equivalent helpers remain available:
+Equivalent shortcuts:
 
 ```bash
 make up
