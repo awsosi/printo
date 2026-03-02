@@ -87,19 +87,23 @@ function renderAdminConfigPage() {
     <style>
       :root {
         color-scheme: light dark;
-        --bg: #f6f7fb;
-        --card: #ffffff;
-        --text: #0e172a;
-        --muted: #475569;
-        --border: #d7deea;
+        --bg: radial-gradient(circle at 20% 20%, #fef3c7 0%, #e0f2fe 45%, #f8fafc 100%);
+        --card: rgba(255, 255, 255, 0.82);
+        --text: #102a43;
+        --muted: #486581;
+        --border: #bcccdc;
+        --accent: #1d4ed8;
+        --accent-strong: #1e3a8a;
       }
 
       :root[data-theme='dark'] {
-        --bg: #0b1220;
-        --card: #111a2c;
+        --bg: radial-gradient(circle at 20% 20%, #3f6212 0%, #0f172a 45%, #020617 100%);
+        --card: rgba(15, 23, 42, 0.88);
         --text: #e2e8f0;
         --muted: #94a3b8;
-        --border: #233048;
+        --border: #334155;
+        --accent: #60a5fa;
+        --accent-strong: #93c5fd;
       }
 
       body {
@@ -107,11 +111,29 @@ function renderAdminConfigPage() {
         padding: 1.5rem;
         background: var(--bg);
         color: var(--text);
-        font-family: Inter, system-ui, -apple-system, sans-serif;
+        font-family: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
       }
 
       h1, h2 {
         margin-top: 0;
+      }
+
+      .hero {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 1rem;
+        margin-bottom: 1rem;
+      }
+
+      .hero h1 {
+        margin-bottom: 0.2rem;
+        letter-spacing: 0.01em;
+      }
+
+      .hero p {
+        margin: 0;
+        color: var(--muted);
       }
 
       .grid {
@@ -123,7 +145,8 @@ function renderAdminConfigPage() {
       section, .panel {
         background: var(--card);
         border: 1px solid var(--border);
-        border-radius: 0.75rem;
+        border-radius: 0.9rem;
+        backdrop-filter: blur(3px);
         padding: 1rem;
       }
 
@@ -141,7 +164,7 @@ function renderAdminConfigPage() {
         border: 1px solid var(--border);
         padding: 0.55rem 0.65rem;
         margin-bottom: 0.55rem;
-        background: transparent;
+        background: rgba(255, 255, 255, 0.3);
         color: inherit;
       }
 
@@ -151,6 +174,20 @@ function renderAdminConfigPage() {
 
       button {
         cursor: pointer;
+        font-weight: 600;
+        background: var(--accent);
+        border-color: transparent;
+        color: #fff;
+      }
+
+      button:hover {
+        background: var(--accent-strong);
+      }
+
+      button.secondary {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: inherit;
       }
 
       .inline-actions {
@@ -184,15 +221,65 @@ function renderAdminConfigPage() {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 0.5rem;
       }
+
+      .auth-grid {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0.5rem;
+      }
+
+      .status-chip {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.25rem 0.55rem;
+        border-radius: 99px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 0.83rem;
+      }
+
+      .danger {
+        color: #ef4444;
+      }
+
+      @media (max-width: 768px) {
+        .hero {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .row {
+          grid-template-columns: 1fr;
+        }
+
+        .auth-grid {
+          grid-template-columns: 1fr;
+        }
+      }
     </style>
   </head>
   <body>
-    <h1 data-i18n="nav.adminConfig">Admin configuration</h1>
+    <header class="hero">
+      <div>
+        <h1 data-i18n="nav.adminConfig">Admin configuration</h1>
+        <p>Login first, then manage routing and printer operations from one dashboard.</p>
+      </div>
+      <div id="authSessionBadge" class="status-chip">Signed out</div>
+    </header>
 
     <div class="panel">
-      <label data-i18n="token.label" for="authToken">Auth token</label>
-      <input id="authToken" type="password" placeholder="paste JWT token" />
-      <div class="muted" data-i18n="token.help">Use ADMIN token for config actions</div>
+      <h2>Admin login</h2>
+      <form id="loginForm">
+        <div class="auth-grid">
+          <input id="loginUsername" name="username" placeholder="username" autocomplete="username" required />
+          <input id="loginPassword" name="password" type="password" placeholder="password" autocomplete="current-password" required />
+        </div>
+        <div class="inline-actions">
+          <button id="loginButton" type="submit">Sign in</button>
+          <button id="logoutButton" type="button" class="secondary">Sign out</button>
+        </div>
+      </form>
+      <div id="authStatus" class="status muted"></div>
     </div>
 
     <div class="panel">
@@ -326,7 +413,12 @@ function renderAdminConfigPage() {
 
     <script>
       (function () {
-        var tokenInput = document.getElementById('authToken');
+        var loginForm = document.getElementById('loginForm');
+        var loginUsername = document.getElementById('loginUsername');
+        var loginPassword = document.getElementById('loginPassword');
+        var logoutButton = document.getElementById('logoutButton');
+        var authStatus = document.getElementById('authStatus');
+        var authSessionBadge = document.getElementById('authSessionBadge');
         var localeSelect = document.getElementById('localeSelect');
         var themeSelect = document.getElementById('themeSelect');
         var prefStatus = document.getElementById('prefStatus');
@@ -335,7 +427,9 @@ function renderAdminConfigPage() {
         var state = {
           locale: 'en-US',
           theme: 'system',
-          messages: {}
+          messages: {},
+          authToken: '',
+          authUser: ''
         };
 
         var systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -356,7 +450,7 @@ function renderAdminConfigPage() {
         });
 
         function tokenHeaders(includeJsonContentType) {
-          var token = tokenInput.value.trim();
+          var token = state.authToken;
           var headers = {};
           if (token) {
             headers['x-auth-token'] = token;
@@ -365,6 +459,30 @@ function renderAdminConfigPage() {
             headers['content-type'] = 'application/json';
           }
           return headers;
+        }
+
+        function updateAuthUi() {
+          var isAuthed = Boolean(state.authToken);
+          if (isAuthed) {
+            authSessionBadge.textContent = 'Signed in as ' + (state.authUser || 'user');
+            authStatus.textContent = '';
+            authStatus.classList.remove('danger');
+          } else {
+            authSessionBadge.textContent = 'Signed out';
+          }
+        }
+
+        function setAuthSession(token, username) {
+          state.authToken = token || '';
+          state.authUser = username || '';
+          if (state.authToken) {
+            localStorage.setItem('printo_auth_token', state.authToken);
+            localStorage.setItem('printo_auth_user', state.authUser);
+          } else {
+            localStorage.removeItem('printo_auth_token');
+            localStorage.removeItem('printo_auth_user');
+          }
+          updateAuthUi();
         }
 
         function parseJsonSafe(inputText) {
@@ -402,10 +520,12 @@ function renderAdminConfigPage() {
             return null;
           }
           var contentType = response.headers.get('content-type') || '';
-          if (contentType.indexOf('application/json') >= 0) {
-            return response.json();
+          var payload = contentType.indexOf('application/json') >= 0 ? await response.json() : await response.text();
+          if (!response.ok) {
+            var errorMessage = typeof payload === 'string' ? payload : payload && payload.error ? payload.error : 'REQUEST_FAILED';
+            throw new Error(errorMessage);
           }
-          return response.text();
+          return payload;
         }
 
         async function loadMessages(locale) {
@@ -463,6 +583,47 @@ function renderAdminConfigPage() {
           } catch {
             prefStatus.textContent = state.messages['settings.status.error'] || 'Unable to save preferences';
           }
+        }
+
+        async function loginWithCredentials(username, password) {
+          authStatus.textContent = '';
+          authStatus.classList.remove('danger');
+          try {
+            var response = await fetch('/auth/login', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ username: username, password: password })
+            });
+
+            var loginPayload = await response.json();
+            if (!response.ok || !loginPayload.accessToken) {
+              throw new Error(loginPayload.error || 'INVALID_LOGIN');
+            }
+
+            setAuthSession(loginPayload.accessToken, loginPayload.user && loginPayload.user.username ? loginPayload.user.username : username);
+            authStatus.textContent = 'Login successful.';
+            await bootstrapData();
+          } catch (error) {
+            authStatus.textContent = 'Login failed: ' + String(error && error.message ? error.message : 'UNKNOWN');
+            authStatus.classList.add('danger');
+          }
+        }
+
+        async function bootstrapData() {
+          if (!state.authToken) {
+            return;
+          }
+
+          await loadPreferences();
+          await Promise.all([
+            refreshSmb(),
+            refreshPrinters(),
+            refreshUserPrinterAssignments(),
+            refreshMasks(),
+            refreshRouting(),
+            refreshOcrGlobal(),
+            refreshOcrOverrides()
+          ]);
         }
 
         function renderList(targetId, items, getDeletePath, getDeleteId) {
@@ -675,29 +836,29 @@ function renderAdminConfigPage() {
           await refreshOcrOverrides();
         });
 
-        tokenInput.addEventListener('change', async function () {
-          await loadPreferences();
-          await Promise.all([
-            refreshSmb(),
-            refreshPrinters(),
-            refreshUserPrinterAssignments(),
-            refreshMasks(),
-            refreshRouting(),
-            refreshOcrGlobal(),
-            refreshOcrOverrides()
-          ]);
+        loginForm.addEventListener('submit', async function (event) {
+          event.preventDefault();
+          await loginWithCredentials(loginUsername.value.trim(), loginPassword.value);
+          loginPassword.value = '';
         });
 
-        loadPreferences().then(function () {
-          return Promise.all([
-            refreshSmb(),
-            refreshPrinters(),
-            refreshUserPrinterAssignments(),
-            refreshMasks(),
-            refreshRouting(),
-            refreshOcrGlobal(),
-            refreshOcrOverrides()
-          ]);
+        logoutButton.addEventListener('click', function () {
+          setAuthSession('', '');
+          authStatus.textContent = 'Signed out.';
+          authStatus.classList.remove('danger');
+        });
+
+        var storedToken = localStorage.getItem('printo_auth_token') || '';
+        var storedUser = localStorage.getItem('printo_auth_user') || '';
+        setAuthSession(storedToken, storedUser);
+
+        loadMessages(navigator.language || 'en-US').then(function () {
+          applyTheme('system');
+          if (!state.authToken) {
+            authStatus.textContent = 'Sign in with an ADMIN account to load config.';
+            return null;
+          }
+          return bootstrapData();
         });
       })();
     </script>
@@ -744,6 +905,28 @@ export function createWebApp(options: CreateWebAppOptions = {}) {
       defaultLocale: getDefaultLocale(),
       messages: resolved.messages
     });
+  });
+
+  app.post('/auth/login', async (req, res) => {
+    try {
+      const response = await fetchImpl(`${apiBaseUrl}/auth/login`, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify(req.body ?? {})
+      });
+
+      const contentType = response.headers.get('content-type') ?? '';
+      if (contentType.includes('application/json')) {
+        return res.status(response.status).json(await response.json());
+      }
+
+      return res.status(response.status).send(await response.text());
+    } catch {
+      return res.status(502).json({ error: 'UPSTREAM_UNAVAILABLE' });
+    }
   });
 
   app.get('/admin/config', (_req, res) => {

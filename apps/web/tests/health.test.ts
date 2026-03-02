@@ -16,6 +16,7 @@ describe('web app', () => {
     const res = await request(app).get('/admin/config');
 
     expect(res.status).toBe(200);
+    expect(res.text).toContain('id="loginForm"');
     expect(res.text).toContain('id="smbCreateForm"');
     expect(res.text).toContain('id="printerCreateForm"');
     expect(res.text).toContain('id="userPrinterAssignmentForm"');
@@ -23,6 +24,27 @@ describe('web app', () => {
     expect(res.text).toContain('id="routingCreateForm"');
     expect(res.text).toContain('id="ocrGlobalForm"');
     expect(res.text).toContain('id="ocrOverrideForm"');
+  });
+
+  it('proxies login requests to API', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ accessToken: 'token-1', user: { id: 'u-1', username: 'admin' } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    );
+    const app = createWebApp({ fetchImpl: fetchMock as typeof fetch, apiBaseUrl: 'http://api.internal' });
+
+    const payload = { username: 'admin', password: 'AdminPass123!' };
+    const res = await request(app).post('/auth/login').send(payload);
+
+    expect(res.status).toBe(200);
+    expect(res.body.accessToken).toBe('token-1');
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('http://api.internal/auth/login');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe(JSON.stringify(payload));
   });
 
   it('returns locale payload with fallback to en-US keys', async () => {

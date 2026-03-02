@@ -9,6 +9,7 @@ services:
       - ../.env.example
     environment:
       - PORT=3000
+      - API_BASE_URL=${API_BASE_URL:-http://api:4000}
     ports:
       - "${WEB_PORT:-3000}:3000"
     depends_on:
