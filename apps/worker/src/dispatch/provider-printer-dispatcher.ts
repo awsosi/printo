@@ -166,6 +166,7 @@ export class IppDispatchProvider implements DispatchProvider {
 
   async dispatch(input: DispatchRequest, resolution: DispatchResolution): Promise<void> {
     const payload = toPayload(input.file.content);
+    const body = new Uint8Array(payload);
     const targetUrl = normalizeDispatchUri(resolution.targetUri);
 
     const response = await this.fetchImpl(targetUrl, {
@@ -176,7 +177,7 @@ export class IppDispatchProvider implements DispatchProvider {
         'x-printo-route-type': input.routeType,
         'x-printo-printer-id': input.printer.id
       },
-      body: payload,
+      body,
       signal: AbortSignal.timeout(resolution.timeoutMs)
     });
 
