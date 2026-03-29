@@ -1,17 +1,24 @@
-import { expect, test } from '@playwright/test';
+import request from 'supertest';
+import { expect, test } from 'vitest';
+import { createApiApp } from '../../apps/api/src/app.js';
+import { InMemoryAuthStore } from '../../apps/api/src/store/in-memory-auth-store.js';
+import { createWorkerApp } from '../../apps/worker/src/app.js';
 
-test('web + api health endpoints are reachable', async ({ request }) => {
-  const webHealthResponse = await request.get('http://127.0.0.1:3000/health');
-  expect(webHealthResponse.ok()).toBeTruthy();
-  await expect(webHealthResponse.json()).resolves.toEqual({
-    service: 'web',
+test('api + worker health endpoints are reachable', async () => {
+  const api = createApiApp(new InMemoryAuthStore());
+  const { app: worker } = createWorkerApp();
+
+  const apiHealth = await request(api).get('/health');
+  expect(apiHealth.status).toBe(200);
+  expect(apiHealth.body).toEqual({
+    service: 'api',
     status: 'ok'
   });
 
-  const apiHealthResponse = await request.get('http://127.0.0.1:4000/health');
-  expect(apiHealthResponse.ok()).toBeTruthy();
-  await expect(apiHealthResponse.json()).resolves.toEqual({
-    service: 'api',
+  const workerHealth = await request(worker).get('/health');
+  expect(workerHealth.status).toBe(200);
+  expect(workerHealth.body).toEqual({
+    service: 'worker',
     status: 'ok'
   });
 });

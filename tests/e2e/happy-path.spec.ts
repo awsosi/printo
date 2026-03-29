@@ -1,9 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { once } from 'node:events';
-import type { AddressInfo } from 'node:net';
-import type { Server } from 'node:http';
-import { expect, test } from '@playwright/test';
-import type { Express } from 'express';
+import request from 'supertest';
+import { expect, test } from 'vitest';
 import { createApiApp } from '../../apps/api/src/app.js';
 import { InMemoryAuthStore } from '../../apps/api/src/store/in-memory-auth-store.js';
 import type {
@@ -103,18 +100,94 @@ class SharedConfigWorkerStore implements WorkerConfigStore {
     sourceId: string;
     sourceFileId: string | null;
     filePath: string;
+    checksumSha256: string;
+    fileMtime: Date | null;
   }): Promise<PrintJobRecord> {
     const created: PrintJobRecord = {
       id: randomUUID(),
       sourceId: input.sourceId,
       sourceFileId: input.sourceFileId,
       filePath: input.filePath,
+      checksumSha256: input.checksumSha256,
+      fileMtime: input.fileMtime,
+      isCancelled: false,
       status: 'PENDING',
       errorMessage: null
     };
 
     this.printJobs.push(created);
     return created;
+  }
+
+  async listPrintJobs(limit = 100): Promise<PrintJobRecord[]> {
+    return this.printJobs.slice(-limit).reverse().map((job) => ({ ...job }));
+  }
+
+  async listPrintJobPages(jobId: string): Promise<PrintJobPageRecord[]> {
+    return this.printJobPages.filter((page) => page.printJobId === jobId).map((page) => ({ ...page }));
+  }
+
+  async cancelPrintJob(jobId: string): Promise<PrintJobRecord | null> {
+    const job = this.printJobs.find((record) => record.id === jobId);
+    if (!job) {
+      return null;
+    }
+    job.isCancelled = true;
+    job.status = 'CANCELLED';
+    return { ...job };
+  }
+
+  async retryPrintJob(jobId: string): Promise<PrintJobRecord | null> {
+    const job = this.printJobs.find((record) => record.id === jobId);
+    if (!job) {
+      return null;
+    }
+    job.isCancelled = false;
+    if (job.status === 'CANCELLED') {
+      job.status = 'FAILURE';
+    }
+    return { ...job };
+  }
+
+  async isFileCancelled(input: {
+    sourceId: string;
+    filePath: string;
+    checksumSha256: string;
+    fileMtime: Date | null;
+  }): Promise<boolean> {
+    return this.printJobs.some(
+      (job) =>
+        job.isCancelled &&
+        job.sourceId === input.sourceId &&
+        job.filePath === input.filePath &&
+        job.checksumSha256 === input.checksumSha256 &&
+        ((job.fileMtime === null && input.fileMtime === null) ||
+          (job.fileMtime !== null && input.fileMtime !== null && job.fileMtime.getTime() === input.fileMtime.getTime()))
+    );
+  }
+
+  async listSuccessfulPageDispatches(input: {
+    sourceId: string;
+    filePath: string;
+    checksumSha256: string;
+    fileMtime: Date | null;
+  }) {
+    const jobIds = new Set(
+      this.printJobs
+        .filter(
+          (job) =>
+            job.sourceId === input.sourceId &&
+            job.filePath === input.filePath &&
+            job.checksumSha256 === input.checksumSha256 &&
+            ((job.fileMtime === null && input.fileMtime === null) ||
+              (job.fileMtime !== null && input.fileMtime !== null && job.fileMtime.getTime() === input.fileMtime.getTime()))
+        )
+        .map((job) => job.id)
+    );
+
+    return this.printJobPages
+      .filter((page) => jobIds.has(page.printJobId) && page.status === 'SUCCESS')
+      .map((page) => ({ pageNumber: page.pageNumber, routeType: page.routeType }));
   }
 
   async addPrintJobPage(input: PrintJobPageRecord): Promise<void> {
@@ -141,18 +214,7 @@ class SharedConfigWorkerStore implements WorkerConfigStore {
   }
 }
 
-async function listen(app: Express): Promise<{ server: Server; baseUrl: string }> {
-  const server = app.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const address = server.address() as AddressInfo;
-
-  return {
-    server,
-    baseUrl: `http://127.0.0.1:${address.port}`
-  };
-}
-
-test('admin config to worker routing happy path', async ({ request }) => {
+test('admin config to worker routing happy path', async () => {
   const apiStore = new InMemoryAuthStore();
   const workerStore = new SharedConfigWorkerStore(apiStore);
   const dispatcher = new RecordingPrinterDispatcher();
@@ -170,119 +232,81 @@ test('admin config to worker routing happy path', async ({ request }) => {
 
   const pipeline = new WorkerPipeline(workerStore, scanner, new MockOcrProvider(), dispatcher);
   const { app: workerApp } = createWorkerApp({ pipeline });
+  const api = createApiApp(apiStore);
 
-  const api = await listen(createApiApp(apiStore));
-  const worker = await listen(workerApp);
+  const adminUsername = `admin_e2e_${Date.now()}`;
+  const adminPassword = 'AdminPass123!';
 
-  try {
-    const adminUsername = `admin_e2e_${Date.now()}`;
-    const adminPassword = 'AdminPass123!';
+  const register = await request(api).post('/auth/register').send({
+    username: adminUsername,
+    password: adminPassword,
+    roles: ['ADMIN']
+  });
+  expect(register.status).toBe(201);
 
-    const register = await request.post(`${api.baseUrl}/auth/register`, {
-      data: {
-        username: adminUsername,
-        password: adminPassword,
-        roles: ['ADMIN']
-      }
-    });
-    expect(register.status()).toBe(201);
+  const login = await request(api).post('/auth/login').send({
+    username: adminUsername,
+    password: adminPassword
+  });
+  expect(login.status).toBe(200);
 
-    const login = await request.post(`${api.baseUrl}/auth/login`, {
-      data: {
-        username: adminUsername,
-        password: adminPassword
-      }
-    });
-    expect(login.status()).toBe(200);
+  const adminToken = login.body.accessToken as string;
+  const authHeader = { Authorization: `Bearer ${adminToken}` };
 
-    const loginBody = await login.json();
-    const adminToken = loginBody.accessToken as string;
+  const createA4 = await request(api).post('/admin/config/printers').set(authHeader).send({
+    name: 'A4-Office',
+    type: 'A4',
+    targetUri: 'ipp://a4.local/queue'
+  });
+  expect(createA4.status).toBe(201);
+  const a4 = createA4.body;
 
-    const adminHeaders = {
-      authorization: `Bearer ${adminToken}`
-    };
+  const createThermal = await request(api).post('/admin/config/printers').set(authHeader).send({
+    name: 'GK420d',
+    type: 'THERMAL',
+    targetUri: 'socket://thermal.local:9100'
+  });
+  expect(createThermal.status).toBe(201);
 
-    const createA4 = await request.post(`${api.baseUrl}/admin/config/printers`, {
-      headers: adminHeaders,
-      data: {
-        name: 'A4-Office',
-        type: 'A4',
-        targetUri: 'ipp://a4.local/queue'
-      }
-    });
-    expect(createA4.status()).toBe(201);
-    const a4 = await createA4.json();
+  const createSource = await request(api).post('/admin/config/smb-sources').set(authHeader).send({
+    path: '/virtual/smb/inbox',
+    domainUsername: 'EXAMPLE\\serviceuser',
+    secretRef: 'secret://smb/serviceuser'
+  });
+  expect(createSource.status).toBe(201);
 
-    const createThermal = await request.post(`${api.baseUrl}/admin/config/printers`, {
-      headers: adminHeaders,
-      data: {
-        name: 'GK420d',
-        type: 'THERMAL',
-        targetUri: 'socket://thermal.local:9100'
-      }
-    });
-    expect(createThermal.status()).toBe(201);
+  const createMask = await request(api).post('/admin/config/filename-masks').set(authHeader).send({
+    pattern: 'invoice',
+    isRegex: false
+  });
+  expect(createMask.status).toBe(201);
 
-    const createSource = await request.post(`${api.baseUrl}/admin/config/smb-sources`, {
-      headers: adminHeaders,
-      data: {
-        path: '/virtual/smb/inbox',
-        domainUsername: 'EXAMPLE\\serviceuser',
-        secretRef: 'secret://smb/serviceuser'
-      }
-    });
-    expect(createSource.status()).toBe(201);
+  const createRouting = await request(api).post('/admin/config/routing-profiles').set(authHeader).send({
+    name: 'default',
+    thermalLabelPatterns: ['label'],
+    fallbackPrinterId: a4.id
+  });
+  expect(createRouting.status).toBe(201);
 
-    const createMask = await request.post(`${api.baseUrl}/admin/config/filename-masks`, {
-      headers: adminHeaders,
-      data: {
-        pattern: 'invoice',
-        isRegex: false
-      }
-    });
-    expect(createMask.status()).toBe(201);
+  const setOcr = await request(api).put('/admin/config/ocr/global').set(authHeader).send({
+    provider: 'mock',
+    config: {
+      thermalKeyword: 'label'
+    }
+  });
+  expect(setOcr.status).toBe(200);
 
-    const createRouting = await request.post(`${api.baseUrl}/admin/config/routing-profiles`, {
-      headers: adminHeaders,
-      data: {
-        name: 'default',
-        thermalLabelPatterns: ['label'],
-        fallbackPrinterId: a4.id
-      }
-    });
-    expect(createRouting.status()).toBe(201);
+  const runWorker = await request(workerApp).post('/pipeline/run-once');
+  expect(runWorker.status).toBe(200);
+  expect(runWorker.body.summary.filesProcessed).toBe(1);
+  expect(runWorker.body.summary.pageDispatches).toBe(2);
+  expect(runWorker.body.summary.filesSkippedDedup).toBe(0);
 
-    const setOcr = await request.put(`${api.baseUrl}/admin/config/ocr/global`, {
-      headers: adminHeaders,
-      data: {
-        provider: 'mock',
-        config: {
-          thermalKeyword: 'label'
-        }
-      }
-    });
-    expect(setOcr.status()).toBe(200);
+  const routes = dispatcher.calls.map((call) => call.routeType);
+  expect(routes).toEqual(['THERMAL', 'A4']);
 
-    const runWorker = await request.post(`${worker.baseUrl}/pipeline/run-once`);
-    expect(runWorker.status()).toBe(200);
-
-    const runBody = await runWorker.json();
-    expect(runBody.summary.filesProcessed).toBe(1);
-    expect(runBody.summary.pageDispatches).toBe(2);
-    expect(runBody.summary.filesSkippedDedup).toBe(0);
-
-    const routes = dispatcher.calls.map((call) => call.routeType);
-    expect(routes).toEqual(['THERMAL', 'A4']);
-
-    const runWorkerAgain = await request.post(`${worker.baseUrl}/pipeline/run-once`);
-    expect(runWorkerAgain.status()).toBe(200);
-    const secondBody = await runWorkerAgain.json();
-    expect(secondBody.summary.filesProcessed).toBe(0);
-    expect(secondBody.summary.filesSkippedDedup).toBe(1);
-  } finally {
-    await Promise.all([
-      new Promise<void>((resolve) => api.server.close(() => resolve())),
-      new Promise<void>((resolve) => worker.server.close(() => resolve()))
-    ]);
-  }
+  const runWorkerAgain = await request(workerApp).post('/pipeline/run-once');
+  expect(runWorkerAgain.status).toBe(200);
+  expect(runWorkerAgain.body.summary.filesProcessed).toBe(0);
+  expect(runWorkerAgain.body.summary.filesSkippedDedup).toBe(1);
 });

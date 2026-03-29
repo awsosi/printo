@@ -10,6 +10,8 @@ function buildRequest(targetUri: string): DispatchRequest {
       name: 'A4-main',
       type: 'A4',
       targetUri,
+      domainUsername: '',
+      secretRef: '',
       isActive: true
     },
     file: {

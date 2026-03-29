@@ -18,7 +18,8 @@ services:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
       interval: 10s
       timeout: 3s
-      retries: 5
+      retries: 12
+      start_period: 120s
 
   api:
     image: node:24-alpine
@@ -43,7 +44,8 @@ services:
       test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"]
       interval: 10s
       timeout: 3s
-      retries: 5
+      retries: 12
+      start_period: 120s
 
   worker:
     image: node:24-alpine
@@ -66,14 +68,15 @@ services:
       db:
         condition: service_healthy
       api:
-        condition: service_healthy
+        condition: service_started
       redis:
         condition: service_started
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5000/health"]
       interval: 10s
       timeout: 3s
-      retries: 5
+      retries: 12
+      start_period: 120s
 
   db:
     image: postgres:16-alpine

@@ -1,6 +1,7 @@
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createWorkerApp } from '../src/app.js';
+import { SmtpNotificationService } from '../src/smtp.js';
 
 describe('worker app', () => {
   it('returns health', async () => {
@@ -27,5 +28,33 @@ describe('worker app', () => {
     expect(after.body.runner.runCount).toBe(1);
     expect(after.body.runner.lastSummary.filesProcessed).toBe(0);
     expect(after.body.runner.lastError).toBeNull();
+  });
+
+  it('lists notification attempts and allows test send', async () => {
+    const notifications = new SmtpNotificationService(
+      async () => ({
+        smtpEnabled: true,
+        smtpHost: 'smtp.example.test',
+        smtpPort: 25,
+        smtpSecure: false,
+        smtpUsername: '',
+        smtpSecretRef: '',
+        smtpFrom: 'printo@example.test',
+        smtpTo: ['admin@example.test']
+      }),
+      {
+        sendMail: vi.fn(async () => undefined)
+      }
+    );
+    const { app } = createWorkerApp({ notifications });
+
+    const send = await request(app).post('/pipeline/notifications/test').send({ actor: 'admin' });
+    expect(send.status).toBe(200);
+    expect(send.body.status).toBe('SUCCESS');
+
+    const list = await request(app).get('/pipeline/notifications?limit=10');
+    expect(list.status).toBe(200);
+    expect(list.body).toHaveLength(1);
+    expect(list.body[0].category).toBe('TEST');
   });
 });

@@ -18,6 +18,7 @@ export interface UserRecord {
 export interface SmbSourceRecord {
   id: string;
   ownerUserId: string | null;
+  ownerGroupId: string | null;
   path: string;
   domainUsername: string;
   secretRef: string;
@@ -29,6 +30,8 @@ export interface PrinterRecord {
   name: string;
   type: PrinterType;
   targetUri: string;
+  domainUsername: string;
+  secretRef: string;
   isActive: boolean;
 }
 
@@ -41,6 +44,7 @@ export interface UserPrinterAssignmentRecord {
 export interface FilenameMaskRecord {
   id: string;
   ownerUserId: string | null;
+  ownerGroupId: string | null;
   pattern: string;
   isRegex: boolean;
   isActive: boolean;
@@ -49,8 +53,58 @@ export interface FilenameMaskRecord {
 export interface RoutingProfileRecord {
   id: string;
   name: string;
+  ownerUserId: string | null;
+  ownerGroupId: string | null;
+  defaultRouteType: PrinterType;
   thermalLabelPatterns: string[];
   fallbackPrinterId: string | null;
+  samplePdfName: string | null;
+  samplePdfBase64: string | null;
+  visualRules: RoutingVisualRuleRecord[];
+}
+
+export interface RoutingVisualRectRecord {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface RoutingVisualRuleRecord {
+  id: string;
+  samplePageNumber: number;
+  routeType: PrinterType;
+  matchMode: VisualMatchMode;
+  expectedText: string;
+  expectedWords: string[];
+  rect: RoutingVisualRectRecord;
+}
+
+export interface GroupRecord {
+  id: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+}
+
+export interface GroupMembershipRecord {
+  groupId: string;
+  userId: string;
+}
+
+export type VisualMatchMode = 'CONTAINS' | 'EXACT';
+
+export interface VisualProfileRecord {
+  id: string;
+  name: string;
+  ownerUserId: string | null;
+  ownerGroupId: string | null;
+  snippetBase64: string;
+  matchMode: VisualMatchMode;
+  routeType: PrinterType | null;
+  printerId: string | null;
+  labels: string[];
+  isActive: boolean;
 }
 
 export interface OcrGlobalConfigRecord {
@@ -62,6 +116,63 @@ export interface OcrUserOverrideRecord {
   userId: string;
   provider: string | null;
   config: JsonObject;
+}
+
+export interface AdSyncConfigRecord {
+  enabled: boolean;
+  serverUrl: string;
+  domain: string;
+  baseDn: string;
+  bindUsername: string;
+  bindSecretRef: string;
+}
+
+export interface SystemSettingsRecord {
+  globalSmbDomainUsername: string;
+  globalSmbSecretRef: string;
+  globalPrinterDomainUsername: string;
+  globalPrinterSecretRef: string;
+  workerPollIntervalMs: number;
+  smtpEnabled: boolean;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpUsername: string;
+  smtpSecretRef: string;
+  smtpFrom: string;
+  smtpTo: string[];
+}
+
+export interface AdDiscoveredUser {
+  id: string;
+  username: string;
+  displayName: string;
+}
+
+export interface AdDiscoveredGroup {
+  id: string;
+  name: string;
+  memberUsernames: string[];
+}
+
+export interface AdDiscoveredSmbShare {
+  id: string;
+  path: string;
+  domainUsername?: string;
+}
+
+export interface AdDiscoveredPrinter {
+  id: string;
+  name: string;
+  targetUri?: string;
+  type?: PrinterType;
+}
+
+export interface AdDiscoverySnapshot {
+  users: AdDiscoveredUser[];
+  groups: AdDiscoveredGroup[];
+  smbShares: AdDiscoveredSmbShare[];
+  printers: AdDiscoveredPrinter[];
 }
 
 export interface RefreshTokenRecord {
@@ -79,4 +190,10 @@ export interface AuditEvent {
   targetType?: string;
   targetId?: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface AuditLogRecord extends AuditEvent {
+  id: string;
+  actorUsername: string | null;
+  createdAt: Date;
 }

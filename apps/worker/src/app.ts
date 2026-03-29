@@ -16,11 +16,14 @@ import { WorkerRunner } from './runner.js';
 import { AutoSmbScanner } from './scanner/auto-smb-scanner.js';
 import { FilesystemSmbScanner } from './scanner/filesystem-smb-scanner.js';
 import { SmbClientScanner } from './scanner/smb-client-scanner.js';
+import { SmtpNotificationService, type NotificationAttemptRecord } from './smtp.js';
 import { PostgresWorkerStore } from './store/postgres-worker-store.js';
 
 export interface WorkerAppOptions {
   pipeline?: WorkerPipeline;
   runner?: WorkerRunner;
+  store?: WorkerConfigStore;
+  notifications?: SmtpNotificationService;
 }
 
 function createDefaultStore(): WorkerConfigStore {
@@ -59,19 +62,73 @@ function createDefaultOcrProvider(): OcrProvider {
   return new MockOcrProvider();
 }
 
-function createDefaultPipeline(): WorkerPipeline {
-  const store = createDefaultStore();
+class WorkerPipelineNotifier {
+  constructor(private readonly notifications: SmtpNotificationService) {}
+
+  async notify(input: {
+    kind: 'SOURCE_FAILURE' | 'JOB_FAILURE';
+    source: {
+      id: string;
+      path: string;
+    };
+    job?: {
+      id: string;
+      filePath: string;
+      status: string;
+    };
+    errorMessage: string;
+  }): Promise<void> {
+    const subject =
+      input.kind === 'SOURCE_FAILURE'
+        ? `[printo] Source scan failure for ${input.source.path}`
+        : `[printo] Print job failure for ${input.job?.filePath ?? input.source.path}`;
+    const dedupeKey =
+      input.kind === 'SOURCE_FAILURE'
+        ? `source:${input.source.id}:${input.errorMessage}`
+        : `job:${input.job?.id ?? 'unknown'}:${input.errorMessage}`;
+    const textLines = [
+      `Event: ${input.kind}`,
+      `Source ID: ${input.source.id}`,
+      `Source path: ${input.source.path}`,
+      input.job?.id ? `Job ID: ${input.job.id}` : '',
+      input.job?.filePath ? `Job file: ${input.job.filePath}` : '',
+      `Error: ${input.errorMessage}`,
+      '',
+      `Time: ${new Date().toISOString()}`
+    ].filter(Boolean);
+
+    await this.notifications.send({
+      category: 'PIPELINE_FAILURE',
+      dedupeKey,
+      subject,
+      text: textLines.join('\n')
+    });
+  }
+}
+
+function createDefaultNotificationService(store: WorkerConfigStore): SmtpNotificationService {
+  return new SmtpNotificationService(async () => {
+    const settings = await store.getSystemSettings();
+    return settings;
+  });
+}
+
+function createDefaultPipeline(store: WorkerConfigStore, notifications: SmtpNotificationService): WorkerPipeline {
   const scanner = createDefaultScanner();
   const ocrProvider = createDefaultOcrProvider();
   const dispatcher = createDefaultDispatcher();
 
-  return new WorkerPipeline(store, scanner, ocrProvider, dispatcher);
+  return new WorkerPipeline(store, scanner, ocrProvider, dispatcher, new WorkerPipelineNotifier(notifications));
 }
 
 export function createWorkerApp(options: WorkerAppOptions = {}) {
   const app = express();
-  const pipeline = options.pipeline ?? createDefaultPipeline();
+  const store = options.store ?? createDefaultStore();
+  const notifications = options.notifications ?? createDefaultNotificationService(store);
+  const pipeline = options.pipeline ?? createDefaultPipeline(store, notifications);
   const runner = options.runner ?? new WorkerRunner(pipeline);
+
+  app.use(express.json());
 
   app.get('/health', (_req, res) => {
     res.json({ service: 'worker', status: 'ok' });
@@ -91,5 +148,67 @@ export function createWorkerApp(options: WorkerAppOptions = {}) {
     }
   });
 
-  return { app, runner };
+  app.get('/pipeline/notifications', async (req, res) => {
+    const parsedLimit = Number(req.query.limit ?? 100);
+    const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(200, Math.trunc(parsedLimit))) : 100;
+    const attempts: NotificationAttemptRecord[] = notifications.listAttempts(limit);
+    return res.json(attempts);
+  });
+
+  app.post('/pipeline/notifications/test', async (req, res) => {
+    const actor = typeof req.body?.actor === 'string' ? req.body.actor.trim() : '';
+    const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
+    const result = await notifications.send({
+      category: 'TEST',
+      subject: '[printo] SMTP test notification',
+      text: [
+        'This is a test notification from Printo.',
+        actor ? `Actor: ${actor}` : '',
+        note ? `Note: ${note}` : '',
+        `Time: ${new Date().toISOString()}`
+      ]
+        .filter(Boolean)
+        .join('\n')
+    });
+
+    const statusCode = result.status === 'SUCCESS' ? 200 : result.status === 'SKIPPED' ? 409 : 500;
+    return res.status(statusCode).json(result);
+  });
+
+  app.get('/pipeline/jobs', async (req, res) => {
+    const parsedLimit = Number(req.query.limit ?? 100);
+    const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(500, Math.trunc(parsedLimit))) : 100;
+    const jobs = await store.listPrintJobs(limit);
+    return res.json(jobs);
+  });
+
+  app.get('/pipeline/jobs/:jobId/pages', async (req, res) => {
+    const pages = await store.listPrintJobPages(req.params.jobId);
+    return res.json(pages);
+  });
+
+  app.post('/pipeline/jobs/:jobId/cancel', async (req, res) => {
+    const job = await store.cancelPrintJob(req.params.jobId);
+    if (!job) {
+      return res.status(404).json({ error: 'PRINT_JOB_NOT_FOUND' });
+    }
+    return res.json(job);
+  });
+
+  app.post('/pipeline/jobs/:jobId/retry', async (req, res) => {
+    const job = await store.retryPrintJob(req.params.jobId);
+    if (!job) {
+      return res.status(404).json({ error: 'PRINT_JOB_NOT_FOUND' });
+    }
+
+    try {
+      const summary = await runner.runOnce();
+      return res.json({ job, summary, runner: runner.getState() });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'WORKER_PIPELINE_ERROR';
+      return res.status(500).json({ job, error: message, runner: runner.getState() });
+    }
+  });
+
+  return { app, runner, store, notifications };
 }

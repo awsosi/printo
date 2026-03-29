@@ -2,7 +2,7 @@
 
 Owner: `@draven`
 Status: `ACTIVE`
-Last updated: `2026-02-27`
+Last updated: `2026-03-02`
 
 Defines service boundaries, data flow, and docker-compose topology for `printo`.
 
@@ -147,7 +147,7 @@ GitHub Actions pipeline:
 3. lint
 4. typecheck
 5. build
-6. Playwright E2E
+6. E2E smoke (`npm run test:e2e` -> compose smoke flow)
 
 Compose smoke validation is available via `npm run smoke:compose` and `make smoke`.
 

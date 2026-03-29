@@ -1,8 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { Role } from '@printo/shared';
 import type {
+  AdSyncConfigRecord,
   AuditEvent,
+  AuditLogRecord,
   FilenameMaskRecord,
+  GroupMembershipRecord,
+  GroupRecord,
   JsonObject,
   OcrGlobalConfigRecord,
   OcrUserOverrideRecord,
@@ -11,8 +15,11 @@ import type {
   RefreshTokenRecord,
   RoutingProfileRecord,
   SmbSourceRecord,
+  SystemSettingsRecord,
   UserPrinterAssignmentRecord,
-  UserRecord
+  UserRecord,
+  VisualMatchMode,
+  VisualProfileRecord
 } from '../types.js';
 import type { AuthStore } from './auth-store.js';
 
@@ -20,15 +27,41 @@ export class InMemoryAuthStore implements AuthStore {
   private users: UserRecord[] = [];
   private refreshTokens: RefreshTokenRecord[] = [];
 
+  private groups: GroupRecord[] = [];
+  private groupMemberships: GroupMembershipRecord[] = [];
   private smbSources: SmbSourceRecord[] = [];
   private printers: PrinterRecord[] = [];
   private userPrinterAssignments: UserPrinterAssignmentRecord[] = [];
   private filenameMasks: FilenameMaskRecord[] = [];
   private routingProfiles: RoutingProfileRecord[] = [];
+  private visualProfiles: VisualProfileRecord[] = [];
   private ocrGlobal: OcrGlobalConfigRecord = { provider: 'mock', config: {} };
   private ocrOverrides: OcrUserOverrideRecord[] = [];
+  private adSyncConfig: AdSyncConfigRecord = {
+    enabled: false,
+    serverUrl: '',
+    domain: '',
+    baseDn: '',
+    bindUsername: '',
+    bindSecretRef: ''
+  };
+  private systemSettings: SystemSettingsRecord = {
+    globalSmbDomainUsername: '',
+    globalSmbSecretRef: '',
+    globalPrinterDomainUsername: '',
+    globalPrinterSecretRef: '',
+    workerPollIntervalMs: 5000,
+    smtpEnabled: false,
+    smtpHost: '',
+    smtpPort: 25,
+    smtpSecure: false,
+    smtpUsername: '',
+    smtpSecretRef: '',
+    smtpFrom: '',
+    smtpTo: []
+  };
 
-  public auditEvents: AuditEvent[] = [];
+  public auditEvents: AuditLogRecord[] = [];
 
   async getUserByUsername(username: string): Promise<UserRecord | null> {
     return this.users.find((u) => u.username.toLowerCase() === username.toLowerCase()) ?? null;
@@ -68,6 +101,37 @@ export class InMemoryAuthStore implements AuthStore {
     return user;
   }
 
+  async updateUser(input: {
+    userId: string;
+    username?: string;
+    isRemoteEnabled?: boolean;
+    passwordHash?: string;
+    hashAlgorithm?: string;
+  }): Promise<UserRecord | null> {
+    const user = this.users.find((candidate) => candidate.id === input.userId);
+    if (!user) {
+      return null;
+    }
+
+    if (input.username !== undefined) {
+      user.username = input.username;
+    }
+
+    if (input.isRemoteEnabled !== undefined) {
+      user.isRemoteEnabled = input.isRemoteEnabled;
+    }
+
+    if (input.passwordHash !== undefined) {
+      user.passwordHash = input.passwordHash;
+    }
+
+    if (input.hashAlgorithm !== undefined) {
+      user.hashAlgorithm = input.hashAlgorithm;
+    }
+
+    return user;
+  }
+
   async updateUserPreferences(input: { userId: string; locale?: string; theme?: string }): Promise<UserRecord | null> {
     const user = this.users.find((candidate) => candidate.id === input.userId);
     if (!user) {
@@ -100,8 +164,71 @@ export class InMemoryAuthStore implements AuthStore {
     this.users = this.users.filter((user) => user.id !== userId);
     this.refreshTokens = this.refreshTokens.filter((token) => token.userId !== userId);
     this.ocrOverrides = this.ocrOverrides.filter((override) => override.userId !== userId);
+    this.groupMemberships = this.groupMemberships.filter((membership) => membership.userId !== userId);
     this.userPrinterAssignments = this.userPrinterAssignments.filter((assignment) => assignment.userId !== userId);
     return this.users.length !== previousLength;
+  }
+
+  async listGroups(): Promise<GroupRecord[]> {
+    return this.groups.map((group) => ({ ...group }));
+  }
+
+  async createGroup(input: { name: string; description?: string | null; isActive: boolean }): Promise<GroupRecord> {
+    const created: GroupRecord = {
+      id: randomUUID(),
+      name: input.name,
+      description: input.description ?? null,
+      isActive: input.isActive
+    };
+    this.groups.push(created);
+    return { ...created };
+  }
+
+  async updateGroup(input: { id: string; name?: string; description?: string | null; isActive?: boolean }): Promise<GroupRecord | null> {
+    const record = this.groups.find((group) => group.id === input.id);
+    if (!record) {
+      return null;
+    }
+
+    if (input.name !== undefined) record.name = input.name;
+    if (input.description !== undefined) record.description = input.description;
+    if (input.isActive !== undefined) record.isActive = input.isActive;
+    return { ...record };
+  }
+
+  async deleteGroup(id: string): Promise<boolean> {
+    const initialCount = this.groups.length;
+    this.groups = this.groups.filter((group) => group.id !== id);
+    this.groupMemberships = this.groupMemberships.filter((membership) => membership.groupId !== id);
+    return this.groups.length !== initialCount;
+  }
+
+  async listGroupMemberships(): Promise<GroupMembershipRecord[]> {
+    return this.groupMemberships.map((membership) => ({ ...membership }));
+  }
+
+  async addGroupMembership(input: { groupId: string; userId: string }): Promise<GroupMembershipRecord> {
+    const existing = this.groupMemberships.find(
+      (membership) => membership.groupId === input.groupId && membership.userId === input.userId
+    );
+    if (existing) {
+      return { ...existing };
+    }
+
+    const created: GroupMembershipRecord = {
+      groupId: input.groupId,
+      userId: input.userId
+    };
+    this.groupMemberships.push(created);
+    return { ...created };
+  }
+
+  async deleteGroupMembership(input: { groupId: string; userId: string }): Promise<boolean> {
+    const initialCount = this.groupMemberships.length;
+    this.groupMemberships = this.groupMemberships.filter(
+      (membership) => !(membership.groupId === input.groupId && membership.userId === input.userId)
+    );
+    return this.groupMemberships.length !== initialCount;
   }
 
   async listSmbSources(): Promise<SmbSourceRecord[]> {
@@ -110,6 +237,7 @@ export class InMemoryAuthStore implements AuthStore {
 
   async createSmbSource(input: {
     ownerUserId?: string | null;
+    ownerGroupId?: string | null;
     path: string;
     domainUsername: string;
     secretRef: string;
@@ -118,6 +246,7 @@ export class InMemoryAuthStore implements AuthStore {
     const record: SmbSourceRecord = {
       id: randomUUID(),
       ownerUserId: input.ownerUserId ?? null,
+      ownerGroupId: input.ownerGroupId ?? null,
       path: input.path,
       domainUsername: input.domainUsername,
       secretRef: input.secretRef,
@@ -130,6 +259,7 @@ export class InMemoryAuthStore implements AuthStore {
   async updateSmbSource(input: {
     id: string;
     ownerUserId?: string | null;
+    ownerGroupId?: string | null;
     path?: string;
     domainUsername?: string;
     secretRef?: string;
@@ -141,6 +271,7 @@ export class InMemoryAuthStore implements AuthStore {
     }
 
     if (input.ownerUserId !== undefined) record.ownerUserId = input.ownerUserId;
+    if (input.ownerGroupId !== undefined) record.ownerGroupId = input.ownerGroupId;
     if (input.path !== undefined) record.path = input.path;
     if (input.domainUsername !== undefined) record.domainUsername = input.domainUsername;
     if (input.secretRef !== undefined) record.secretRef = input.secretRef;
@@ -159,12 +290,21 @@ export class InMemoryAuthStore implements AuthStore {
     return [...this.printers];
   }
 
-  async createPrinter(input: { name: string; type: PrinterType; targetUri: string; isActive: boolean }): Promise<PrinterRecord> {
+  async createPrinter(input: {
+    name: string;
+    type: PrinterType;
+    targetUri: string;
+    domainUsername?: string;
+    secretRef?: string;
+    isActive: boolean;
+  }): Promise<PrinterRecord> {
     const record: PrinterRecord = {
       id: randomUUID(),
       name: input.name,
       type: input.type,
       targetUri: input.targetUri,
+      domainUsername: input.domainUsername ?? '',
+      secretRef: input.secretRef ?? '',
       isActive: input.isActive
     };
     this.printers.push(record);
@@ -176,6 +316,8 @@ export class InMemoryAuthStore implements AuthStore {
     name?: string;
     type?: PrinterType;
     targetUri?: string;
+    domainUsername?: string;
+    secretRef?: string;
     isActive?: boolean;
   }): Promise<PrinterRecord | null> {
     const record = this.printers.find((candidate) => candidate.id === input.id);
@@ -186,6 +328,8 @@ export class InMemoryAuthStore implements AuthStore {
     if (input.name !== undefined) record.name = input.name;
     if (input.type !== undefined) record.type = input.type;
     if (input.targetUri !== undefined) record.targetUri = input.targetUri;
+    if (input.domainUsername !== undefined) record.domainUsername = input.domainUsername;
+    if (input.secretRef !== undefined) record.secretRef = input.secretRef;
     if (input.isActive !== undefined) record.isActive = input.isActive;
 
     return record;
@@ -252,6 +396,7 @@ export class InMemoryAuthStore implements AuthStore {
 
   async createFilenameMask(input: {
     ownerUserId?: string | null;
+    ownerGroupId?: string | null;
     pattern: string;
     isRegex: boolean;
     isActive: boolean;
@@ -259,6 +404,7 @@ export class InMemoryAuthStore implements AuthStore {
     const record: FilenameMaskRecord = {
       id: randomUUID(),
       ownerUserId: input.ownerUserId ?? null,
+      ownerGroupId: input.ownerGroupId ?? null,
       pattern: input.pattern,
       isRegex: input.isRegex,
       isActive: input.isActive
@@ -271,6 +417,7 @@ export class InMemoryAuthStore implements AuthStore {
   async updateFilenameMask(input: {
     id: string;
     ownerUserId?: string | null;
+    ownerGroupId?: string | null;
     pattern?: string;
     isRegex?: boolean;
     isActive?: boolean;
@@ -281,6 +428,7 @@ export class InMemoryAuthStore implements AuthStore {
     }
 
     if (input.ownerUserId !== undefined) record.ownerUserId = input.ownerUserId;
+    if (input.ownerGroupId !== undefined) record.ownerGroupId = input.ownerGroupId;
     if (input.pattern !== undefined) record.pattern = input.pattern;
     if (input.isRegex !== undefined) record.isRegex = input.isRegex;
     if (input.isActive !== undefined) record.isActive = input.isActive;
@@ -300,14 +448,30 @@ export class InMemoryAuthStore implements AuthStore {
 
   async createRoutingProfile(input: {
     name: string;
+    ownerUserId?: string | null;
+    ownerGroupId?: string | null;
+    defaultRouteType?: PrinterType;
     thermalLabelPatterns: string[];
     fallbackPrinterId?: string | null;
+    samplePdfName?: string | null;
+    samplePdfBase64?: string | null;
+    visualRules?: RoutingProfileRecord['visualRules'];
   }): Promise<RoutingProfileRecord> {
     const record: RoutingProfileRecord = {
       id: randomUUID(),
       name: input.name,
+      ownerUserId: input.ownerUserId ?? null,
+      ownerGroupId: input.ownerGroupId ?? null,
+      defaultRouteType: input.defaultRouteType ?? 'A4',
       thermalLabelPatterns: [...input.thermalLabelPatterns],
-      fallbackPrinterId: input.fallbackPrinterId ?? null
+      fallbackPrinterId: input.fallbackPrinterId ?? null,
+      samplePdfName: input.samplePdfName ?? null,
+      samplePdfBase64: input.samplePdfBase64 ?? null,
+      visualRules: (input.visualRules ?? []).map((rule) => ({
+        ...rule,
+        expectedWords: [...rule.expectedWords],
+        rect: { ...rule.rect }
+      }))
     };
 
     this.routingProfiles.push(record);
@@ -317,8 +481,14 @@ export class InMemoryAuthStore implements AuthStore {
   async updateRoutingProfile(input: {
     id: string;
     name?: string;
+    ownerUserId?: string | null;
+    ownerGroupId?: string | null;
+    defaultRouteType?: PrinterType;
     thermalLabelPatterns?: string[];
     fallbackPrinterId?: string | null;
+    samplePdfName?: string | null;
+    samplePdfBase64?: string | null;
+    visualRules?: RoutingProfileRecord['visualRules'];
   }): Promise<RoutingProfileRecord | null> {
     const record = this.routingProfiles.find((candidate) => candidate.id === input.id);
     if (!record) {
@@ -326,8 +496,20 @@ export class InMemoryAuthStore implements AuthStore {
     }
 
     if (input.name !== undefined) record.name = input.name;
+    if (input.ownerUserId !== undefined) record.ownerUserId = input.ownerUserId;
+    if (input.ownerGroupId !== undefined) record.ownerGroupId = input.ownerGroupId;
+    if (input.defaultRouteType !== undefined) record.defaultRouteType = input.defaultRouteType;
     if (input.thermalLabelPatterns !== undefined) record.thermalLabelPatterns = [...input.thermalLabelPatterns];
     if (input.fallbackPrinterId !== undefined) record.fallbackPrinterId = input.fallbackPrinterId;
+    if (input.samplePdfName !== undefined) record.samplePdfName = input.samplePdfName;
+    if (input.samplePdfBase64 !== undefined) record.samplePdfBase64 = input.samplePdfBase64;
+    if (input.visualRules !== undefined) {
+      record.visualRules = input.visualRules.map((rule) => ({
+        ...rule,
+        expectedWords: [...rule.expectedWords],
+        rect: { ...rule.rect }
+      }));
+    }
 
     return record;
   }
@@ -336,6 +518,72 @@ export class InMemoryAuthStore implements AuthStore {
     const initialCount = this.routingProfiles.length;
     this.routingProfiles = this.routingProfiles.filter((record) => record.id !== id);
     return this.routingProfiles.length !== initialCount;
+  }
+
+  async listVisualProfiles(): Promise<VisualProfileRecord[]> {
+    return this.visualProfiles.map((profile) => ({ ...profile, labels: [...profile.labels] }));
+  }
+
+  async createVisualProfile(input: {
+    name: string;
+    ownerUserId?: string | null;
+    ownerGroupId?: string | null;
+    snippetBase64: string;
+    matchMode: VisualMatchMode;
+    routeType?: PrinterType | null;
+    printerId?: string | null;
+    labels?: string[];
+    isActive: boolean;
+  }): Promise<VisualProfileRecord> {
+    const created: VisualProfileRecord = {
+      id: randomUUID(),
+      name: input.name,
+      ownerUserId: input.ownerUserId ?? null,
+      ownerGroupId: input.ownerGroupId ?? null,
+      snippetBase64: input.snippetBase64,
+      matchMode: input.matchMode,
+      routeType: input.routeType ?? null,
+      printerId: input.printerId ?? null,
+      labels: input.labels ? [...input.labels] : [],
+      isActive: input.isActive
+    };
+    this.visualProfiles.push(created);
+    return { ...created, labels: [...created.labels] };
+  }
+
+  async updateVisualProfile(input: {
+    id: string;
+    name?: string;
+    ownerUserId?: string | null;
+    ownerGroupId?: string | null;
+    snippetBase64?: string;
+    matchMode?: VisualMatchMode;
+    routeType?: PrinterType | null;
+    printerId?: string | null;
+    labels?: string[];
+    isActive?: boolean;
+  }): Promise<VisualProfileRecord | null> {
+    const record = this.visualProfiles.find((profile) => profile.id === input.id);
+    if (!record) {
+      return null;
+    }
+
+    if (input.name !== undefined) record.name = input.name;
+    if (input.ownerUserId !== undefined) record.ownerUserId = input.ownerUserId;
+    if (input.ownerGroupId !== undefined) record.ownerGroupId = input.ownerGroupId;
+    if (input.snippetBase64 !== undefined) record.snippetBase64 = input.snippetBase64;
+    if (input.matchMode !== undefined) record.matchMode = input.matchMode;
+    if (input.routeType !== undefined) record.routeType = input.routeType;
+    if (input.printerId !== undefined) record.printerId = input.printerId;
+    if (input.labels !== undefined) record.labels = [...input.labels];
+    if (input.isActive !== undefined) record.isActive = input.isActive;
+    return { ...record, labels: [...record.labels] };
+  }
+
+  async deleteVisualProfile(id: string): Promise<boolean> {
+    const initialCount = this.visualProfiles.length;
+    this.visualProfiles = this.visualProfiles.filter((profile) => profile.id !== id);
+    return this.visualProfiles.length !== initialCount;
   }
 
   async getOcrGlobalConfig(): Promise<OcrGlobalConfigRecord> {
@@ -403,6 +651,64 @@ export class InMemoryAuthStore implements AuthStore {
     return this.ocrOverrides.length !== initialCount;
   }
 
+  async getAdSyncConfig(): Promise<AdSyncConfigRecord> {
+    return { ...this.adSyncConfig };
+  }
+
+  async updateAdSyncConfig(input: {
+    enabled?: boolean;
+    serverUrl?: string;
+    domain?: string;
+    baseDn?: string;
+    bindUsername?: string;
+    bindSecretRef?: string;
+  }): Promise<AdSyncConfigRecord> {
+    if (input.enabled !== undefined) this.adSyncConfig.enabled = input.enabled;
+    if (input.serverUrl !== undefined) this.adSyncConfig.serverUrl = input.serverUrl;
+    if (input.domain !== undefined) this.adSyncConfig.domain = input.domain;
+    if (input.baseDn !== undefined) this.adSyncConfig.baseDn = input.baseDn;
+    if (input.bindUsername !== undefined) this.adSyncConfig.bindUsername = input.bindUsername;
+    if (input.bindSecretRef !== undefined) this.adSyncConfig.bindSecretRef = input.bindSecretRef;
+    return { ...this.adSyncConfig };
+  }
+
+  async getSystemSettings(): Promise<SystemSettingsRecord> {
+    return { ...this.systemSettings, smtpTo: [...this.systemSettings.smtpTo] };
+  }
+
+  async updateSystemSettings(input: {
+    globalSmbDomainUsername?: string;
+    globalSmbSecretRef?: string;
+    globalPrinterDomainUsername?: string;
+    globalPrinterSecretRef?: string;
+    workerPollIntervalMs?: number;
+    smtpEnabled?: boolean;
+    smtpHost?: string;
+    smtpPort?: number;
+    smtpSecure?: boolean;
+    smtpUsername?: string;
+    smtpSecretRef?: string;
+    smtpFrom?: string;
+    smtpTo?: string[];
+  }): Promise<SystemSettingsRecord> {
+    if (input.globalSmbDomainUsername !== undefined) this.systemSettings.globalSmbDomainUsername = input.globalSmbDomainUsername;
+    if (input.globalSmbSecretRef !== undefined) this.systemSettings.globalSmbSecretRef = input.globalSmbSecretRef;
+    if (input.globalPrinterDomainUsername !== undefined) {
+      this.systemSettings.globalPrinterDomainUsername = input.globalPrinterDomainUsername;
+    }
+    if (input.globalPrinterSecretRef !== undefined) this.systemSettings.globalPrinterSecretRef = input.globalPrinterSecretRef;
+    if (input.workerPollIntervalMs !== undefined) this.systemSettings.workerPollIntervalMs = input.workerPollIntervalMs;
+    if (input.smtpEnabled !== undefined) this.systemSettings.smtpEnabled = input.smtpEnabled;
+    if (input.smtpHost !== undefined) this.systemSettings.smtpHost = input.smtpHost;
+    if (input.smtpPort !== undefined) this.systemSettings.smtpPort = input.smtpPort;
+    if (input.smtpSecure !== undefined) this.systemSettings.smtpSecure = input.smtpSecure;
+    if (input.smtpUsername !== undefined) this.systemSettings.smtpUsername = input.smtpUsername;
+    if (input.smtpSecretRef !== undefined) this.systemSettings.smtpSecretRef = input.smtpSecretRef;
+    if (input.smtpFrom !== undefined) this.systemSettings.smtpFrom = input.smtpFrom;
+    if (input.smtpTo !== undefined) this.systemSettings.smtpTo = [...input.smtpTo];
+    return { ...this.systemSettings, smtpTo: [...this.systemSettings.smtpTo] };
+  }
+
   async saveRefreshToken(input: { userId: string; tokenHash: string; expiresAt: Date }): Promise<RefreshTokenRecord> {
     const token: RefreshTokenRecord = {
       id: randomUUID(),
@@ -427,6 +733,15 @@ export class InMemoryAuthStore implements AuthStore {
   }
 
   async writeAuditEvent(event: AuditEvent): Promise<void> {
-    this.auditEvents.push(event);
+    this.auditEvents.push({
+      ...event,
+      id: String(this.auditEvents.length + 1),
+      actorUsername: event.actorUserId ? (this.users.find((user) => user.id === event.actorUserId)?.username ?? null) : null,
+      createdAt: new Date()
+    });
+  }
+
+  async listAuditEvents(limit = 200): Promise<AuditLogRecord[]> {
+    return this.auditEvents.slice(-limit).reverse().map((event) => ({ ...event }));
   }
 }

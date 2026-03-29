@@ -26,9 +26,9 @@ describe('web app', () => {
     expect(res.text).toContain('id="ocrOverrideForm"');
   });
 
-  it('proxies login requests to API', async () => {
+  it('proxies admin login requests to API', async () => {
     const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ accessToken: 'token-1', user: { id: 'u-1', username: 'admin' } }), {
+      new Response(JSON.stringify({ accessToken: 'token-1', user: { id: 'u-1', username: 'admin', roles: ['ADMIN'] } }), {
         status: 200,
         headers: { 'content-type': 'application/json' }
       })
@@ -47,14 +47,14 @@ describe('web app', () => {
     expect(init.body).toBe(JSON.stringify(payload));
   });
 
-  it('returns locale payload with fallback to en-US keys', async () => {
+  it('returns locale payload with translated pl-PL keys', async () => {
     const app = createWebApp();
     const res = await request(app).get('/i18n/messages?locale=pl-PL');
 
     expect(res.status).toBe(200);
     expect(res.body.locale).toBe('pl-PL');
     expect(res.body.messages['settings.title']).toBe('Ustawienia użytkownika');
-    expect(res.body.messages['ocr.config']).toBe('OCR config JSON');
+    expect(res.body.messages['ocr.config']).toBe('JSON konfiguracji OCR');
   });
 
   it('falls back to en-US locale file when requested locale is missing', async () => {

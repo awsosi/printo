@@ -2,7 +2,7 @@
 
 Owner: `@draven`
 Status: `ACTIVE`
-Last updated: `2026-02-27`
+Last updated: `2026-03-02`
 
 Single source of truth for delivery state of `printo`.
 
@@ -46,12 +46,12 @@ Deliver a docker-compose, TypeScript + PostgreSQL E2E application for PDF intake
 
 ### Phase 4 — Test Matrix + E2E
 - [x] Unit tests for auth/RBAC + worker pipeline + i18n behavior
-- [x] E2E health + remote auth + happy path flow
+- [x] E2E compose smoke happy path (admin config -> worker run -> DB verification)
 - [x] Deterministic OCR/dispatch mocks for tests
 
 ### Phase 5 — DevEx, CI/CD, Delivery Docs
 - [x] `Makefile` tasks for dev/test/build/lint/migrate/compose
-- [x] CI workflow (lint + tests + typecheck + build + Playwright)
+- [x] CI workflow (lint + tests + typecheck + build + E2E smoke)
 - [x] Compose smoke script hardened (isolated project name, custom high ports, retry-safe API calls)
 - [x] README + architecture + subagent docs synchronized
 

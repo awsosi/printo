@@ -11,21 +11,5 @@ export default defineConfig({
   reporter: isCI ? [['github'], ['list']] : [['list']],
   use: {
     trace: 'retain-on-failure'
-  },
-  webServer: [
-    {
-      command: 'npm run -w @printo/api dev',
-      url: 'http://127.0.0.1:4000/health',
-      reuseExistingServer: !isCI,
-      stdout: 'pipe',
-      stderr: 'pipe'
-    },
-    {
-      command: 'npm run -w @printo/web dev',
-      url: 'http://127.0.0.1:3000/health',
-      reuseExistingServer: !isCI,
-      stdout: 'pipe',
-      stderr: 'pipe'
-    }
-  ]
+  }
 });

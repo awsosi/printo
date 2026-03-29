@@ -8,6 +8,7 @@ const originalExtAuthApiKey = process.env.EXTAUTH_API_KEY;
 const originalExtAuthRetryBaseMs = process.env.EXTAUTH_RETRY_BASE_MS;
 const originalExtAuthTimeoutMs = process.env.EXTAUTH_TIMEOUT_MS;
 const originalExtAuthMaxRetries = process.env.EXTAUTH_MAX_RETRIES;
+const originalAdSyncMockData = process.env.AD_SYNC_MOCK_DATA_JSON;
 
 async function bootstrapAppWithAdminAndUser() {
   const app = createApiApp(new InMemoryAuthStore());
@@ -58,6 +59,7 @@ describe('auth + rbac', () => {
     process.env.EXTAUTH_RETRY_BASE_MS = originalExtAuthRetryBaseMs;
     process.env.EXTAUTH_TIMEOUT_MS = originalExtAuthTimeoutMs;
     process.env.EXTAUTH_MAX_RETRIES = originalExtAuthMaxRetries;
+    process.env.AD_SYNC_MOCK_DATA_JSON = originalAdSyncMockData;
   });
 
   async function setupRemoteUser() {
@@ -264,6 +266,19 @@ describe('auth + rbac', () => {
     expect(deleteUser.status).toBe(204);
   });
 
+  it('blocks public ADMIN registration after bootstrap is completed', async () => {
+    const { app } = await bootstrapAppWithAdminAndUser();
+
+    const attempt = await request(app).post('/auth/register').send({
+      username: 'admin2',
+      password: 'AdminPass123!',
+      roles: ['ADMIN']
+    });
+
+    expect(attempt.status).toBe(403);
+    expect(attempt.body.error).toBe('ADMIN_REGISTRATION_FORBIDDEN');
+  });
+
   it('allows user preference updates and blocks admin endpoints for USER role', async () => {
     const app = createApiApp(new InMemoryAuthStore());
 
@@ -321,6 +336,30 @@ describe('auth + rbac', () => {
     expect(deleted.status).toBe(204);
   });
 
+  it('validates SMB username format and supports password override', async () => {
+    const { app, adminToken } = await bootstrapAppWithAdminAndUser();
+
+    const validUpn = await request(app)
+      .post('/admin/config/smb-sources')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ path: '/srv/upn', domainUsername: 'svc-user@corp.local', password: 'SecretPass1!' });
+    expect(validUpn.status).toBe(201);
+    expect(validUpn.body.secretRef).toBe('plain:SecretPass1!');
+
+    const validDomainUser = await request(app)
+      .post('/admin/config/smb-sources')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ path: '/srv/domain', domainUsername: 'CORP\\svc-user', secretRef: 'env:SMB_PASS' });
+    expect(validDomainUser.status).toBe(201);
+
+    const invalid = await request(app)
+      .post('/admin/config/smb-sources')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ path: '/srv/bad', domainUsername: 'bad/user', secretRef: 'env:SMB_PASS' });
+    expect(invalid.status).toBe(400);
+    expect(invalid.body.error).toBe('INVALID_DOMAIN_USERNAME');
+  });
+
   it('supports printer CRUD for ADMIN and blocks USER', async () => {
     const { app, adminToken, userToken } = await bootstrapAppWithAdminAndUser();
 
@@ -349,6 +388,36 @@ describe('auth + rbac', () => {
       .delete(`/admin/config/printers/${created.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`);
     expect(deleted.status).toBe(204);
+  });
+
+  it('supports per-printer credential overrides and validates username format', async () => {
+    const { app, adminToken } = await bootstrapAppWithAdminAndUser();
+
+    const created = await request(app)
+      .post('/admin/config/printers')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Thermal Secure',
+        type: 'THERMAL',
+        targetUri: 'socket://thermal.local:9100',
+        domainUsername: 'print-user@corp.local',
+        password: 'PrinterPass!'
+      });
+    expect(created.status).toBe(201);
+    expect(created.body.domainUsername).toBe('print-user@corp.local');
+    expect(created.body.secretRef).toBe('plain:PrinterPass!');
+
+    const bad = await request(app)
+      .post('/admin/config/printers')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Bad Printer',
+        type: 'A4',
+        targetUri: 'ipp://a4.local/queue',
+        domainUsername: 'bad/user'
+      });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toBe('INVALID_DOMAIN_USERNAME');
   });
 
   it('supports user printer assignment CRUD for ADMIN and exposes self assignment for USER', async () => {
@@ -505,5 +574,70 @@ describe('auth + rbac', () => {
       .delete(`/admin/config/ocr/overrides/${userId}`)
       .set('Authorization', `Bearer ${adminToken}`);
     expect(deleteOverride.status).toBe(204);
+  });
+
+  it('supports AD sync discovery + selective import for ADMIN', async () => {
+    const { app, adminToken } = await bootstrapAppWithAdminAndUser();
+    process.env.AD_SYNC_MOCK_DATA_JSON = JSON.stringify({
+      users: [
+        { id: 'u-1', username: 'ad_user1', displayName: 'AD User One' },
+        { id: 'u-2', username: 'ad_user2', displayName: 'AD User Two' }
+      ],
+      groups: [{ id: 'g-1', name: 'ad_group1', memberUsernames: ['ad_user1', 'ad_user2'] }],
+      smbShares: [{ id: 's-1', path: '\\\\fs01\\invoices', domainUsername: 'CORP\\svc-printo' }],
+      printers: [{ id: 'p-1', name: 'ad-printer-a4', type: 'A4', targetUri: 'ipp://ad-printer-a4.local/queue' }]
+    });
+
+    const saveConfig = await request(app)
+      .put('/admin/config/ad-sync')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        enabled: true,
+        domain: 'CORP.LOCAL',
+        baseDn: 'DC=corp,DC=local',
+        bindUsername: 'CORP\\svc-printo',
+        bindSecretRef: 'env:AD_BIND_PASSWORD'
+      });
+    expect(saveConfig.status).toBe(200);
+    expect(saveConfig.body.enabled).toBe(true);
+
+    const discovered = await request(app)
+      .post('/admin/config/ad-sync/discover')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({});
+    expect(discovered.status).toBe(200);
+    expect(discovered.body.users).toHaveLength(2);
+    expect(discovered.body.groups).toHaveLength(1);
+    expect(discovered.body.smbShares).toHaveLength(1);
+    expect(discovered.body.printers).toHaveLength(1);
+
+    const imported = await request(app)
+      .post('/admin/config/ad-sync/import')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        userIds: ['u-1', 'u-2'],
+        groupIds: ['g-1'],
+        smbShareIds: ['s-1'],
+        printerIds: ['p-1'],
+        defaultSmbDomainUsername: 'CORP\\svc-printo',
+        defaultSmbSecretRef: 'env:AD_BIND_PASSWORD'
+      });
+    expect(imported.status).toBe(200);
+    expect(imported.body.created.users).toBe(2);
+    expect(imported.body.created.groups).toBe(1);
+    expect(imported.body.created.smbSources).toBe(1);
+    expect(imported.body.created.printers).toBe(1);
+
+    const users = await request(app).get('/admin/users').set('Authorization', `Bearer ${adminToken}`);
+    expect(users.body.some((user: { username: string }) => user.username === 'ad_user1')).toBe(true);
+
+    const groups = await request(app).get('/admin/groups').set('Authorization', `Bearer ${adminToken}`);
+    expect(groups.body.some((group: { name: string }) => group.name === 'ad_group1')).toBe(true);
+
+    const smb = await request(app).get('/admin/config/smb-sources').set('Authorization', `Bearer ${adminToken}`);
+    expect(smb.body.some((source: { path: string }) => source.path === '\\\\fs01\\invoices')).toBe(true);
+
+    const printers = await request(app).get('/admin/config/printers').set('Authorization', `Bearer ${adminToken}`);
+    expect(printers.body.some((printer: { name: string }) => printer.name === 'ad-printer-a4')).toBe(true);
   });
 });

@@ -11,10 +11,10 @@ Tracks optional subagents spawned by `@draven` or `@virex`, including scope, own
 
 | ID | Owner | Scope | Skill/Model | Status | Output |
 |---|---|---|---|---|---|
-| `sub-test-matrix` | `@virex` | Build robust unit/integration matrix for API/worker logic (RBAC, dedup, routing, i18n fallback). | `test-specialist`, `test-runner`, `codex53` | planned | test files + coverage notes |
-| `sub-e2e-happy-path` | `@virex` | Implement and stabilize one E2E happy path (admin config -> worker process -> routed print outcome). | `web`, `typescript-pro`, `codex53` | completed | `tests/e2e/happy-path.spec.ts` + fixtures |
-| `sub-cicd` | `@virex` | Create CI workflow for lint/typecheck/tests/build and optional compose smoke run. | `cicd-pipeline`, `devops` | completed | `.github/workflows/ci.yml` + compose smoke script |
-| `sub-ocr-adapter` | `@virex` | Harden OCR/vision provider abstraction + mock provider for deterministic tests. | `nodejs`, `typescript-pro` | planned | adapter interfaces + mock impl |
+| `sub-test-matrix` | `@virex` | Build robust unit/integration matrix for API/worker logic (RBAC, dedup, routing, i18n fallback). | `test-specialist`, `test-runner`, `codex53` | completed | app-level tests across `apps/api`, `apps/web`, `apps/worker` |
+| `sub-e2e-happy-path` | `@virex` | Implement and stabilize one E2E happy path (admin config -> worker process -> routed print outcome). | `web`, `typescript-pro`, `codex53` | completed | `scripts/compose-smoke.sh`, `tests/e2e/happy-path.spec.ts`, fixtures |
+| `sub-cicd` | `@virex` | Create CI workflow for lint/typecheck/tests/build and compose smoke E2E run. | `cicd-pipeline`, `devops` | completed | `.github/workflows/ci.yml` + smoke wiring |
+| `sub-ocr-adapter` | `@virex` | Harden OCR/vision provider abstraction + mock provider for deterministic tests. | `nodejs`, `typescript-pro` | completed | provider interfaces + dispatch + tests |
 
 ## Closed
 

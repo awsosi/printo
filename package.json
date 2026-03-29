@@ -11,7 +11,7 @@
     "typecheck": "npm run --workspaces --if-present typecheck",
     "lint": "eslint \"apps/**/*.ts\" \"packages/**/*.ts\" \"tests/**/*.ts\" \"*.ts\"",
     "test": "npm run --workspaces --if-present test",
-    "test:e2e": "playwright test",
+    "test:e2e": "npm run smoke:compose",
     "smoke:compose": "bash scripts/compose-smoke.sh",
     "dev": "npm run --workspaces --if-present dev",
     "migrate": "npm run -w @printo/api migrate"

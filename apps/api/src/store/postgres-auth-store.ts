@@ -1,8 +1,12 @@
 import type { Role } from '@printo/shared';
 import type { Pool } from 'pg';
 import type {
+  AdSyncConfigRecord,
   AuditEvent,
+  AuditLogRecord,
   FilenameMaskRecord,
+  GroupMembershipRecord,
+  GroupRecord,
   JsonObject,
   OcrGlobalConfigRecord,
   OcrUserOverrideRecord,
@@ -10,9 +14,13 @@ import type {
   PrinterType,
   RefreshTokenRecord,
   RoutingProfileRecord,
+  RoutingVisualRuleRecord,
   SmbSourceRecord,
+  SystemSettingsRecord,
   UserPrinterAssignmentRecord,
-  UserRecord
+  UserRecord,
+  VisualMatchMode,
+  VisualProfileRecord
 } from '../types.js';
 import type { AuthStore } from './auth-store.js';
 
@@ -30,10 +38,23 @@ type UserRow = {
 type SmbSourceRow = {
   id: string;
   owner_user_id: string | null;
+  owner_group_id: string | null;
   path: string;
   domain_username: string;
   secret_ref: string;
   is_active: boolean;
+};
+
+type GroupRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+};
+
+type GroupMembershipRow = {
+  group_id: string;
+  user_id: string;
 };
 
 type PrinterRow = {
@@ -41,6 +62,8 @@ type PrinterRow = {
   name: string;
   type: PrinterType;
   target_uri: string;
+  domain_username: string;
+  secret_ref: string;
   is_active: boolean;
 };
 
@@ -53,6 +76,7 @@ type UserPrinterAssignmentRow = {
 type FilenameMaskRow = {
   id: string;
   owner_user_id: string | null;
+  owner_group_id: string | null;
   pattern: string;
   is_regex: boolean;
   is_active: boolean;
@@ -61,8 +85,27 @@ type FilenameMaskRow = {
 type RoutingProfileRow = {
   id: string;
   name: string;
+  owner_user_id: string | null;
+  owner_group_id: string | null;
+  default_route_type: PrinterType;
   thermal_label_patterns: unknown;
   fallback_printer_id: string | null;
+  sample_pdf_name: string | null;
+  sample_pdf_base64: string | null;
+  visual_rules: unknown;
+};
+
+type VisualProfileRow = {
+  id: string;
+  name: string;
+  owner_user_id: string | null;
+  owner_group_id: string | null;
+  snippet_base64: string;
+  match_mode: VisualMatchMode;
+  route_type: PrinterType | null;
+  printer_id: string | null;
+  labels: unknown;
+  is_active: boolean;
 };
 
 type OcrGlobalRow = {
@@ -74,6 +117,31 @@ type OcrOverrideRow = {
   user_id: string;
   provider: string | null;
   config: unknown;
+};
+
+type AdSyncConfigRow = {
+  enabled: boolean;
+  server_url: string;
+  domain: string;
+  base_dn: string;
+  bind_username: string;
+  bind_secret_ref: string;
+};
+
+type SystemSettingsRow = {
+  global_smb_domain_username: string;
+  global_smb_secret_ref: string;
+  global_printer_domain_username: string;
+  global_printer_secret_ref: string;
+  worker_poll_interval_ms: number;
+  smtp_enabled: boolean;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_secure: boolean;
+  smtp_username: string;
+  smtp_secret_ref: string;
+  smtp_from: string;
+  smtp_to: unknown;
 };
 
 function toJsonObject(value: unknown): JsonObject {
@@ -90,6 +158,49 @@ function toStringArray(value: unknown): string[] {
   }
 
   return value.filter((entry): entry is string => typeof entry === 'string');
+}
+
+function toRoutingVisualRules(value: unknown): RoutingVisualRuleRecord[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return [];
+    }
+    const candidate = entry as Record<string, unknown>;
+    const rect = candidate.rect;
+    if (!rect || typeof rect !== 'object') {
+      return [];
+    }
+    const rectRecord = rect as Record<string, unknown>;
+    const expectedWords = toStringArray(candidate.expectedWords);
+    const routeType = candidate.routeType === 'THERMAL' ? 'THERMAL' : 'A4';
+    const matchMode = candidate.matchMode === 'EXACT' ? 'EXACT' : 'CONTAINS';
+    const samplePageNumber = Number(candidate.samplePageNumber);
+    const x = Number(rectRecord.x);
+    const y = Number(rectRecord.y);
+    const width = Number(rectRecord.width);
+    const height = Number(rectRecord.height);
+    if (!Number.isFinite(samplePageNumber) || samplePageNumber < 1) {
+      return [];
+    }
+    if (![x, y, width, height].every((part) => Number.isFinite(part) && part >= 0) || width <= 0 || height <= 0) {
+      return [];
+    }
+    return [
+      {
+        id: typeof candidate.id === 'string' ? candidate.id : '',
+        samplePageNumber,
+        routeType,
+        matchMode,
+        expectedText: typeof candidate.expectedText === 'string' ? candidate.expectedText : '',
+        expectedWords,
+        rect: { x, y, width, height }
+      }
+    ];
+  });
 }
 
 function mapUserRow(row: UserRow): UserRecord {
@@ -109,10 +220,27 @@ function mapSmbSourceRow(row: SmbSourceRow): SmbSourceRecord {
   return {
     id: row.id,
     ownerUserId: row.owner_user_id,
+    ownerGroupId: row.owner_group_id,
     path: row.path,
     domainUsername: row.domain_username,
     secretRef: row.secret_ref,
     isActive: row.is_active
+  };
+}
+
+function mapGroupRow(row: GroupRow): GroupRecord {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    isActive: row.is_active
+  };
+}
+
+function mapGroupMembershipRow(row: GroupMembershipRow): GroupMembershipRecord {
+  return {
+    groupId: row.group_id,
+    userId: row.user_id
   };
 }
 
@@ -122,6 +250,8 @@ function mapPrinterRow(row: PrinterRow): PrinterRecord {
     name: row.name,
     type: row.type,
     targetUri: row.target_uri,
+    domainUsername: row.domain_username,
+    secretRef: row.secret_ref,
     isActive: row.is_active
   };
 }
@@ -138,6 +268,7 @@ function mapFilenameMaskRow(row: FilenameMaskRow): FilenameMaskRecord {
   return {
     id: row.id,
     ownerUserId: row.owner_user_id,
+    ownerGroupId: row.owner_group_id,
     pattern: row.pattern,
     isRegex: row.is_regex,
     isActive: row.is_active
@@ -148,8 +279,29 @@ function mapRoutingProfileRow(row: RoutingProfileRow): RoutingProfileRecord {
   return {
     id: row.id,
     name: row.name,
+    ownerUserId: row.owner_user_id,
+    ownerGroupId: row.owner_group_id,
+    defaultRouteType: row.default_route_type,
     thermalLabelPatterns: toStringArray(row.thermal_label_patterns),
-    fallbackPrinterId: row.fallback_printer_id
+    fallbackPrinterId: row.fallback_printer_id,
+    samplePdfName: row.sample_pdf_name,
+    samplePdfBase64: row.sample_pdf_base64,
+    visualRules: toRoutingVisualRules(row.visual_rules)
+  };
+}
+
+function mapVisualProfileRow(row: VisualProfileRow): VisualProfileRecord {
+  return {
+    id: row.id,
+    name: row.name,
+    ownerUserId: row.owner_user_id,
+    ownerGroupId: row.owner_group_id,
+    snippetBase64: row.snippet_base64,
+    matchMode: row.match_mode,
+    routeType: row.route_type,
+    printerId: row.printer_id,
+    labels: toStringArray(row.labels),
+    isActive: row.is_active
   };
 }
 
@@ -165,6 +317,35 @@ function mapOcrOverrideRow(row: OcrOverrideRow): OcrUserOverrideRecord {
     userId: row.user_id,
     provider: row.provider,
     config: toJsonObject(row.config)
+  };
+}
+
+function mapAdSyncConfigRow(row: AdSyncConfigRow): AdSyncConfigRecord {
+  return {
+    enabled: row.enabled,
+    serverUrl: row.server_url,
+    domain: row.domain,
+    baseDn: row.base_dn,
+    bindUsername: row.bind_username,
+    bindSecretRef: row.bind_secret_ref
+  };
+}
+
+function mapSystemSettingsRow(row: SystemSettingsRow): SystemSettingsRecord {
+  return {
+    globalSmbDomainUsername: row.global_smb_domain_username,
+    globalSmbSecretRef: row.global_smb_secret_ref,
+    globalPrinterDomainUsername: row.global_printer_domain_username,
+    globalPrinterSecretRef: row.global_printer_secret_ref,
+    workerPollIntervalMs: row.worker_poll_interval_ms,
+    smtpEnabled: row.smtp_enabled,
+    smtpHost: row.smtp_host,
+    smtpPort: row.smtp_port,
+    smtpSecure: row.smtp_secure,
+    smtpUsername: row.smtp_username,
+    smtpSecretRef: row.smtp_secret_ref,
+    smtpFrom: row.smtp_from,
+    smtpTo: toStringArray(row.smtp_to)
   };
 }
 
@@ -270,6 +451,67 @@ export class PostgresAuthStore implements AuthStore {
     }
   }
 
+  async updateUser(input: {
+    userId: string;
+    username?: string;
+    isRemoteEnabled?: boolean;
+    passwordHash?: string;
+    hashAlgorithm?: string;
+  }): Promise<UserRecord | null> {
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+
+      if (input.username !== undefined || input.isRemoteEnabled !== undefined) {
+        const setParts: string[] = [];
+        const values: unknown[] = [input.userId];
+        let index = 2;
+
+        if (input.username !== undefined) {
+          setParts.push(`username = $${index}`);
+          values.push(input.username);
+          index += 1;
+        }
+
+        if (input.isRemoteEnabled !== undefined) {
+          setParts.push(`is_remote_enabled = $${index}`);
+          values.push(input.isRemoteEnabled);
+          index += 1;
+        }
+
+        if (setParts.length > 0) {
+          await client.query(
+            `UPDATE users
+             SET ${setParts.join(', ')}, updated_at = NOW()
+             WHERE id = $1`,
+            values
+          );
+        }
+      }
+
+      if (input.passwordHash !== undefined && input.hashAlgorithm !== undefined) {
+        await client.query(
+          `INSERT INTO user_credentials_local(user_id, password_hash, algorithm)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (user_id)
+           DO UPDATE SET
+             password_hash = EXCLUDED.password_hash,
+             algorithm = EXCLUDED.algorithm,
+             updated_at = NOW()`,
+          [input.userId, input.passwordHash, input.hashAlgorithm]
+        );
+      }
+
+      await client.query('COMMIT');
+      return this.getUserById(input.userId);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async updateUserPreferences(input: { userId: string; locale?: string; theme?: string }): Promise<UserRecord | null> {
     if (!input.locale && !input.theme) {
       return this.getUserById(input.userId);
@@ -322,9 +564,103 @@ export class PostgresAuthStore implements AuthStore {
     return (result.rowCount ?? 0) > 0;
   }
 
+  async listGroups(): Promise<GroupRecord[]> {
+    const result = await this.db.query<GroupRow>(
+      `SELECT id, name, description, is_active
+       FROM user_groups
+       ORDER BY created_at ASC`
+    );
+    return result.rows.map(mapGroupRow);
+  }
+
+  async createGroup(input: { name: string; description?: string | null; isActive: boolean }): Promise<GroupRecord> {
+    const result = await this.db.query<GroupRow>(
+      `INSERT INTO user_groups(name, description, is_active)
+       VALUES ($1, $2, $3)
+       RETURNING id, name, description, is_active`,
+      [input.name, input.description ?? null, input.isActive]
+    );
+    return mapGroupRow(result.rows[0]);
+  }
+
+  async updateGroup(input: { id: string; name?: string; description?: string | null; isActive?: boolean }): Promise<GroupRecord | null> {
+    const setParts: string[] = [];
+    const values: unknown[] = [input.id];
+    let index = 2;
+
+    if (input.name !== undefined) {
+      setParts.push(`name = $${index}`);
+      values.push(input.name);
+      index += 1;
+    }
+    if (input.description !== undefined) {
+      setParts.push(`description = $${index}`);
+      values.push(input.description);
+      index += 1;
+    }
+    if (input.isActive !== undefined) {
+      setParts.push(`is_active = $${index}`);
+      values.push(input.isActive);
+      index += 1;
+    }
+    if (setParts.length === 0) {
+      const current = await this.db.query<GroupRow>(
+        `SELECT id, name, description, is_active
+         FROM user_groups
+         WHERE id = $1
+         LIMIT 1`,
+        [input.id]
+      );
+      return current.rows[0] ? mapGroupRow(current.rows[0]) : null;
+    }
+
+    const result = await this.db.query<GroupRow>(
+      `UPDATE user_groups
+       SET ${setParts.join(', ')}, updated_at = NOW()
+       WHERE id = $1
+       RETURNING id, name, description, is_active`,
+      values
+    );
+    return result.rows[0] ? mapGroupRow(result.rows[0]) : null;
+  }
+
+  async deleteGroup(id: string): Promise<boolean> {
+    const result = await this.db.query('DELETE FROM user_groups WHERE id = $1', [id]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async listGroupMemberships(): Promise<GroupMembershipRecord[]> {
+    const result = await this.db.query<GroupMembershipRow>(
+      `SELECT group_id, user_id
+       FROM user_group_memberships
+       ORDER BY group_id ASC, user_id ASC`
+    );
+    return result.rows.map(mapGroupMembershipRow);
+  }
+
+  async addGroupMembership(input: { groupId: string; userId: string }): Promise<GroupMembershipRecord> {
+    const result = await this.db.query<GroupMembershipRow>(
+      `INSERT INTO user_group_memberships(group_id, user_id)
+       VALUES ($1, $2)
+       ON CONFLICT (group_id, user_id) DO UPDATE SET group_id = EXCLUDED.group_id
+       RETURNING group_id, user_id`,
+      [input.groupId, input.userId]
+    );
+    return mapGroupMembershipRow(result.rows[0]);
+  }
+
+  async deleteGroupMembership(input: { groupId: string; userId: string }): Promise<boolean> {
+    const result = await this.db.query(
+      `DELETE FROM user_group_memberships
+       WHERE group_id = $1 AND user_id = $2`,
+      [input.groupId, input.userId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
   private async getSmbSourceById(id: string): Promise<SmbSourceRecord | null> {
     const result = await this.db.query<SmbSourceRow>(
-      `SELECT id, owner_user_id, path, domain_username, secret_ref, is_active
+      `SELECT id, owner_user_id, owner_group_id, path, domain_username, secret_ref, is_active
        FROM smb_sources
        WHERE id = $1`,
       [id]
@@ -339,7 +675,7 @@ export class PostgresAuthStore implements AuthStore {
 
   async listSmbSources(): Promise<SmbSourceRecord[]> {
     const result = await this.db.query<SmbSourceRow>(
-      `SELECT id, owner_user_id, path, domain_username, secret_ref, is_active
+      `SELECT id, owner_user_id, owner_group_id, path, domain_username, secret_ref, is_active
        FROM smb_sources
        ORDER BY created_at ASC`
     );
@@ -349,16 +685,17 @@ export class PostgresAuthStore implements AuthStore {
 
   async createSmbSource(input: {
     ownerUserId?: string | null;
+    ownerGroupId?: string | null;
     path: string;
     domainUsername: string;
     secretRef: string;
     isActive: boolean;
   }): Promise<SmbSourceRecord> {
     const result = await this.db.query<SmbSourceRow>(
-      `INSERT INTO smb_sources(owner_user_id, path, domain_username, secret_ref, is_active)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, owner_user_id, path, domain_username, secret_ref, is_active`,
-      [input.ownerUserId ?? null, input.path, input.domainUsername, input.secretRef, input.isActive]
+      `INSERT INTO smb_sources(owner_user_id, owner_group_id, path, domain_username, secret_ref, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, owner_user_id, owner_group_id, path, domain_username, secret_ref, is_active`,
+      [input.ownerUserId ?? null, input.ownerGroupId ?? null, input.path, input.domainUsername, input.secretRef, input.isActive]
     );
 
     return mapSmbSourceRow(result.rows[0]);
@@ -367,6 +704,7 @@ export class PostgresAuthStore implements AuthStore {
   async updateSmbSource(input: {
     id: string;
     ownerUserId?: string | null;
+    ownerGroupId?: string | null;
     path?: string;
     domainUsername?: string;
     secretRef?: string;
@@ -379,6 +717,12 @@ export class PostgresAuthStore implements AuthStore {
     if (input.ownerUserId !== undefined) {
       setParts.push(`owner_user_id = $${index}`);
       values.push(input.ownerUserId);
+      index += 1;
+    }
+
+    if (input.ownerGroupId !== undefined) {
+      setParts.push(`owner_group_id = $${index}`);
+      values.push(input.ownerGroupId);
       index += 1;
     }
 
@@ -432,7 +776,7 @@ export class PostgresAuthStore implements AuthStore {
 
   private async getPrinterById(id: string): Promise<PrinterRecord | null> {
     const result = await this.db.query<PrinterRow>(
-      `SELECT id, name, type, target_uri, is_active
+      `SELECT id, name, type, target_uri, domain_username, secret_ref, is_active
        FROM printers
        WHERE id = $1`,
       [id]
@@ -447,7 +791,7 @@ export class PostgresAuthStore implements AuthStore {
 
   async listPrinters(): Promise<PrinterRecord[]> {
     const result = await this.db.query<PrinterRow>(
-      `SELECT id, name, type, target_uri, is_active
+      `SELECT id, name, type, target_uri, domain_username, secret_ref, is_active
        FROM printers
        ORDER BY created_at ASC`
     );
@@ -455,12 +799,19 @@ export class PostgresAuthStore implements AuthStore {
     return result.rows.map(mapPrinterRow);
   }
 
-  async createPrinter(input: { name: string; type: PrinterType; targetUri: string; isActive: boolean }): Promise<PrinterRecord> {
+  async createPrinter(input: {
+    name: string;
+    type: PrinterType;
+    targetUri: string;
+    domainUsername?: string;
+    secretRef?: string;
+    isActive: boolean;
+  }): Promise<PrinterRecord> {
     const result = await this.db.query<PrinterRow>(
-      `INSERT INTO printers(name, type, target_uri, is_active)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, name, type, target_uri, is_active`,
-      [input.name, input.type, input.targetUri, input.isActive]
+      `INSERT INTO printers(name, type, target_uri, domain_username, secret_ref, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, name, type, target_uri, domain_username, secret_ref, is_active`,
+      [input.name, input.type, input.targetUri, input.domainUsername ?? '', input.secretRef ?? '', input.isActive]
     );
 
     return mapPrinterRow(result.rows[0]);
@@ -471,6 +822,8 @@ export class PostgresAuthStore implements AuthStore {
     name?: string;
     type?: PrinterType;
     targetUri?: string;
+    domainUsername?: string;
+    secretRef?: string;
     isActive?: boolean;
   }): Promise<PrinterRecord | null> {
     const setParts: string[] = [];
@@ -492,6 +845,18 @@ export class PostgresAuthStore implements AuthStore {
     if (input.targetUri !== undefined) {
       setParts.push(`target_uri = $${index}`);
       values.push(input.targetUri);
+      index += 1;
+    }
+
+    if (input.domainUsername !== undefined) {
+      setParts.push(`domain_username = $${index}`);
+      values.push(input.domainUsername);
+      index += 1;
+    }
+
+    if (input.secretRef !== undefined) {
+      setParts.push(`secret_ref = $${index}`);
+      values.push(input.secretRef);
       index += 1;
     }
 
@@ -528,8 +893,8 @@ export class PostgresAuthStore implements AuthStore {
   async listUserPrinterAssignments(): Promise<UserPrinterAssignmentRecord[]> {
     const result = await this.db.query<UserPrinterAssignmentRow>(
       `SELECT a.user_id,
-              MAX(CASE WHEN p.type = 'A4' THEN a.printer_id END) AS a4_printer_id,
-              MAX(CASE WHEN p.type = 'THERMAL' THEN a.printer_id END) AS thermal_printer_id
+              (array_agg(a.printer_id) FILTER (WHERE p.type = 'A4'))[1] AS a4_printer_id,
+              (array_agg(a.printer_id) FILTER (WHERE p.type = 'THERMAL'))[1] AS thermal_printer_id
        FROM user_printer_assignments a
        JOIN printers p ON p.id = a.printer_id
        GROUP BY a.user_id
@@ -542,8 +907,8 @@ export class PostgresAuthStore implements AuthStore {
   async getUserPrinterAssignment(userId: string): Promise<UserPrinterAssignmentRecord | null> {
     const result = await this.db.query<UserPrinterAssignmentRow>(
       `SELECT a.user_id,
-              MAX(CASE WHEN p.type = 'A4' THEN a.printer_id END) AS a4_printer_id,
-              MAX(CASE WHEN p.type = 'THERMAL' THEN a.printer_id END) AS thermal_printer_id
+              (array_agg(a.printer_id) FILTER (WHERE p.type = 'A4'))[1] AS a4_printer_id,
+              (array_agg(a.printer_id) FILTER (WHERE p.type = 'THERMAL'))[1] AS thermal_printer_id
        FROM user_printer_assignments a
        JOIN printers p ON p.id = a.printer_id
        WHERE a.user_id = $1
@@ -652,7 +1017,7 @@ export class PostgresAuthStore implements AuthStore {
 
   private async getFilenameMaskById(id: string): Promise<FilenameMaskRecord | null> {
     const result = await this.db.query<FilenameMaskRow>(
-      `SELECT id, owner_user_id, pattern, is_regex, is_active
+      `SELECT id, owner_user_id, owner_group_id, pattern, is_regex, is_active
        FROM filename_masks
        WHERE id = $1`,
       [id]
@@ -667,7 +1032,7 @@ export class PostgresAuthStore implements AuthStore {
 
   async listFilenameMasks(): Promise<FilenameMaskRecord[]> {
     const result = await this.db.query<FilenameMaskRow>(
-      `SELECT id, owner_user_id, pattern, is_regex, is_active
+      `SELECT id, owner_user_id, owner_group_id, pattern, is_regex, is_active
        FROM filename_masks
        ORDER BY created_at ASC`
     );
@@ -677,15 +1042,16 @@ export class PostgresAuthStore implements AuthStore {
 
   async createFilenameMask(input: {
     ownerUserId?: string | null;
+    ownerGroupId?: string | null;
     pattern: string;
     isRegex: boolean;
     isActive: boolean;
   }): Promise<FilenameMaskRecord> {
     const result = await this.db.query<FilenameMaskRow>(
-      `INSERT INTO filename_masks(owner_user_id, pattern, is_regex, is_active)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, owner_user_id, pattern, is_regex, is_active`,
-      [input.ownerUserId ?? null, input.pattern, input.isRegex, input.isActive]
+      `INSERT INTO filename_masks(owner_user_id, owner_group_id, pattern, is_regex, is_active)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, owner_user_id, owner_group_id, pattern, is_regex, is_active`,
+      [input.ownerUserId ?? null, input.ownerGroupId ?? null, input.pattern, input.isRegex, input.isActive]
     );
 
     return mapFilenameMaskRow(result.rows[0]);
@@ -694,6 +1060,7 @@ export class PostgresAuthStore implements AuthStore {
   async updateFilenameMask(input: {
     id: string;
     ownerUserId?: string | null;
+    ownerGroupId?: string | null;
     pattern?: string;
     isRegex?: boolean;
     isActive?: boolean;
@@ -705,6 +1072,12 @@ export class PostgresAuthStore implements AuthStore {
     if (input.ownerUserId !== undefined) {
       setParts.push(`owner_user_id = $${index}`);
       values.push(input.ownerUserId);
+      index += 1;
+    }
+
+    if (input.ownerGroupId !== undefined) {
+      setParts.push(`owner_group_id = $${index}`);
+      values.push(input.ownerGroupId);
       index += 1;
     }
 
@@ -752,7 +1125,8 @@ export class PostgresAuthStore implements AuthStore {
 
   private async getRoutingProfileById(id: string): Promise<RoutingProfileRecord | null> {
     const result = await this.db.query<RoutingProfileRow>(
-      `SELECT id, name, thermal_label_patterns, fallback_printer_id
+      `SELECT id, name, owner_user_id, owner_group_id, default_route_type, thermal_label_patterns, fallback_printer_id,
+              sample_pdf_name, sample_pdf_base64, visual_rules
        FROM routing_profiles
        WHERE id = $1`,
       [id]
@@ -767,7 +1141,8 @@ export class PostgresAuthStore implements AuthStore {
 
   async listRoutingProfiles(): Promise<RoutingProfileRecord[]> {
     const result = await this.db.query<RoutingProfileRow>(
-      `SELECT id, name, thermal_label_patterns, fallback_printer_id
+      `SELECT id, name, owner_user_id, owner_group_id, default_route_type, thermal_label_patterns, fallback_printer_id,
+              sample_pdf_name, sample_pdf_base64, visual_rules
        FROM routing_profiles
        ORDER BY created_at ASC`
     );
@@ -777,14 +1152,34 @@ export class PostgresAuthStore implements AuthStore {
 
   async createRoutingProfile(input: {
     name: string;
+    ownerUserId?: string | null;
+    ownerGroupId?: string | null;
+    defaultRouteType?: PrinterType;
     thermalLabelPatterns: string[];
     fallbackPrinterId?: string | null;
+    samplePdfName?: string | null;
+    samplePdfBase64?: string | null;
+    visualRules?: RoutingVisualRuleRecord[];
   }): Promise<RoutingProfileRecord> {
     const result = await this.db.query<RoutingProfileRow>(
-      `INSERT INTO routing_profiles(name, thermal_label_patterns, fallback_printer_id)
-       VALUES ($1, $2::jsonb, $3)
-       RETURNING id, name, thermal_label_patterns, fallback_printer_id`,
-      [input.name, JSON.stringify(input.thermalLabelPatterns), input.fallbackPrinterId ?? null]
+      `INSERT INTO routing_profiles(
+         name, owner_user_id, owner_group_id, default_route_type, thermal_label_patterns, fallback_printer_id,
+         sample_pdf_name, sample_pdf_base64, visual_rules
+       )
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::jsonb)
+       RETURNING id, name, owner_user_id, owner_group_id, default_route_type, thermal_label_patterns, fallback_printer_id,
+                 sample_pdf_name, sample_pdf_base64, visual_rules`,
+      [
+        input.name,
+        input.ownerUserId ?? null,
+        input.ownerGroupId ?? null,
+        input.defaultRouteType ?? 'A4',
+        JSON.stringify(input.thermalLabelPatterns),
+        input.fallbackPrinterId ?? null,
+        input.samplePdfName ?? null,
+        input.samplePdfBase64 ?? null,
+        JSON.stringify(input.visualRules ?? [])
+      ]
     );
 
     return mapRoutingProfileRow(result.rows[0]);
@@ -793,8 +1188,14 @@ export class PostgresAuthStore implements AuthStore {
   async updateRoutingProfile(input: {
     id: string;
     name?: string;
+    ownerUserId?: string | null;
+    ownerGroupId?: string | null;
+    defaultRouteType?: PrinterType;
     thermalLabelPatterns?: string[];
     fallbackPrinterId?: string | null;
+    samplePdfName?: string | null;
+    samplePdfBase64?: string | null;
+    visualRules?: RoutingVisualRuleRecord[];
   }): Promise<RoutingProfileRecord | null> {
     const setParts: string[] = [];
     const values: unknown[] = [input.id];
@@ -803,6 +1204,24 @@ export class PostgresAuthStore implements AuthStore {
     if (input.name !== undefined) {
       setParts.push(`name = $${index}`);
       values.push(input.name);
+      index += 1;
+    }
+
+    if (input.ownerUserId !== undefined) {
+      setParts.push(`owner_user_id = $${index}`);
+      values.push(input.ownerUserId);
+      index += 1;
+    }
+
+    if (input.ownerGroupId !== undefined) {
+      setParts.push(`owner_group_id = $${index}`);
+      values.push(input.ownerGroupId);
+      index += 1;
+    }
+
+    if (input.defaultRouteType !== undefined) {
+      setParts.push(`default_route_type = $${index}`);
+      values.push(input.defaultRouteType);
       index += 1;
     }
 
@@ -815,6 +1234,24 @@ export class PostgresAuthStore implements AuthStore {
     if (input.fallbackPrinterId !== undefined) {
       setParts.push(`fallback_printer_id = $${index}`);
       values.push(input.fallbackPrinterId);
+      index += 1;
+    }
+
+    if (input.samplePdfName !== undefined) {
+      setParts.push(`sample_pdf_name = $${index}`);
+      values.push(input.samplePdfName);
+      index += 1;
+    }
+
+    if (input.samplePdfBase64 !== undefined) {
+      setParts.push(`sample_pdf_base64 = $${index}`);
+      values.push(input.samplePdfBase64);
+      index += 1;
+    }
+
+    if (input.visualRules !== undefined) {
+      setParts.push(`visual_rules = $${index}::jsonb`);
+      values.push(JSON.stringify(input.visualRules));
       index += 1;
     }
 
@@ -839,6 +1276,143 @@ export class PostgresAuthStore implements AuthStore {
 
   async deleteRoutingProfile(id: string): Promise<boolean> {
     const result = await this.db.query('DELETE FROM routing_profiles WHERE id = $1', [id]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  private async getVisualProfileById(id: string): Promise<VisualProfileRecord | null> {
+    const result = await this.db.query<VisualProfileRow>(
+      `SELECT id, name, owner_user_id, owner_group_id, snippet_base64, match_mode, route_type, printer_id, labels, is_active
+       FROM visual_match_profiles
+       WHERE id = $1`,
+      [id]
+    );
+    if (!result.rows[0]) {
+      return null;
+    }
+    return mapVisualProfileRow(result.rows[0]);
+  }
+
+  async listVisualProfiles(): Promise<VisualProfileRecord[]> {
+    const result = await this.db.query<VisualProfileRow>(
+      `SELECT id, name, owner_user_id, owner_group_id, snippet_base64, match_mode, route_type, printer_id, labels, is_active
+       FROM visual_match_profiles
+       ORDER BY created_at ASC`
+    );
+    return result.rows.map(mapVisualProfileRow);
+  }
+
+  async createVisualProfile(input: {
+    name: string;
+    ownerUserId?: string | null;
+    ownerGroupId?: string | null;
+    snippetBase64: string;
+    matchMode: VisualMatchMode;
+    routeType?: PrinterType | null;
+    printerId?: string | null;
+    labels?: string[];
+    isActive: boolean;
+  }): Promise<VisualProfileRecord> {
+    const result = await this.db.query<VisualProfileRow>(
+      `INSERT INTO visual_match_profiles
+         (name, owner_user_id, owner_group_id, snippet_base64, match_mode, route_type, printer_id, labels, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+       RETURNING id, name, owner_user_id, owner_group_id, snippet_base64, match_mode, route_type, printer_id, labels, is_active`,
+      [
+        input.name,
+        input.ownerUserId ?? null,
+        input.ownerGroupId ?? null,
+        input.snippetBase64,
+        input.matchMode,
+        input.routeType ?? null,
+        input.printerId ?? null,
+        JSON.stringify(input.labels ?? []),
+        input.isActive
+      ]
+    );
+    return mapVisualProfileRow(result.rows[0]);
+  }
+
+  async updateVisualProfile(input: {
+    id: string;
+    name?: string;
+    ownerUserId?: string | null;
+    ownerGroupId?: string | null;
+    snippetBase64?: string;
+    matchMode?: VisualMatchMode;
+    routeType?: PrinterType | null;
+    printerId?: string | null;
+    labels?: string[];
+    isActive?: boolean;
+  }): Promise<VisualProfileRecord | null> {
+    const setParts: string[] = [];
+    const values: unknown[] = [input.id];
+    let index = 2;
+
+    if (input.name !== undefined) {
+      setParts.push(`name = $${index}`);
+      values.push(input.name);
+      index += 1;
+    }
+    if (input.ownerUserId !== undefined) {
+      setParts.push(`owner_user_id = $${index}`);
+      values.push(input.ownerUserId);
+      index += 1;
+    }
+    if (input.ownerGroupId !== undefined) {
+      setParts.push(`owner_group_id = $${index}`);
+      values.push(input.ownerGroupId);
+      index += 1;
+    }
+    if (input.snippetBase64 !== undefined) {
+      setParts.push(`snippet_base64 = $${index}`);
+      values.push(input.snippetBase64);
+      index += 1;
+    }
+    if (input.matchMode !== undefined) {
+      setParts.push(`match_mode = $${index}`);
+      values.push(input.matchMode);
+      index += 1;
+    }
+    if (input.routeType !== undefined) {
+      setParts.push(`route_type = $${index}`);
+      values.push(input.routeType);
+      index += 1;
+    }
+    if (input.printerId !== undefined) {
+      setParts.push(`printer_id = $${index}`);
+      values.push(input.printerId);
+      index += 1;
+    }
+    if (input.labels !== undefined) {
+      setParts.push(`labels = $${index}::jsonb`);
+      values.push(JSON.stringify(input.labels));
+      index += 1;
+    }
+    if (input.isActive !== undefined) {
+      setParts.push(`is_active = $${index}`);
+      values.push(input.isActive);
+      index += 1;
+    }
+
+    if (setParts.length === 0) {
+      return this.getVisualProfileById(input.id);
+    }
+
+    const result = await this.db.query<{ id: string }>(
+      `UPDATE visual_match_profiles
+       SET ${setParts.join(', ')}, updated_at = NOW()
+       WHERE id = $1
+       RETURNING id`,
+      values
+    );
+    if (!result.rows[0]) {
+      return null;
+    }
+    return this.getVisualProfileById(input.id);
+  }
+
+  async deleteVisualProfile(id: string): Promise<boolean> {
+    const result = await this.db.query('DELETE FROM visual_match_profiles WHERE id = $1', [id]);
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -913,6 +1487,200 @@ export class PostgresAuthStore implements AuthStore {
     return (result.rowCount ?? 0) > 0;
   }
 
+  async getAdSyncConfig(): Promise<AdSyncConfigRecord> {
+    const result = await this.db.query<AdSyncConfigRow>(
+      `SELECT enabled, server_url, domain, base_dn, bind_username, bind_secret_ref
+       FROM ad_sync_config
+       WHERE id = TRUE
+       LIMIT 1`
+    );
+
+    if (!result.rows[0]) {
+      return {
+        enabled: false,
+        serverUrl: '',
+        domain: '',
+        baseDn: '',
+        bindUsername: '',
+        bindSecretRef: ''
+      };
+    }
+
+    return mapAdSyncConfigRow(result.rows[0]);
+  }
+
+  async updateAdSyncConfig(input: {
+    enabled?: boolean;
+    serverUrl?: string;
+    domain?: string;
+    baseDn?: string;
+    bindUsername?: string;
+    bindSecretRef?: string;
+  }): Promise<AdSyncConfigRecord> {
+    const enabled = input.enabled ?? null;
+    const serverUrl = input.serverUrl ?? null;
+    const domain = input.domain ?? null;
+    const baseDn = input.baseDn ?? null;
+    const bindUsername = input.bindUsername ?? null;
+    const bindSecretRef = input.bindSecretRef ?? null;
+
+    const result = await this.db.query<AdSyncConfigRow>(
+      `INSERT INTO ad_sync_config(id, enabled, server_url, domain, base_dn, bind_username, bind_secret_ref)
+       VALUES (TRUE, COALESCE($1, FALSE), COALESCE($2, ''), COALESCE($3, ''), COALESCE($4, ''), COALESCE($5, ''), COALESCE($6, ''))
+       ON CONFLICT (id)
+       DO UPDATE SET
+         enabled = COALESCE($1, ad_sync_config.enabled),
+         server_url = COALESCE($2, ad_sync_config.server_url),
+         domain = COALESCE($3, ad_sync_config.domain),
+         base_dn = COALESCE($4, ad_sync_config.base_dn),
+         bind_username = COALESCE($5, ad_sync_config.bind_username),
+         bind_secret_ref = COALESCE($6, ad_sync_config.bind_secret_ref),
+         updated_at = NOW()
+       RETURNING enabled, server_url, domain, base_dn, bind_username, bind_secret_ref`,
+      [enabled, serverUrl, domain, baseDn, bindUsername, bindSecretRef]
+    );
+
+    return mapAdSyncConfigRow(result.rows[0]);
+  }
+
+  async getSystemSettings(): Promise<SystemSettingsRecord> {
+    const result = await this.db.query<SystemSettingsRow>(
+      `SELECT global_smb_domain_username,
+              global_smb_secret_ref,
+              global_printer_domain_username,
+              global_printer_secret_ref,
+              worker_poll_interval_ms,
+              smtp_enabled,
+              smtp_host,
+              smtp_port,
+              smtp_secure,
+              smtp_username,
+              smtp_secret_ref,
+              smtp_from,
+              smtp_to
+       FROM system_settings
+       WHERE id = TRUE
+       LIMIT 1`
+    );
+
+    if (!result.rows[0]) {
+      return {
+        globalSmbDomainUsername: '',
+        globalSmbSecretRef: '',
+        globalPrinterDomainUsername: '',
+        globalPrinterSecretRef: '',
+        workerPollIntervalMs: 5000,
+        smtpEnabled: false,
+        smtpHost: '',
+        smtpPort: 25,
+        smtpSecure: false,
+        smtpUsername: '',
+        smtpSecretRef: '',
+        smtpFrom: '',
+        smtpTo: []
+      };
+    }
+
+    return mapSystemSettingsRow(result.rows[0]);
+  }
+
+  async updateSystemSettings(input: {
+    globalSmbDomainUsername?: string;
+    globalSmbSecretRef?: string;
+    globalPrinterDomainUsername?: string;
+    globalPrinterSecretRef?: string;
+    workerPollIntervalMs?: number;
+    smtpEnabled?: boolean;
+    smtpHost?: string;
+    smtpPort?: number;
+    smtpSecure?: boolean;
+    smtpUsername?: string;
+    smtpSecretRef?: string;
+    smtpFrom?: string;
+    smtpTo?: string[];
+  }): Promise<SystemSettingsRecord> {
+    const result = await this.db.query<SystemSettingsRow>(
+      `INSERT INTO system_settings(
+         id,
+         global_smb_domain_username,
+         global_smb_secret_ref,
+         global_printer_domain_username,
+         global_printer_secret_ref,
+         worker_poll_interval_ms,
+         smtp_enabled,
+         smtp_host,
+         smtp_port,
+         smtp_secure,
+         smtp_username,
+         smtp_secret_ref,
+         smtp_from,
+         smtp_to
+       )
+       VALUES (
+         TRUE,
+         COALESCE($1, ''),
+         COALESCE($2, ''),
+         COALESCE($3, ''),
+         COALESCE($4, ''),
+         COALESCE($5, 5000),
+         COALESCE($6, FALSE),
+         COALESCE($7, ''),
+         COALESCE($8, 25),
+         COALESCE($9, FALSE),
+         COALESCE($10, ''),
+         COALESCE($11, ''),
+         COALESCE($12, ''),
+         COALESCE($13, '[]'::jsonb)
+       )
+       ON CONFLICT (id)
+       DO UPDATE SET
+         global_smb_domain_username = COALESCE($1, system_settings.global_smb_domain_username),
+         global_smb_secret_ref = COALESCE($2, system_settings.global_smb_secret_ref),
+         global_printer_domain_username = COALESCE($3, system_settings.global_printer_domain_username),
+         global_printer_secret_ref = COALESCE($4, system_settings.global_printer_secret_ref),
+         worker_poll_interval_ms = COALESCE($5, system_settings.worker_poll_interval_ms),
+         smtp_enabled = COALESCE($6, system_settings.smtp_enabled),
+         smtp_host = COALESCE($7, system_settings.smtp_host),
+         smtp_port = COALESCE($8, system_settings.smtp_port),
+         smtp_secure = COALESCE($9, system_settings.smtp_secure),
+         smtp_username = COALESCE($10, system_settings.smtp_username),
+         smtp_secret_ref = COALESCE($11, system_settings.smtp_secret_ref),
+         smtp_from = COALESCE($12, system_settings.smtp_from),
+         smtp_to = COALESCE($13, system_settings.smtp_to),
+         updated_at = NOW()
+       RETURNING global_smb_domain_username,
+                 global_smb_secret_ref,
+                 global_printer_domain_username,
+                 global_printer_secret_ref,
+                 worker_poll_interval_ms,
+                 smtp_enabled,
+                 smtp_host,
+                 smtp_port,
+                 smtp_secure,
+                 smtp_username,
+                 smtp_secret_ref,
+                 smtp_from,
+                 smtp_to`,
+      [
+        input.globalSmbDomainUsername ?? null,
+        input.globalSmbSecretRef ?? null,
+        input.globalPrinterDomainUsername ?? null,
+        input.globalPrinterSecretRef ?? null,
+        input.workerPollIntervalMs ?? null,
+        input.smtpEnabled ?? null,
+        input.smtpHost ?? null,
+        input.smtpPort ?? null,
+        input.smtpSecure ?? null,
+        input.smtpUsername ?? null,
+        input.smtpSecretRef ?? null,
+        input.smtpFrom ?? null,
+        input.smtpTo ? JSON.stringify(input.smtpTo) : null
+      ]
+    );
+
+    return mapSystemSettingsRow(result.rows[0]);
+  }
+
   async saveRefreshToken(input: { userId: string; tokenHash: string; expiresAt: Date }): Promise<RefreshTokenRecord> {
     const result = await this.db.query<{
       id: string;
@@ -982,5 +1750,47 @@ export class PostgresAuthStore implements AuthStore {
         JSON.stringify(event.metadata ?? {})
       ]
     );
+  }
+
+  async listAuditEvents(limit = 200): Promise<AuditLogRecord[]> {
+    const result = await this.db.query<{
+      id: string;
+      actor_user_id: string | null;
+      actor_username: string | null;
+      action: string;
+      status: 'SUCCESS' | 'FAILURE';
+      target_type: string | null;
+      target_id: string | null;
+      metadata: Record<string, unknown> | null;
+      created_at: Date;
+    }>(
+      `SELECT
+         a.id::text AS id,
+         a.actor_user_id,
+         u.username AS actor_username,
+         a.action,
+         a.status,
+         a.target_type,
+         a.target_id,
+         a.metadata,
+         a.created_at
+       FROM audit_log a
+       LEFT JOIN users u ON u.id = a.actor_user_id
+       ORDER BY a.created_at DESC, a.id DESC
+       LIMIT $1`,
+      [limit]
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      actorUserId: row.actor_user_id ?? undefined,
+      actorUsername: row.actor_username,
+      action: row.action,
+      status: row.status,
+      targetType: row.target_type ?? undefined,
+      targetId: row.target_id ?? undefined,
+      metadata: row.metadata ?? {},
+      createdAt: row.created_at
+    }));
   }
 }

@@ -17,6 +17,7 @@ describe('smb client scanner', () => {
     const scanned = await scanner.scanSource({
       id: 'smb-1',
       ownerUserId: null,
+      ownerGroupId: null,
       path: '\\\\fileserver\\print\\incoming',
       domainUsername: 'EXAMPLE\\serviceuser',
       secretRef: 'env:SMB_PASS',
@@ -39,6 +40,7 @@ describe('smb client scanner', () => {
     const scanned = await scanner.scanSource({
       id: 'smb-2',
       ownerUserId: null,
+      ownerGroupId: null,
       path: '/local/path',
       domainUsername: 'EXAMPLE\\serviceuser',
       secretRef: 'plain:pass',

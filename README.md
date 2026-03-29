@@ -33,6 +33,14 @@ make build
 make e2e
 ```
 
+## First-time admin setup
+
+Open `http://127.0.0.1:${WEB_PORT:-3000}` and use the **Initial admin setup** panel.
+
+- The first admin can be created only once.
+- After bootstrap, public registration cannot create `ADMIN` users.
+- Optional hardening: set `BOOTSTRAP_ADMIN_TOKEN` to require a one-time token during bootstrap.
+
 ## Run with docker compose
 
 Compose file location: `infra/docker-compose.yml`
@@ -90,10 +98,10 @@ The smoke script:
 ## Tests
 
 - Unit/integration-style app tests: `npm run test`
-- Playwright E2E: `npm run test:e2e`
-  - health endpoints
-  - remote auth flow
-  - happy path admin config → worker processing → routed pages (`THERMAL` + `A4`) with dedup check
+- Compose smoke E2E: `npm run test:e2e`
+  - boots isolated stack
+  - seeds admin config and routing/OCR settings
+  - runs worker and validates dedup + DB persistence (`processed_files`, `print_jobs`, `print_job_pages`)
 
 ## Docs
 
