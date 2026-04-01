@@ -1,0 +1,9 @@
+services:
+  web:
+    command: sh -c "npm install && node node_modules/tsx/dist/cli.mjs apps/web/src/server.ts"
+
+  api:
+    command: sh -c "npm install && node node_modules/tsx/dist/cli.mjs apps/api/src/db/migrate.ts && node node_modules/tsx/dist/cli.mjs apps/api/src/server.ts"
+
+  worker:
+    command: sh -c "npm install && node node_modules/tsx/dist/cli.mjs apps/worker/src/server.ts"

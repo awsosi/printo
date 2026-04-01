@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module';
+import { matchPdfPagesBySnippet } from '@printo/shared';
 import { describe, expect, it } from 'vitest';
 import {
   InMemoryWorkerStore,
@@ -8,6 +10,68 @@ import {
   type PipelineNotifier,
   type ScannedFile
 } from '../src/pipeline.js';
+
+const require = createRequire(import.meta.url);
+const { createCanvas } = require('canvas') as {
+  createCanvas(width: number, height: number, type?: 'pdf'): {
+    getContext(kind: '2d'): {
+      fillStyle: string;
+      fillRect(x: number, y: number, width: number, height: number): void;
+      beginPath(): void;
+      arc(x: number, y: number, radius: number, startAngle: number, endAngle: number): void;
+      fill(): void;
+      drawImage(
+        image: { width: number; height: number },
+        sx: number,
+        sy: number,
+        sw: number,
+        sh: number,
+        dx: number,
+        dy: number,
+        dw: number,
+        dh: number
+      ): void;
+      getImageData(x: number, y: number, width: number, height: number): { data: Uint8ClampedArray };
+    };
+    toBuffer(input?: string): Buffer;
+  };
+};
+const pdfjs = require('pdfjs-dist/legacy/build/pdf.js') as {
+  getDocument(input: {
+    data: Uint8Array;
+    useWorkerFetch: boolean;
+    isEvalSupported: boolean;
+    disableFontFace: boolean;
+    standardFontDataUrl: string;
+  }): {
+    promise: Promise<{
+      getPage(pageNumber: number): Promise<{
+        getViewport(input: { scale: number }): { width: number; height: number };
+        render(input: { canvasContext: unknown; viewport: { width: number; height: number } }): { promise: Promise<void> };
+      }>;
+      destroy(): Promise<void>;
+    }>;
+  };
+};
+
+function rgbaVariance(data: Uint8ClampedArray): number {
+  let sum = 0;
+  let sumSquares = 0;
+  let count = 0;
+
+  for (let index = 0; index < data.length; index += 4) {
+    const value = 0.299 * data[index]! + 0.587 * data[index + 1]! + 0.114 * data[index + 2]!;
+    sum += value;
+    sumSquares += value * value;
+    count += 1;
+  }
+
+  if (count === 0) {
+    return 0;
+  }
+
+  return sumSquares / count - (sum / count) * (sum / count);
+}
 
 describe('worker pipeline', () => {
   it('processes masked files, routes pages, and skips duplicates', async () => {
@@ -20,6 +84,13 @@ describe('worker pipeline', () => {
           path: '\\\\srv\\share',
           domainUsername: 'EXAMPLE\\\\serviceuser',
           secretRef: 'secret/smb/user-1',
+          printerDomainUsername: '',
+          printerSecretRef: '',
+          routingProfileId: null,
+          a4PrinterId: null,
+          thermalPrinterId: null,
+          includeFilenamePatterns: [],
+          excludeFilenamePatterns: [],
           isActive: true
         }
       ],
@@ -84,11 +155,15 @@ describe('worker pipeline', () => {
           name: 'default',
           ownerUserId: null,
           ownerGroupId: null,
+          printerDomainUsername: '',
+          printerSecretRef: '',
           defaultRouteType: 'A4',
           thermalLabelPatterns: ['label'],
           fallbackPrinterId: null,
           samplePdfName: null,
           samplePdfBase64: null,
+          snippetBase64: null,
+          matchThreshold: 0.88,
           visualRules: []
         }
       ],
@@ -151,6 +226,13 @@ describe('worker pipeline', () => {
           path: '/ok',
           domainUsername: 'EXAMPLE\\\\serviceuser',
           secretRef: 'secret/smb/ok',
+          printerDomainUsername: '',
+          printerSecretRef: '',
+          routingProfileId: null,
+          a4PrinterId: null,
+          thermalPrinterId: null,
+          includeFilenamePatterns: [],
+          excludeFilenamePatterns: [],
           isActive: true
         },
         {
@@ -160,6 +242,13 @@ describe('worker pipeline', () => {
           path: '/fail',
           domainUsername: 'EXAMPLE\\\\serviceuser',
           secretRef: 'secret/smb/fail',
+          printerDomainUsername: '',
+          printerSecretRef: '',
+          routingProfileId: null,
+          a4PrinterId: null,
+          thermalPrinterId: null,
+          includeFilenamePatterns: [],
+          excludeFilenamePatterns: [],
           isActive: true
         }
       ],
@@ -219,6 +308,13 @@ describe('worker pipeline', () => {
           path: '/in',
           domainUsername: 'EXAMPLE\\\\serviceuser',
           secretRef: 'secret/smb/source-1',
+          printerDomainUsername: '',
+          printerSecretRef: '',
+          routingProfileId: null,
+          a4PrinterId: null,
+          thermalPrinterId: null,
+          includeFilenamePatterns: [],
+          excludeFilenamePatterns: [],
           isActive: true
         }
       ],
@@ -253,6 +349,8 @@ describe('worker pipeline', () => {
           fallbackPrinterId: null,
           samplePdfName: 'sample.pdf',
           samplePdfBase64: 'base64',
+          snippetBase64: null,
+          matchThreshold: 0.88,
           visualRules: [
             {
               id: 'rule-1',
@@ -312,6 +410,204 @@ describe('worker pipeline', () => {
     expect(dispatcher.calls[1]?.routeType).toBe('A4');
   });
 
+  it('routes matched PDF pages to thermal using image snippets', async () => {
+    const pdfCanvas = createCanvas(420, 420, 'pdf');
+    const pdfContext = pdfCanvas.getContext('2d');
+    pdfContext.fillStyle = '#ffffff';
+    pdfContext.fillRect(0, 0, 420, 420);
+    pdfContext.fillStyle = '#111111';
+    pdfContext.fillRect(40, 40, 80, 80);
+    pdfContext.beginPath();
+    pdfContext.arc(260, 260, 34, 0, Math.PI * 2);
+    pdfContext.fill();
+    const pdfBuffer = pdfCanvas.toBuffer('application/pdf');
+    const loadingTask = pdfjs.getDocument({
+      data: new Uint8Array(pdfBuffer),
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      disableFontFace: true,
+      standardFontDataUrl: ''
+    });
+    const document = await loadingTask.promise;
+    const page = await document.getPage(1);
+    const baseViewport = page.getViewport({ scale: 1 });
+    const viewport = page.getViewport({ scale: 320 / baseViewport.width });
+    const pageCanvas = createCanvas(Math.round(viewport.width), Math.round(viewport.height));
+    const pageContext = pageCanvas.getContext('2d');
+    await page.render({ canvasContext: pageContext, viewport }).promise;
+
+    let bestRect = { x: 0, y: 0, size: 96, variance: -1 };
+    for (let y = 0; y <= pageCanvas.height - 96; y += 16) {
+      for (let x = 0; x <= pageCanvas.width - 96; x += 16) {
+        const variance = rgbaVariance(pageContext.getImageData(x, y, 96, 96).data);
+        if (variance > bestRect.variance) {
+          bestRect = { x, y, size: 96, variance };
+        }
+      }
+    }
+
+    const snippetCanvas = createCanvas(bestRect.size, bestRect.size);
+    const snippetContext = snippetCanvas.getContext('2d');
+    snippetContext.drawImage(pageCanvas, bestRect.x, bestRect.y, bestRect.size, bestRect.size, 0, 0, bestRect.size, bestRect.size);
+    const snippetBase64 = snippetCanvas.toBuffer('image/png').toString('base64');
+    const preview = await matchPdfPagesBySnippet({ pdfBuffer, snippetBase64, matchThreshold: 0.9 });
+    await document.destroy();
+
+    const store = new InMemoryWorkerStore({
+      sources: [
+        {
+          id: 'source-1',
+          ownerUserId: null,
+          ownerGroupId: null,
+          path: '/in',
+          domainUsername: '',
+          secretRef: '',
+          printerDomainUsername: 'mapping-user@corp.local',
+          printerSecretRef: 'plain:MappingPass!',
+          routingProfileId: 'routing-image',
+          a4PrinterId: 'printer-a4',
+          thermalPrinterId: 'printer-thermal',
+          includeFilenamePatterns: [],
+          excludeFilenamePatterns: [],
+          isActive: true
+        }
+      ],
+      printers: [
+        {
+          id: 'printer-a4',
+          name: 'A4 printer',
+          type: 'A4',
+          targetUri: 'mock://a4',
+          domainUsername: '',
+          secretRef: '',
+          isActive: true
+        },
+        {
+          id: 'printer-thermal',
+          name: 'Thermal printer',
+          type: 'THERMAL',
+          targetUri: 'mock://thermal',
+          domainUsername: 'printer-user@corp.local',
+          secretRef: 'plain:PrinterPass!',
+          isActive: true
+        }
+      ],
+      routingProfiles: [
+        {
+          id: 'routing-image',
+          name: 'image match',
+          ownerUserId: null,
+          ownerGroupId: null,
+          printerDomainUsername: 'profile-user@corp.local',
+          printerSecretRef: 'plain:ProfilePass!',
+          defaultRouteType: 'A4',
+          thermalLabelPatterns: [],
+          fallbackPrinterId: null,
+          samplePdfName: null,
+          samplePdfBase64: null,
+          snippetBase64,
+          matchThreshold: 0.9,
+          visualRules: []
+        }
+      ]
+    });
+
+    const scanner = new StaticSmbScanner({
+      'source-1': [
+        {
+          sourceId: 'source-1',
+          path: '/in/visual.pdf',
+          content: pdfBuffer,
+          modifiedAt: new Date('2026-04-01T10:00:00.000Z')
+        }
+      ]
+    });
+
+    const dispatcher = new RecordingPrinterDispatcher();
+    const pipeline = new WorkerPipeline(store, scanner, new MockOcrProvider(), dispatcher);
+    const summary = await pipeline.runOnce();
+
+    expect(summary.filesProcessed).toBe(1);
+    expect(dispatcher.calls).toHaveLength(1);
+    expect(preview.pages[0]?.isMatch).toBe(true);
+    expect(dispatcher.calls[0]?.routeType).toBe('THERMAL');
+    expect(dispatcher.calls[0]?.printer.id).toBe('printer-thermal');
+    expect(dispatcher.calls[0]?.printer.domainUsername).toBe('printer-user@corp.local');
+    expect(dispatcher.calls[0]?.printer.secretRef).toBe('plain:PrinterPass!');
+  });
+
+  it('inherits printer credentials from mapping before routing profile defaults', async () => {
+    const store = new InMemoryWorkerStore({
+      sources: [
+        {
+          id: 'source-1',
+          ownerUserId: null,
+          ownerGroupId: null,
+          path: '/in',
+          domainUsername: '',
+          secretRef: '',
+          printerDomainUsername: 'mapping-user@corp.local',
+          printerSecretRef: 'plain:MappingPass!',
+          routingProfileId: 'routing-1',
+          a4PrinterId: null,
+          thermalPrinterId: 'printer-thermal',
+          includeFilenamePatterns: [],
+          excludeFilenamePatterns: [],
+          isActive: true
+        }
+      ],
+      printers: [
+        {
+          id: 'printer-thermal',
+          name: 'Thermal printer',
+          type: 'THERMAL',
+          targetUri: 'mock://thermal',
+          domainUsername: '',
+          secretRef: '',
+          isActive: true
+        }
+      ],
+      routingProfiles: [
+        {
+          id: 'routing-1',
+          name: 'profile defaults',
+          ownerUserId: null,
+          ownerGroupId: null,
+          printerDomainUsername: 'profile-user@corp.local',
+          printerSecretRef: 'plain:ProfilePass!',
+          defaultRouteType: 'THERMAL',
+          thermalLabelPatterns: [],
+          fallbackPrinterId: null,
+          samplePdfName: null,
+          samplePdfBase64: null,
+          snippetBase64: null,
+          matchThreshold: 0.88,
+          visualRules: []
+        }
+      ]
+    });
+
+    const scanner = new StaticSmbScanner({
+      'source-1': [
+        {
+          sourceId: 'source-1',
+          path: '/in/one.pdf',
+          content: 'page',
+          modifiedAt: new Date('2026-04-02T10:00:00.000Z')
+        }
+      ]
+    });
+
+    const dispatcher = new RecordingPrinterDispatcher();
+    const pipeline = new WorkerPipeline(store, scanner, new MockOcrProvider(), dispatcher);
+
+    await pipeline.runOnce();
+
+    expect(dispatcher.calls).toHaveLength(1);
+    expect(dispatcher.calls[0]?.printer.domainUsername).toBe('mapping-user@corp.local');
+    expect(dispatcher.calls[0]?.printer.secretRef).toBe('plain:MappingPass!');
+  });
+
   it('notifies on job failure', async () => {
     const store = new InMemoryWorkerStore({
       sources: [
@@ -322,6 +618,13 @@ describe('worker pipeline', () => {
           path: '/in',
           domainUsername: '',
           secretRef: '',
+          printerDomainUsername: '',
+          printerSecretRef: '',
+          routingProfileId: null,
+          a4PrinterId: null,
+          thermalPrinterId: null,
+          includeFilenamePatterns: [],
+          excludeFilenamePatterns: [],
           isActive: true
         }
       ],
@@ -371,5 +674,126 @@ describe('worker pipeline', () => {
       errorMessage: 'PRINTER_OFFLINE',
       filePath: '/in/doc.pdf'
     });
+  });
+
+  it('retries a partial failure without repeating successful pages', async () => {
+    const store = new InMemoryWorkerStore({
+      sources: [
+        {
+          id: 'source-1',
+          ownerUserId: 'user-1',
+          ownerGroupId: null,
+          path: '/in',
+          domainUsername: '',
+          secretRef: '',
+          printerDomainUsername: '',
+          printerSecretRef: '',
+          routingProfileId: null,
+          a4PrinterId: null,
+          thermalPrinterId: null,
+          includeFilenamePatterns: [],
+          excludeFilenamePatterns: [],
+          isActive: true
+        }
+      ],
+      masks: [
+        {
+          id: 'mask-1',
+          ownerUserId: 'user-1',
+          ownerGroupId: null,
+          pattern: 'invoice',
+          isRegex: false,
+          isActive: true
+        }
+      ],
+      printers: [
+        {
+          id: 'printer-a4',
+          name: 'Office A4',
+          type: 'A4',
+          targetUri: 'ipp://a4.local',
+          domainUsername: '',
+          secretRef: '',
+          isActive: true
+        },
+        {
+          id: 'printer-thermal',
+          name: 'Thermal',
+          type: 'THERMAL',
+          targetUri: 'socket://thermal.local:9100',
+          domainUsername: '',
+          secretRef: '',
+          isActive: true
+        }
+      ],
+      routingProfiles: [
+        {
+          id: 'routing-1',
+          name: 'default',
+          ownerUserId: null,
+          ownerGroupId: null,
+          printerDomainUsername: '',
+          printerSecretRef: '',
+          defaultRouteType: 'A4',
+          thermalLabelPatterns: ['label'],
+          fallbackPrinterId: null,
+          samplePdfName: null,
+          samplePdfBase64: null,
+          snippetBase64: null,
+          matchThreshold: 0.88,
+          visualRules: []
+        }
+      ],
+      ocrGlobalConfig: {
+        provider: 'mock',
+        config: {
+          thermalKeyword: 'label'
+        }
+      }
+    });
+
+    const scanner = new StaticSmbScanner({
+      'source-1': [
+        {
+          sourceId: 'source-1',
+          path: '/in/invoice-retry.pdf',
+          content: 'label page\nregular page',
+          modifiedAt: new Date('2026-04-02T09:00:00.000Z')
+        }
+      ]
+    });
+
+    const dispatchCalls: number[] = [];
+    let failedOnce = false;
+    const dispatcher = {
+      dispatch: async (input: { page: { pageNumber: number } }) => {
+        dispatchCalls.push(input.page.pageNumber);
+        if (input.page.pageNumber === 2 && !failedOnce) {
+          failedOnce = true;
+          throw new Error('PRINTER_TIMEOUT');
+        }
+      }
+    };
+
+    const pipeline = new WorkerPipeline(store, scanner, new MockOcrProvider(), dispatcher);
+
+    const firstRun = await pipeline.runOnce();
+    expect(firstRun.failures).toBe(1);
+    expect(firstRun.pageDispatches).toBe(1);
+    expect(store.printJobs[0]?.status).toBe('FAILURE');
+
+    const retryResult = await pipeline.retryJob(store.printJobs[0]!.id);
+    expect(retryResult.summary.failures).toBe(0);
+    expect(retryResult.summary.pageDispatches).toBe(1);
+    expect(retryResult.summary.pageDispatchesSkipped).toBe(1);
+    expect(retryResult.summary.filesProcessed).toBe(1);
+    expect(retryResult.retriedJob.status).toBe('SUCCESS');
+    expect(dispatchCalls).toEqual([1, 2, 2]);
+
+    const retryPages = store.printJobPages.filter((page) => page.printJobId === retryResult.retriedJob.id);
+    expect(retryPages).toEqual([
+      expect.objectContaining({ pageNumber: 1, status: 'SKIPPED', errorMessage: 'ALREADY_DISPATCHED_SUCCESSFULLY' }),
+      expect.objectContaining({ pageNumber: 2, status: 'SUCCESS' })
+    ]);
   });
 });

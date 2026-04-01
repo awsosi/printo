@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { matchPdfPagesBySnippet } from '@printo/shared';
 import { extractPdfPages, type PdfTextItem } from './pdf.js';
 
 export type RouteType = 'A4' | 'THERMAL';
@@ -15,6 +16,13 @@ export interface WorkerSmbSource {
   path: string;
   domainUsername: string;
   secretRef: string;
+  printerDomainUsername: string;
+  printerSecretRef: string;
+  routingProfileId: string | null;
+  a4PrinterId: string | null;
+  thermalPrinterId: string | null;
+  includeFilenamePatterns: string[];
+  excludeFilenamePatterns: string[];
   isActive: boolean;
 }
 
@@ -58,11 +66,15 @@ export interface WorkerRoutingProfile {
   name: string;
   ownerUserId: string | null;
   ownerGroupId: string | null;
+  printerDomainUsername: string;
+  printerSecretRef: string;
   defaultRouteType: RouteType;
   thermalLabelPatterns: string[];
   fallbackPrinterId: string | null;
   samplePdfName: string | null;
   samplePdfBase64: string | null;
+  snippetBase64: string | null;
+  matchThreshold: number;
   visualRules: WorkerRoutingVisualRule[];
 }
 
@@ -127,6 +139,7 @@ export interface OcrPageResult {
   textItems?: PdfTextItem[];
   forcedRouteType?: RouteType;
   forcedPrinterId?: string | null;
+  matchScore?: number;
 }
 
 export interface OcrDocumentResult {
@@ -189,8 +202,10 @@ export interface SuccessfulPageDispatchRecord {
 
 export interface WorkerConfigStore {
   listActiveSmbSources(): Promise<WorkerSmbSource[]>;
+  getSmbSource(sourceId: string): Promise<WorkerSmbSource | null>;
   listActiveFilenameMasks(ownerUserId: string | null, ownerGroupId: string | null): Promise<WorkerFilenameMask[]>;
   getRoutingProfile(ownerUserId: string | null, ownerGroupId: string | null): Promise<WorkerRoutingProfile | null>;
+  getRoutingProfileById(id: string): Promise<WorkerRoutingProfile | null>;
   getActivePrinters(): Promise<WorkerPrinter[]>;
   getSystemSettings(): Promise<WorkerSystemSettings>;
   listVisualProfiles(ownerUserId: string | null, ownerGroupId: string | null): Promise<WorkerVisualProfile[]>;
@@ -215,6 +230,7 @@ export interface WorkerConfigStore {
     checksumSha256: string;
     fileMtime: Date | null;
   }): Promise<PrintJobRecord>;
+  getPrintJob(jobId: string): Promise<PrintJobRecord | null>;
   listPrintJobs(limit?: number): Promise<PrintJobRecord[]>;
   listPrintJobPages(jobId: string): Promise<PrintJobPageRecord[]>;
   cancelPrintJob(jobId: string): Promise<PrintJobRecord | null>;
@@ -307,6 +323,32 @@ function resolvePrinterCredentials(printer: WorkerPrinter, settings: WorkerSyste
   };
 }
 
+function applyOutputCredentialHierarchy(input: {
+  printer: WorkerPrinter;
+  source: WorkerSmbSource;
+  routing: WorkerRoutingProfile | null;
+  settings: WorkerSystemSettings;
+}): WorkerPrinter {
+  const profileUsername = input.routing?.printerDomainUsername ?? '';
+  const profileSecretRef = input.routing?.printerSecretRef ?? '';
+  const mappingUsername = input.source.printerDomainUsername ?? '';
+  const mappingSecretRef = input.source.printerSecretRef ?? '';
+
+  return {
+    ...input.printer,
+    domainUsername:
+      input.printer.domainUsername ||
+      mappingUsername ||
+      profileUsername ||
+      input.settings.globalPrinterDomainUsername,
+    secretRef:
+      input.printer.secretRef ||
+      mappingSecretRef ||
+      profileSecretRef ||
+      input.settings.globalPrinterSecretRef
+  };
+}
+
 function toSha256(content: Buffer | string): string {
   const data = Buffer.isBuffer(content) ? content : Buffer.from(content);
   return createHash('sha256').update(data).digest('hex');
@@ -334,12 +376,43 @@ function matchesMask(filePath: string, mask: WorkerFilenameMask): boolean {
   return filePath.toLowerCase().includes(mask.pattern.toLowerCase());
 }
 
+function matchesSourcePattern(filePath: string, pattern: string): boolean {
+  if (pattern.startsWith('/') && pattern.endsWith('/') && pattern.length > 2) {
+    try {
+      return new RegExp(pattern.slice(1, -1), 'i').test(filePath);
+    } catch {
+      return false;
+    }
+  }
+
+  if (pattern.includes('*') || pattern.includes('?')) {
+    return globToRegex(pattern).test(filePath);
+  }
+
+  return filePath.toLowerCase().includes(pattern.toLowerCase());
+}
+
 function isMaskedIn(filePath: string, masks: WorkerFilenameMask[]): boolean {
   if (masks.length === 0) {
     return true;
   }
 
   return masks.some((mask) => matchesMask(filePath, mask));
+}
+
+function matchesSourceFilters(filePath: string, source: WorkerSmbSource): boolean {
+  const includePatterns = (source.includeFilenamePatterns ?? []).map((pattern) => pattern.trim()).filter(Boolean);
+  const excludePatterns = (source.excludeFilenamePatterns ?? []).map((pattern) => pattern.trim()).filter(Boolean);
+
+  if (includePatterns.length > 0 && !includePatterns.some((pattern) => matchesSourcePattern(filePath, pattern))) {
+    return false;
+  }
+
+  if (excludePatterns.some((pattern) => matchesSourcePattern(filePath, pattern))) {
+    return false;
+  }
+
+  return true;
 }
 
 function matchesThermalPattern(label: string, pattern: string): boolean {
@@ -408,6 +481,10 @@ function matchesVisualRule(page: OcrPageResult, rule: WorkerRoutingVisualRule): 
 }
 
 function resolveRouteType(page: OcrPageResult, routing: WorkerRoutingProfile | null): RouteType {
+  if (page.forcedRouteType) {
+    return page.forcedRouteType;
+  }
+
   if (!routing) {
     return 'A4';
   }
@@ -433,11 +510,22 @@ function selectPrinter(input: {
   fallbackPrinterId: string | null;
   userAssignment: WorkerUserPrinterAssignment | null;
   forcedPrinterId: string | null;
+  sourceA4PrinterId: string | null;
+  sourceThermalPrinterId: string | null;
 }): WorkerPrinter {
   if (input.forcedPrinterId) {
     const forced = input.printers.find((printer) => printer.id === input.forcedPrinterId && printer.isActive);
     if (forced) {
       return forced;
+    }
+  }
+
+  const sourcePrinterId =
+    input.routeType === 'A4' ? (input.sourceA4PrinterId ?? null) : (input.sourceThermalPrinterId ?? null);
+  if (sourcePrinterId) {
+    const sourceAssigned = input.printers.find((printer) => printer.id === sourcePrinterId && printer.isActive);
+    if (sourceAssigned) {
+      return sourceAssigned;
     }
   }
 
@@ -486,7 +574,9 @@ export class WorkerPipeline {
 
       try {
         const masks = await this.store.listActiveFilenameMasks(effectiveSource.ownerUserId, effectiveSource.ownerGroupId);
-        const routing = await this.store.getRoutingProfile(effectiveSource.ownerUserId, effectiveSource.ownerGroupId);
+        const routing = effectiveSource.routingProfileId
+          ? await this.store.getRoutingProfileById(effectiveSource.routingProfileId)
+          : await this.store.getRoutingProfile(effectiveSource.ownerUserId, effectiveSource.ownerGroupId);
         const visualProfiles = await this.store.listVisualProfiles(effectiveSource.ownerUserId, effectiveSource.ownerGroupId);
         const userPrinterAssignment = effectiveSource.ownerUserId
           ? await this.store.getUserPrinterAssignment(effectiveSource.ownerUserId)
@@ -503,145 +593,18 @@ export class WorkerPipeline {
         summary.filesDiscovered += files.length;
 
         for (const file of files) {
-          if (!isMaskedIn(file.path, masks)) {
-            continue;
-          }
-
-          summary.filesMatched += 1;
-          const checksumSha256 = toSha256(file.content);
-          const isProcessed = await this.store.isProcessedFile({
-            filePath: file.path,
-            checksumSha256,
-            fileMtime: file.modifiedAt
+          await this.processFile({
+            file,
+            source: effectiveSource,
+            masks,
+            routing,
+            userPrinterAssignment,
+            ocrProviderName,
+            ocrConfig,
+            systemSettings,
+            printers,
+            summary
           });
-
-          if (isProcessed) {
-            summary.filesSkippedDedup += 1;
-            continue;
-          }
-
-          const isCancelled = await this.store.isFileCancelled({
-            sourceId: effectiveSource.id,
-            filePath: file.path,
-            checksumSha256,
-            fileMtime: file.modifiedAt
-          });
-
-          if (isCancelled) {
-            summary.filesSkippedCancelled += 1;
-            continue;
-          }
-
-          const job = await this.store.createPrintJob({
-            sourceId: effectiveSource.id,
-            sourceFileId: null,
-            filePath: file.path,
-            checksumSha256,
-            fileMtime: file.modifiedAt
-          });
-          summary.jobsCreated += 1;
-
-          try {
-            const successfulPages = await this.store.listSuccessfulPageDispatches({
-              sourceId: effectiveSource.id,
-              filePath: file.path,
-              checksumSha256,
-              fileMtime: file.modifiedAt
-            });
-            const successfulPageKeys = new Set(successfulPages.map((page) => `${page.pageNumber}:${page.routeType}`));
-            const ocrResult = await this.ocrProvider.analyze({
-              file,
-              provider: ocrProviderName,
-              config: ocrConfig
-            });
-
-            for (const page of ocrResult.pages) {
-              const routeType = resolveRouteType(page, routing);
-              const effectiveRouteType = page.forcedRouteType ?? routeType;
-              const pageKey = `${page.pageNumber}:${effectiveRouteType}`;
-              if (successfulPageKeys.has(pageKey)) {
-                await this.store.addPrintJobPage({
-                  printJobId: job.id,
-                  pageNumber: page.pageNumber,
-                  routeType: effectiveRouteType,
-                  printerId: null,
-                  status: 'SKIPPED',
-                  errorMessage: 'ALREADY_DISPATCHED_SUCCESSFULLY'
-                });
-                summary.pageDispatchesSkipped += 1;
-                continue;
-              }
-
-              const printer = selectPrinter({
-                routeType: effectiveRouteType,
-                printers,
-                fallbackPrinterId: routing?.fallbackPrinterId ?? null,
-                userAssignment: userPrinterAssignment,
-                forcedPrinterId: page.forcedPrinterId ?? null
-              });
-
-              await this.dispatcher.dispatch({
-                routeType: effectiveRouteType,
-                printer,
-                file,
-                page
-              });
-
-              await this.store.addPrintJobPage({
-                printJobId: job.id,
-                pageNumber: page.pageNumber,
-                routeType: effectiveRouteType,
-                printerId: printer.id,
-                status: 'SUCCESS'
-              });
-              summary.pageDispatches += 1;
-            }
-
-            const processedFile = await this.store.markProcessedFile({
-              sourceId: effectiveSource.id,
-              filePath: file.path,
-              checksumSha256,
-              fileMtime: file.modifiedAt
-            });
-
-            await this.store.linkProcessedFileToJob({
-              jobId: job.id,
-              sourceFileId: processedFile.id
-            });
-
-            await this.store.finishPrintJob({
-              jobId: job.id,
-              status: 'SUCCESS'
-            });
-
-            job.sourceFileId = processedFile.id;
-            job.status = 'SUCCESS';
-            summary.filesProcessed += 1;
-          } catch (error) {
-            const message = error instanceof Error ? error.message : 'UNKNOWN_PIPELINE_ERROR';
-            await this.store.addPrintJobPage({
-              printJobId: job.id,
-              pageNumber: 0,
-              routeType: 'A4',
-              printerId: null,
-              status: 'FAILURE',
-              errorMessage: message
-            });
-            await this.store.finishPrintJob({
-              jobId: job.id,
-              status: 'FAILURE',
-              errorMessage: message
-            });
-            job.status = 'FAILURE';
-            job.errorMessage = message;
-            summary.failures += 1;
-            await this.notifier.notify({
-              kind: 'JOB_FAILURE',
-              source: effectiveSource,
-              job,
-              errorMessage: message
-            });
-          }
         }
       } catch (error) {
         summary.failures += 1;
@@ -654,6 +617,297 @@ export class WorkerPipeline {
     }
 
     return summary;
+  }
+
+  async retryJob(jobId: string): Promise<{ retriedJob: PrintJobRecord; summary: PipelineRunSummary }> {
+    const originalJob = await this.store.getPrintJob(jobId);
+    if (!originalJob) {
+      throw new Error('PRINT_JOB_NOT_FOUND');
+    }
+    if (originalJob.status === 'SUCCESS') {
+      throw new Error('PRINT_JOB_ALREADY_SUCCESSFUL');
+    }
+
+    const source = await this.store.getSmbSource(originalJob.sourceId);
+    if (!source) {
+      throw new Error('PRINT_JOB_SOURCE_NOT_FOUND');
+    }
+
+    await this.store.retryPrintJob(jobId);
+
+    const summary = createSummary();
+    const systemSettings = await this.store.getSystemSettings();
+    const printers = (await this.store.getActivePrinters()).map((printer) => resolvePrinterCredentials(printer, systemSettings));
+    const globalOcrConfig = await this.store.getOcrGlobalConfig();
+    const effectiveSource = resolveSourceCredentials(source, systemSettings);
+    const masks = await this.store.listActiveFilenameMasks(effectiveSource.ownerUserId, effectiveSource.ownerGroupId);
+    const routing = effectiveSource.routingProfileId
+      ? await this.store.getRoutingProfileById(effectiveSource.routingProfileId)
+      : await this.store.getRoutingProfile(effectiveSource.ownerUserId, effectiveSource.ownerGroupId);
+    const visualProfiles = await this.store.listVisualProfiles(effectiveSource.ownerUserId, effectiveSource.ownerGroupId);
+    const userPrinterAssignment = effectiveSource.ownerUserId
+      ? await this.store.getUserPrinterAssignment(effectiveSource.ownerUserId)
+      : null;
+    const ocrOverride = effectiveSource.ownerUserId ? await this.store.getOcrUserOverride(effectiveSource.ownerUserId) : null;
+    const ocrProviderName = ocrOverride?.provider ?? globalOcrConfig.provider;
+    const ocrConfig = {
+      ...globalOcrConfig.config,
+      ...(ocrOverride?.config ?? {}),
+      visualProfiles
+    };
+
+    const files = await this.scanner.scanSource(effectiveSource);
+    summary.sourcesScanned = 1;
+    summary.filesDiscovered = files.length;
+
+    const matchingFile = files.find((file) => {
+      if (file.path !== originalJob.filePath) {
+        return false;
+      }
+      const sameMtime = normalizeDate(file.modifiedAt) === normalizeDate(originalJob.fileMtime);
+      if (!sameMtime) {
+        return false;
+      }
+      return toSha256(file.content) === originalJob.checksumSha256;
+    });
+
+    if (!matchingFile) {
+      summary.failures = 1;
+      throw new Error('PRINT_JOB_FILE_NOT_FOUND');
+    }
+
+    const retriedJob = await this.processFile({
+      file: matchingFile,
+      source: effectiveSource,
+      masks,
+      routing,
+      userPrinterAssignment,
+      ocrProviderName,
+      ocrConfig,
+      systemSettings,
+      printers,
+      summary,
+      skipProcessedCheck: true,
+      skipCancelledCheck: true
+    });
+
+    if (!retriedJob) {
+      throw new Error('PRINT_JOB_RETRY_SKIPPED');
+    }
+
+    return { retriedJob, summary };
+  }
+
+  private async processFile(input: {
+    file: ScannedFile;
+    source: WorkerSmbSource;
+    masks: WorkerFilenameMask[];
+    routing: WorkerRoutingProfile | null;
+    userPrinterAssignment: WorkerUserPrinterAssignment | null;
+    ocrProviderName: string;
+    ocrConfig: Record<string, unknown>;
+    systemSettings: WorkerSystemSettings;
+    printers: WorkerPrinter[];
+    summary: PipelineRunSummary;
+    skipProcessedCheck?: boolean;
+    skipCancelledCheck?: boolean;
+  }): Promise<PrintJobRecord | null> {
+    const {
+      file,
+      source,
+      masks,
+      routing,
+      userPrinterAssignment,
+      ocrProviderName,
+      ocrConfig,
+      systemSettings,
+      printers,
+      summary,
+      skipProcessedCheck = false,
+      skipCancelledCheck = false
+    } = input;
+
+    if (!matchesSourceFilters(file.path, source)) {
+      return null;
+    }
+
+    if (!isMaskedIn(file.path, masks)) {
+      return null;
+    }
+
+    summary.filesMatched += 1;
+    const checksumSha256 = toSha256(file.content);
+
+    if (!skipProcessedCheck) {
+      const isProcessed = await this.store.isProcessedFile({
+        filePath: file.path,
+        checksumSha256,
+        fileMtime: file.modifiedAt
+      });
+
+      if (isProcessed) {
+        summary.filesSkippedDedup += 1;
+        return null;
+      }
+    }
+
+    if (!skipCancelledCheck) {
+      const isCancelled = await this.store.isFileCancelled({
+        sourceId: source.id,
+        filePath: file.path,
+        checksumSha256,
+        fileMtime: file.modifiedAt
+      });
+
+      if (isCancelled) {
+        summary.filesSkippedCancelled += 1;
+        return null;
+      }
+    }
+
+    const job = await this.store.createPrintJob({
+      sourceId: source.id,
+      sourceFileId: null,
+      filePath: file.path,
+      checksumSha256,
+      fileMtime: file.modifiedAt
+    });
+    summary.jobsCreated += 1;
+
+    try {
+      const successfulPages = await this.store.listSuccessfulPageDispatches({
+        sourceId: source.id,
+        filePath: file.path,
+        checksumSha256,
+        fileMtime: file.modifiedAt
+      });
+      const successfulPageKeys = new Set(successfulPages.map((page) => `${page.pageNumber}:${page.routeType}`));
+      const ocrResult =
+        routing?.snippetBase64 && file.path.toLowerCase().endsWith('.pdf')
+          ? await (async () => {
+              const snippetBase64 = routing.snippetBase64!;
+              const pdfBuffer = Buffer.isBuffer(file.content) ? file.content : Buffer.from(file.content);
+              const matches = await matchPdfPagesBySnippet({
+                pdfBuffer,
+                snippetBase64,
+                matchThreshold: routing.matchThreshold
+              });
+              const pages: OcrPageResult[] = matches.pages.map((page) => ({
+                pageNumber: page.pageNumber,
+                labels: [],
+                text: '',
+                forcedRouteType: page.isMatch ? 'THERMAL' : undefined,
+                forcedPrinterId: null,
+                matchScore: page.score
+              }));
+
+              return {
+                pages
+              };
+            })()
+          : await this.ocrProvider.analyze({
+              file,
+              provider: ocrProviderName,
+              config: ocrConfig
+            });
+
+      for (const page of ocrResult.pages) {
+        const routeType = resolveRouteType(page, routing);
+        const effectiveRouteType = routeType;
+        const pageKey = `${page.pageNumber}:${effectiveRouteType}`;
+        if (successfulPageKeys.has(pageKey)) {
+          await this.store.addPrintJobPage({
+            printJobId: job.id,
+            pageNumber: page.pageNumber,
+            routeType: effectiveRouteType,
+            printerId: null,
+            status: 'SKIPPED',
+            errorMessage: 'ALREADY_DISPATCHED_SUCCESSFULLY'
+          });
+          summary.pageDispatchesSkipped += 1;
+          continue;
+        }
+
+        const printer = selectPrinter({
+          routeType: effectiveRouteType,
+          printers,
+          fallbackPrinterId: routing?.fallbackPrinterId ?? null,
+          userAssignment: userPrinterAssignment,
+          forcedPrinterId: page.forcedPrinterId ?? null,
+          sourceA4PrinterId: source.a4PrinterId,
+          sourceThermalPrinterId: source.thermalPrinterId
+        });
+        const effectivePrinter = applyOutputCredentialHierarchy({
+          printer,
+          source,
+          routing,
+          settings: systemSettings
+        });
+
+        await this.dispatcher.dispatch({
+          routeType: effectiveRouteType,
+          printer: effectivePrinter,
+          file,
+          page
+        });
+
+        await this.store.addPrintJobPage({
+          printJobId: job.id,
+          pageNumber: page.pageNumber,
+          routeType: effectiveRouteType,
+          printerId: effectivePrinter.id,
+          status: 'SUCCESS'
+        });
+        summary.pageDispatches += 1;
+      }
+
+      const processedFile = await this.store.markProcessedFile({
+        sourceId: source.id,
+        filePath: file.path,
+        checksumSha256,
+        fileMtime: file.modifiedAt
+      });
+
+      await this.store.linkProcessedFileToJob({
+        jobId: job.id,
+        sourceFileId: processedFile.id
+      });
+
+      await this.store.finishPrintJob({
+        jobId: job.id,
+        status: 'SUCCESS'
+      });
+
+      job.sourceFileId = processedFile.id;
+      job.status = 'SUCCESS';
+      summary.filesProcessed += 1;
+      return job;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'UNKNOWN_PIPELINE_ERROR';
+      await this.store.addPrintJobPage({
+        printJobId: job.id,
+        pageNumber: 0,
+        routeType: 'A4',
+        printerId: null,
+        status: 'FAILURE',
+        errorMessage: message
+      });
+      await this.store.finishPrintJob({
+        jobId: job.id,
+        status: 'FAILURE',
+        errorMessage: message
+      });
+      job.status = 'FAILURE';
+      job.errorMessage = message;
+      summary.failures += 1;
+      await this.notifier.notify({
+        kind: 'JOB_FAILURE',
+        source,
+        job,
+        errorMessage: message
+      });
+      return job;
+    }
   }
 }
 
@@ -715,6 +969,10 @@ export class InMemoryWorkerStore implements WorkerConfigStore {
     return this.sources.filter((source) => source.isActive);
   }
 
+  async getSmbSource(sourceId: string): Promise<WorkerSmbSource | null> {
+    return this.sources.find((source) => source.id === sourceId) ?? null;
+  }
+
   async listActiveFilenameMasks(ownerUserId: string | null, ownerGroupId: string | null): Promise<WorkerFilenameMask[]> {
     return this.masks.filter((mask) => {
       if (!mask.isActive) {
@@ -749,6 +1007,10 @@ export class InMemoryWorkerStore implements WorkerConfigStore {
     }
 
     return this.routingProfiles.find((profile) => profile.ownerUserId === null && profile.ownerGroupId === null) ?? null;
+  }
+
+  async getRoutingProfileById(id: string): Promise<WorkerRoutingProfile | null> {
+    return this.routingProfiles.find((profile) => profile.id === id) ?? null;
   }
 
   async listVisualProfiles(ownerUserId: string | null, ownerGroupId: string | null): Promise<WorkerVisualProfile[]> {
@@ -840,6 +1102,11 @@ export class InMemoryWorkerStore implements WorkerConfigStore {
     return created;
   }
 
+  async getPrintJob(jobId: string): Promise<PrintJobRecord | null> {
+    const job = this.printJobs.find((record) => record.id === jobId);
+    return job ? { ...job } : null;
+  }
+
   async listPrintJobs(limit = 100): Promise<PrintJobRecord[]> {
     return this.printJobs.slice(-limit).reverse().map((job) => ({ ...job }));
   }
@@ -877,14 +1144,14 @@ export class InMemoryWorkerStore implements WorkerConfigStore {
     fileMtime: Date | null;
   }): Promise<boolean> {
     const targetMtime = normalizeDate(input.fileMtime);
-    return this.printJobs.some(
+    const matchingJobs = this.printJobs.filter(
       (job) =>
-        job.isCancelled &&
         job.sourceId === input.sourceId &&
         job.filePath === input.filePath &&
         job.checksumSha256 === input.checksumSha256 &&
         normalizeDate(job.fileMtime) === targetMtime
     );
+    return Boolean(matchingJobs[matchingJobs.length - 1]?.isCancelled);
   }
 
   async listSuccessfulPageDispatches(input: {

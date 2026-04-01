@@ -42,6 +42,13 @@ type SmbSourceRow = {
   path: string;
   domain_username: string;
   secret_ref: string;
+  printer_domain_username: string;
+  printer_secret_ref: string;
+  routing_profile_id: string | null;
+  a4_printer_id: string | null;
+  thermal_printer_id: string | null;
+  include_filename_patterns: unknown;
+  exclude_filename_patterns: unknown;
   is_active: boolean;
 };
 
@@ -87,11 +94,15 @@ type RoutingProfileRow = {
   name: string;
   owner_user_id: string | null;
   owner_group_id: string | null;
+  printer_domain_username: string;
+  printer_secret_ref: string;
   default_route_type: PrinterType;
   thermal_label_patterns: unknown;
   fallback_printer_id: string | null;
   sample_pdf_name: string | null;
   sample_pdf_base64: string | null;
+  snippet_base64: string | null;
+  match_threshold: number;
   visual_rules: unknown;
 };
 
@@ -224,6 +235,13 @@ function mapSmbSourceRow(row: SmbSourceRow): SmbSourceRecord {
     path: row.path,
     domainUsername: row.domain_username,
     secretRef: row.secret_ref,
+    printerDomainUsername: row.printer_domain_username,
+    printerSecretRef: row.printer_secret_ref,
+    routingProfileId: row.routing_profile_id,
+    a4PrinterId: row.a4_printer_id,
+    thermalPrinterId: row.thermal_printer_id,
+    includeFilenamePatterns: toStringArray(row.include_filename_patterns),
+    excludeFilenamePatterns: toStringArray(row.exclude_filename_patterns),
     isActive: row.is_active
   };
 }
@@ -281,11 +299,15 @@ function mapRoutingProfileRow(row: RoutingProfileRow): RoutingProfileRecord {
     name: row.name,
     ownerUserId: row.owner_user_id,
     ownerGroupId: row.owner_group_id,
+    printerDomainUsername: row.printer_domain_username,
+    printerSecretRef: row.printer_secret_ref,
     defaultRouteType: row.default_route_type,
     thermalLabelPatterns: toStringArray(row.thermal_label_patterns),
     fallbackPrinterId: row.fallback_printer_id,
     samplePdfName: row.sample_pdf_name,
     samplePdfBase64: row.sample_pdf_base64,
+    snippetBase64: row.snippet_base64,
+    matchThreshold: row.match_threshold,
     visualRules: toRoutingVisualRules(row.visual_rules)
   };
 }
@@ -660,7 +682,8 @@ export class PostgresAuthStore implements AuthStore {
 
   private async getSmbSourceById(id: string): Promise<SmbSourceRecord | null> {
     const result = await this.db.query<SmbSourceRow>(
-      `SELECT id, owner_user_id, owner_group_id, path, domain_username, secret_ref, is_active
+      `SELECT id, owner_user_id, owner_group_id, path, domain_username, secret_ref, printer_domain_username, printer_secret_ref,
+              routing_profile_id, a4_printer_id, thermal_printer_id, include_filename_patterns, exclude_filename_patterns, is_active
        FROM smb_sources
        WHERE id = $1`,
       [id]
@@ -675,7 +698,8 @@ export class PostgresAuthStore implements AuthStore {
 
   async listSmbSources(): Promise<SmbSourceRecord[]> {
     const result = await this.db.query<SmbSourceRow>(
-      `SELECT id, owner_user_id, owner_group_id, path, domain_username, secret_ref, is_active
+      `SELECT id, owner_user_id, owner_group_id, path, domain_username, secret_ref, printer_domain_username, printer_secret_ref,
+              routing_profile_id, a4_printer_id, thermal_printer_id, include_filename_patterns, exclude_filename_patterns, is_active
        FROM smb_sources
        ORDER BY created_at ASC`
     );
@@ -689,13 +713,38 @@ export class PostgresAuthStore implements AuthStore {
     path: string;
     domainUsername: string;
     secretRef: string;
+    printerDomainUsername?: string;
+    printerSecretRef?: string;
+    routingProfileId?: string | null;
+    a4PrinterId?: string | null;
+    thermalPrinterId?: string | null;
+    includeFilenamePatterns?: string[];
+    excludeFilenamePatterns?: string[];
     isActive: boolean;
   }): Promise<SmbSourceRecord> {
     const result = await this.db.query<SmbSourceRow>(
-      `INSERT INTO smb_sources(owner_user_id, owner_group_id, path, domain_username, secret_ref, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, owner_user_id, owner_group_id, path, domain_username, secret_ref, is_active`,
-      [input.ownerUserId ?? null, input.ownerGroupId ?? null, input.path, input.domainUsername, input.secretRef, input.isActive]
+      `INSERT INTO smb_sources(
+         owner_user_id, owner_group_id, path, domain_username, secret_ref, printer_domain_username, printer_secret_ref,
+         routing_profile_id, a4_printer_id, thermal_printer_id, include_filename_patterns, exclude_filename_patterns, is_active
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13)
+       RETURNING id, owner_user_id, owner_group_id, path, domain_username, secret_ref, printer_domain_username, printer_secret_ref,
+                 routing_profile_id, a4_printer_id, thermal_printer_id, include_filename_patterns, exclude_filename_patterns, is_active`,
+      [
+        input.ownerUserId ?? null,
+        input.ownerGroupId ?? null,
+        input.path,
+        input.domainUsername,
+        input.secretRef,
+        input.printerDomainUsername ?? '',
+        input.printerSecretRef ?? '',
+        input.routingProfileId ?? null,
+        input.a4PrinterId ?? null,
+        input.thermalPrinterId ?? null,
+        JSON.stringify(input.includeFilenamePatterns ?? []),
+        JSON.stringify(input.excludeFilenamePatterns ?? []),
+        input.isActive
+      ]
     );
 
     return mapSmbSourceRow(result.rows[0]);
@@ -708,6 +757,13 @@ export class PostgresAuthStore implements AuthStore {
     path?: string;
     domainUsername?: string;
     secretRef?: string;
+    printerDomainUsername?: string;
+    printerSecretRef?: string;
+    routingProfileId?: string | null;
+    a4PrinterId?: string | null;
+    thermalPrinterId?: string | null;
+    includeFilenamePatterns?: string[];
+    excludeFilenamePatterns?: string[];
     isActive?: boolean;
   }): Promise<SmbSourceRecord | null> {
     const setParts: string[] = [];
@@ -741,6 +797,48 @@ export class PostgresAuthStore implements AuthStore {
     if (input.secretRef !== undefined) {
       setParts.push(`secret_ref = $${index}`);
       values.push(input.secretRef);
+      index += 1;
+    }
+
+    if (input.printerDomainUsername !== undefined) {
+      setParts.push(`printer_domain_username = $${index}`);
+      values.push(input.printerDomainUsername);
+      index += 1;
+    }
+
+    if (input.printerSecretRef !== undefined) {
+      setParts.push(`printer_secret_ref = $${index}`);
+      values.push(input.printerSecretRef);
+      index += 1;
+    }
+
+    if (input.routingProfileId !== undefined) {
+      setParts.push(`routing_profile_id = $${index}`);
+      values.push(input.routingProfileId);
+      index += 1;
+    }
+
+    if (input.a4PrinterId !== undefined) {
+      setParts.push(`a4_printer_id = $${index}`);
+      values.push(input.a4PrinterId);
+      index += 1;
+    }
+
+    if (input.thermalPrinterId !== undefined) {
+      setParts.push(`thermal_printer_id = $${index}`);
+      values.push(input.thermalPrinterId);
+      index += 1;
+    }
+
+    if (input.includeFilenamePatterns !== undefined) {
+      setParts.push(`include_filename_patterns = $${index}::jsonb`);
+      values.push(JSON.stringify(input.includeFilenamePatterns));
+      index += 1;
+    }
+
+    if (input.excludeFilenamePatterns !== undefined) {
+      setParts.push(`exclude_filename_patterns = $${index}::jsonb`);
+      values.push(JSON.stringify(input.excludeFilenamePatterns));
       index += 1;
     }
 
@@ -1125,8 +1223,9 @@ export class PostgresAuthStore implements AuthStore {
 
   private async getRoutingProfileById(id: string): Promise<RoutingProfileRecord | null> {
     const result = await this.db.query<RoutingProfileRow>(
-      `SELECT id, name, owner_user_id, owner_group_id, default_route_type, thermal_label_patterns, fallback_printer_id,
-              sample_pdf_name, sample_pdf_base64, visual_rules
+      `SELECT id, name, owner_user_id, owner_group_id, printer_domain_username, printer_secret_ref,
+              default_route_type, thermal_label_patterns, fallback_printer_id, sample_pdf_name, sample_pdf_base64,
+              snippet_base64, match_threshold, visual_rules
        FROM routing_profiles
        WHERE id = $1`,
       [id]
@@ -1141,8 +1240,9 @@ export class PostgresAuthStore implements AuthStore {
 
   async listRoutingProfiles(): Promise<RoutingProfileRecord[]> {
     const result = await this.db.query<RoutingProfileRow>(
-      `SELECT id, name, owner_user_id, owner_group_id, default_route_type, thermal_label_patterns, fallback_printer_id,
-              sample_pdf_name, sample_pdf_base64, visual_rules
+      `SELECT id, name, owner_user_id, owner_group_id, printer_domain_username, printer_secret_ref,
+              default_route_type, thermal_label_patterns, fallback_printer_id, sample_pdf_name, sample_pdf_base64,
+              snippet_base64, match_threshold, visual_rules
        FROM routing_profiles
        ORDER BY created_at ASC`
     );
@@ -1154,30 +1254,39 @@ export class PostgresAuthStore implements AuthStore {
     name: string;
     ownerUserId?: string | null;
     ownerGroupId?: string | null;
+    printerDomainUsername?: string;
+    printerSecretRef?: string;
     defaultRouteType?: PrinterType;
     thermalLabelPatterns: string[];
     fallbackPrinterId?: string | null;
     samplePdfName?: string | null;
     samplePdfBase64?: string | null;
+    snippetBase64?: string | null;
+    matchThreshold?: number;
     visualRules?: RoutingVisualRuleRecord[];
   }): Promise<RoutingProfileRecord> {
     const result = await this.db.query<RoutingProfileRow>(
       `INSERT INTO routing_profiles(
-         name, owner_user_id, owner_group_id, default_route_type, thermal_label_patterns, fallback_printer_id,
-         sample_pdf_name, sample_pdf_base64, visual_rules
+         name, owner_user_id, owner_group_id, printer_domain_username, printer_secret_ref, default_route_type,
+         thermal_label_patterns, fallback_printer_id, sample_pdf_name, sample_pdf_base64, snippet_base64, match_threshold, visual_rules
        )
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::jsonb)
-       RETURNING id, name, owner_user_id, owner_group_id, default_route_type, thermal_label_patterns, fallback_printer_id,
-                 sample_pdf_name, sample_pdf_base64, visual_rules`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb)
+       RETURNING id, name, owner_user_id, owner_group_id, printer_domain_username, printer_secret_ref,
+                 default_route_type, thermal_label_patterns, fallback_printer_id, sample_pdf_name, sample_pdf_base64,
+                 snippet_base64, match_threshold, visual_rules`,
       [
         input.name,
         input.ownerUserId ?? null,
         input.ownerGroupId ?? null,
+        input.printerDomainUsername ?? '',
+        input.printerSecretRef ?? '',
         input.defaultRouteType ?? 'A4',
         JSON.stringify(input.thermalLabelPatterns),
         input.fallbackPrinterId ?? null,
         input.samplePdfName ?? null,
         input.samplePdfBase64 ?? null,
+        input.snippetBase64 ?? null,
+        input.matchThreshold ?? 0.88,
         JSON.stringify(input.visualRules ?? [])
       ]
     );
@@ -1190,11 +1299,15 @@ export class PostgresAuthStore implements AuthStore {
     name?: string;
     ownerUserId?: string | null;
     ownerGroupId?: string | null;
+    printerDomainUsername?: string;
+    printerSecretRef?: string;
     defaultRouteType?: PrinterType;
     thermalLabelPatterns?: string[];
     fallbackPrinterId?: string | null;
     samplePdfName?: string | null;
     samplePdfBase64?: string | null;
+    snippetBase64?: string | null;
+    matchThreshold?: number;
     visualRules?: RoutingVisualRuleRecord[];
   }): Promise<RoutingProfileRecord | null> {
     const setParts: string[] = [];
@@ -1216,6 +1329,18 @@ export class PostgresAuthStore implements AuthStore {
     if (input.ownerGroupId !== undefined) {
       setParts.push(`owner_group_id = $${index}`);
       values.push(input.ownerGroupId);
+      index += 1;
+    }
+
+    if (input.printerDomainUsername !== undefined) {
+      setParts.push(`printer_domain_username = $${index}`);
+      values.push(input.printerDomainUsername);
+      index += 1;
+    }
+
+    if (input.printerSecretRef !== undefined) {
+      setParts.push(`printer_secret_ref = $${index}`);
+      values.push(input.printerSecretRef);
       index += 1;
     }
 
@@ -1246,6 +1371,18 @@ export class PostgresAuthStore implements AuthStore {
     if (input.samplePdfBase64 !== undefined) {
       setParts.push(`sample_pdf_base64 = $${index}`);
       values.push(input.samplePdfBase64);
+      index += 1;
+    }
+
+    if (input.snippetBase64 !== undefined) {
+      setParts.push(`snippet_base64 = $${index}`);
+      values.push(input.snippetBase64);
+      index += 1;
+    }
+
+    if (input.matchThreshold !== undefined) {
+      setParts.push(`match_threshold = $${index}`);
+      values.push(input.matchThreshold);
       index += 1;
     }
 

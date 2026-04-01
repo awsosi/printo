@@ -60,6 +60,13 @@ export interface AuthStore {
     path: string;
     domainUsername: string;
     secretRef: string;
+    printerDomainUsername?: string;
+    printerSecretRef?: string;
+    routingProfileId?: string | null;
+    a4PrinterId?: string | null;
+    thermalPrinterId?: string | null;
+    includeFilenamePatterns?: string[];
+    excludeFilenamePatterns?: string[];
     isActive: boolean;
   }): Promise<SmbSourceRecord>;
   updateSmbSource(input: {
@@ -69,6 +76,13 @@ export interface AuthStore {
     path?: string;
     domainUsername?: string;
     secretRef?: string;
+    printerDomainUsername?: string;
+    printerSecretRef?: string;
+    routingProfileId?: string | null;
+    a4PrinterId?: string | null;
+    thermalPrinterId?: string | null;
+    includeFilenamePatterns?: string[];
+    excludeFilenamePatterns?: string[];
     isActive?: boolean;
   }): Promise<SmbSourceRecord | null>;
   deleteSmbSource(id: string): Promise<boolean>;
@@ -125,11 +139,15 @@ export interface AuthStore {
     name: string;
     ownerUserId?: string | null;
     ownerGroupId?: string | null;
+    printerDomainUsername?: string;
+    printerSecretRef?: string;
     defaultRouteType?: PrinterType;
     thermalLabelPatterns: string[];
     fallbackPrinterId?: string | null;
     samplePdfName?: string | null;
     samplePdfBase64?: string | null;
+    snippetBase64?: string | null;
+    matchThreshold?: number;
     visualRules?: RoutingVisualRuleRecord[];
   }): Promise<RoutingProfileRecord>;
   updateRoutingProfile(input: {
@@ -137,11 +155,15 @@ export interface AuthStore {
     name?: string;
     ownerUserId?: string | null;
     ownerGroupId?: string | null;
+    printerDomainUsername?: string;
+    printerSecretRef?: string;
     defaultRouteType?: PrinterType;
     thermalLabelPatterns?: string[];
     fallbackPrinterId?: string | null;
     samplePdfName?: string | null;
     samplePdfBase64?: string | null;
+    snippetBase64?: string | null;
+    matchThreshold?: number;
     visualRules?: RoutingVisualRuleRecord[];
   }): Promise<RoutingProfileRecord | null>;
   deleteRoutingProfile(id: string): Promise<boolean>;

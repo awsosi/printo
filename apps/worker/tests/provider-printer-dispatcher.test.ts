@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { DispatchRequest } from '../src/pipeline.js';
-import { ProviderPrinterDispatcher } from '../src/dispatch/provider-printer-dispatcher.js';
+import {
+  IppDispatchProvider,
+  ProviderPrinterDispatcher,
+  WindowsSharedPrinterDispatchProvider
+} from '../src/dispatch/provider-printer-dispatcher.js';
 
-function buildRequest(targetUri: string): DispatchRequest {
+function buildRequest(targetUri: string, overrides: Partial<DispatchRequest['printer']> = {}): DispatchRequest {
   return {
     routeType: 'A4',
     printer: {
@@ -12,7 +16,8 @@ function buildRequest(targetUri: string): DispatchRequest {
       targetUri,
       domainUsername: '',
       secretRef: '',
-      isActive: true
+      isActive: true,
+      ...overrides
     },
     file: {
       sourceId: 'source-1',
@@ -35,7 +40,8 @@ describe('provider printer dispatcher', () => {
       providers: {
         mock: mockProvider,
         socket: { dispatch: vi.fn(async () => undefined) },
-        ipp: { dispatch: vi.fn(async () => undefined) }
+        ipp: { dispatch: vi.fn(async () => undefined) },
+        windows: { dispatch: vi.fn(async () => undefined) }
       }
     });
 
@@ -45,18 +51,38 @@ describe('provider printer dispatcher', () => {
 
   it('uses provider auto-detected from URI in auto mode', async () => {
     const socketProvider = { dispatch: vi.fn(async () => undefined) };
+    const windowsProvider = { dispatch: vi.fn(async () => undefined) };
 
     const dispatcher = new ProviderPrinterDispatcher({
       mode: 'auto',
       providers: {
         mock: { dispatch: vi.fn(async () => undefined) },
         socket: socketProvider,
-        ipp: { dispatch: vi.fn(async () => undefined) }
+        ipp: { dispatch: vi.fn(async () => undefined) },
+        windows: windowsProvider
       }
     });
 
     await dispatcher.dispatch(buildRequest('socket://printer.local:9100'));
     expect(socketProvider.dispatch).toHaveBeenCalledTimes(1);
+    expect(windowsProvider.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('auto-detects windows shared printers from UNC targets', async () => {
+    const windowsProvider = { dispatch: vi.fn(async () => undefined) };
+
+    const dispatcher = new ProviderPrinterDispatcher({
+      mode: 'auto',
+      providers: {
+        mock: { dispatch: vi.fn(async () => undefined) },
+        socket: { dispatch: vi.fn(async () => undefined) },
+        ipp: { dispatch: vi.fn(async () => undefined) },
+        windows: windowsProvider
+      }
+    });
+
+    await dispatcher.dispatch(buildRequest('\\\\printserver\\A4-FrontDesk'));
+    expect(windowsProvider.dispatch).toHaveBeenCalledTimes(1);
   });
 
   it('respects per-printer override config', async () => {
@@ -74,7 +100,8 @@ describe('provider printer dispatcher', () => {
       providers: {
         mock: { dispatch: vi.fn(async () => undefined) },
         socket: { dispatch: vi.fn(async () => undefined) },
-        ipp: ippProvider
+        ipp: ippProvider,
+        windows: { dispatch: vi.fn(async () => undefined) }
       }
     });
 
@@ -84,5 +111,56 @@ describe('provider printer dispatcher', () => {
     const [, resolution] = ippProvider.dispatch.mock.calls[0] as [DispatchRequest, { targetUri: string; timeoutMs: number }];
     expect(resolution.targetUri).toBe('ipp://ipp.local/print');
     expect(resolution.timeoutMs).toBe(2500);
+  });
+
+  it('passes basic auth to ipp dispatch when printer credentials are resolved', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
+    const dispatcher = new ProviderPrinterDispatcher({
+      mode: 'ipp',
+      providers: {
+        mock: { dispatch: vi.fn(async () => undefined) },
+        socket: { dispatch: vi.fn(async () => undefined) },
+        ipp: new IppDispatchProvider(fetchMock as typeof fetch),
+        windows: { dispatch: vi.fn(async () => undefined) }
+      }
+    });
+
+    await dispatcher.dispatch(
+      buildRequest('ipp://printer.local/queue', {
+        domainUsername: 'printer-user@corp.local',
+        secretRef: 'plain:PrinterPass!'
+      })
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>).authorization).toBe(
+      `Basic ${Buffer.from('printer-user@corp.local:PrinterPass!').toString('base64')}`
+    );
+  });
+
+  it('dispatches to smbclient for windows shared printers with credentials', async () => {
+    const execFileMock = vi.fn(async () => ({ stdout: '', stderr: '' }));
+    const provider = new WindowsSharedPrinterDispatchProvider(execFileMock as never, 'smbclient');
+
+    await provider.dispatch(
+      buildRequest('smb://printserver/A4-FrontDesk', {
+        domainUsername: 'CORP\\svc-print',
+        secretRef: 'plain:PrinterPass!'
+      }),
+      {
+        provider: 'windows',
+        targetUri: 'smb://printserver/A4-FrontDesk',
+        timeoutMs: 2500
+      }
+    );
+
+    const [bin, args, options] = execFileMock.mock.calls[0] as [string, string[], { timeout: number }];
+    expect(bin).toBe('smbclient');
+    expect(args[0]).toBe('//printserver/A4-FrontDesk');
+    expect(args).toContain('-U');
+    expect(args).toContain('CORP\\svc-print%PrinterPass!');
+    expect(args).toContain('-c');
+    expect(args.some((value) => value.startsWith('print "'))).toBe(true);
+    expect(options.timeout).toBe(2500);
   });
 });

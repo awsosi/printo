@@ -1,15 +1,19 @@
 services:
   web:
-    image: node:24-alpine
+    image: node:18
     working_dir: /app
     command: sh -c "npm install && npm run dev -w @printo/web"
     volumes:
       - ..:/app
+      - web_node_modules:/app/node_modules
+      - web_app_node_modules:/app/apps/web/node_modules
+      - web_shared_node_modules:/app/packages/shared/node_modules
     env_file:
       - ../.env.example
     environment:
       - PORT=3000
       - API_BASE_URL=${API_BASE_URL:-http://api:4000}
+      - WORKER_BASE_URL=${WORKER_BASE_URL:-http://worker:5000}
     ports:
       - "${WEB_PORT:-3000}:3000"
     depends_on:
@@ -22,11 +26,14 @@ services:
       start_period: 120s
 
   api:
-    image: node:24-alpine
+    image: node:18
     working_dir: /app
     command: sh -c "npm install && npm run migrate -w @printo/api && npm run dev -w @printo/api"
     volumes:
       - ..:/app
+      - api_node_modules:/app/node_modules
+      - api_app_node_modules:/app/apps/api/node_modules
+      - api_shared_node_modules:/app/packages/shared/node_modules
     env_file:
       - ../.env.example
     environment:
@@ -48,11 +55,19 @@ services:
       start_period: 120s
 
   worker:
-    image: node:24-alpine
+    image: node:18
     working_dir: /app
-    command: sh -c "npm install && npm run dev -w @printo/worker"
+    command: >-
+      sh -c "apt-get update &&
+      apt-get install -y --no-install-recommends smbclient &&
+      rm -rf /var/lib/apt/lists/* &&
+      npm install &&
+      npm run dev -w @printo/worker"
     volumes:
       - ..:/app
+      - worker_node_modules:/app/node_modules
+      - worker_app_node_modules:/app/apps/worker/node_modules
+      - worker_shared_node_modules:/app/packages/shared/node_modules
     env_file:
       - ../.env.example
     environment:
@@ -101,3 +116,12 @@ services:
 
 volumes:
   pg_data:
+  web_node_modules:
+  web_app_node_modules:
+  web_shared_node_modules:
+  api_node_modules:
+  api_app_node_modules:
+  api_shared_node_modules:
+  worker_node_modules:
+  worker_app_node_modules:
+  worker_shared_node_modules:

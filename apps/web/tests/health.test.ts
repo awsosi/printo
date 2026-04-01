@@ -11,19 +11,22 @@ describe('web app', () => {
     expect(res.body).toEqual({ service: 'web', status: 'ok' });
   });
 
-  it('renders admin configuration UI with all config sections', async () => {
+  it('renders the simplified admin configuration UI', async () => {
     const app = createWebApp();
     const res = await request(app).get('/admin/config');
 
     expect(res.status).toBe(200);
     expect(res.text).toContain('id="loginForm"');
-    expect(res.text).toContain('id="smbCreateForm"');
-    expect(res.text).toContain('id="printerCreateForm"');
-    expect(res.text).toContain('id="userPrinterAssignmentForm"');
-    expect(res.text).toContain('id="maskCreateForm"');
-    expect(res.text).toContain('id="routingCreateForm"');
-    expect(res.text).toContain('id="ocrGlobalForm"');
-    expect(res.text).toContain('id="ocrOverrideForm"');
+    expect(res.text).toContain('id="routingForm"');
+    expect(res.text).toContain('id="sourceForm"');
+    expect(res.text).toContain('id="printerForm"');
+    expect(res.text).toContain('Recognition profile setup');
+    expect(res.text).toContain('Input directory to printer mapping');
+    expect(res.text).toContain('Printer setup');
+    expect(res.text).toContain('data-tab="printers">Printers</button>');
+    expect(res.text).toContain('name="printerDomainUsername"');
+    expect(res.text).toContain('id="jobStatusList"');
+    expect(res.text).toContain('Retry failed or partial jobs.');
   });
 
   it('proxies admin login requests to API', async () => {
@@ -114,6 +117,33 @@ describe('web app', () => {
     expect(url).toBe('http://api.internal/admin/config/printers');
     expect(init.method).toBe('POST');
     expect(init.body).toBe(JSON.stringify(payload));
+    expect((init.headers as Record<string, string>).authorization).toBe('Bearer admin-token');
+  });
+
+  it('proxies worker retry requests to the worker service', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ job: { id: 'job-2', status: 'SUCCESS' }, summary: { filesProcessed: 1 } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    );
+    const app = createWebApp({
+      fetchImpl: fetchMock as typeof fetch,
+      apiBaseUrl: 'http://api.internal',
+      workerBaseUrl: 'http://worker.internal'
+    });
+
+    const res = await request(app)
+      .post('/worker/pipeline/jobs/job-1/retry')
+      .set('authorization', 'Bearer admin-token')
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.job.id).toBe('job-2');
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('http://worker.internal/pipeline/jobs/job-1/retry');
+    expect(init.method).toBe('POST');
     expect((init.headers as Record<string, string>).authorization).toBe('Bearer admin-token');
   });
 

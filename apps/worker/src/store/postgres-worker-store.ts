@@ -23,6 +23,13 @@ type SmbSourceRow = {
   path: string;
   domain_username: string;
   secret_ref: string;
+  printer_domain_username: string;
+  printer_secret_ref: string;
+  routing_profile_id: string | null;
+  a4_printer_id: string | null;
+  thermal_printer_id: string | null;
+  include_filename_patterns: unknown;
+  exclude_filename_patterns: unknown;
   is_active: boolean;
 };
 
@@ -66,11 +73,15 @@ type RoutingProfileRow = {
   name: string;
   owner_user_id: string | null;
   owner_group_id: string | null;
+  printer_domain_username: string;
+  printer_secret_ref: string;
   default_route_type: 'A4' | 'THERMAL';
   thermal_label_patterns: unknown;
   fallback_printer_id: string | null;
   sample_pdf_name: string | null;
   sample_pdf_base64: string | null;
+  snippet_base64: string | null;
+  match_threshold: number;
   visual_rules: unknown;
 };
 
@@ -188,6 +199,13 @@ function mapSmbSource(row: SmbSourceRow): WorkerSmbSource {
     path: row.path,
     domainUsername: row.domain_username,
     secretRef: row.secret_ref,
+    printerDomainUsername: row.printer_domain_username,
+    printerSecretRef: row.printer_secret_ref,
+    routingProfileId: row.routing_profile_id,
+    a4PrinterId: row.a4_printer_id,
+    thermalPrinterId: row.thermal_printer_id,
+    includeFilenamePatterns: toStringArray(row.include_filename_patterns),
+    excludeFilenamePatterns: toStringArray(row.exclude_filename_patterns),
     isActive: row.is_active
   };
 }
@@ -239,11 +257,15 @@ function mapRoutingProfile(row: RoutingProfileRow): WorkerRoutingProfile {
     name: row.name,
     ownerUserId: row.owner_user_id,
     ownerGroupId: row.owner_group_id,
+    printerDomainUsername: row.printer_domain_username,
+    printerSecretRef: row.printer_secret_ref,
     defaultRouteType: row.default_route_type,
     thermalLabelPatterns: toStringArray(row.thermal_label_patterns),
     fallbackPrinterId: row.fallback_printer_id,
     samplePdfName: row.sample_pdf_name,
     samplePdfBase64: row.sample_pdf_base64,
+    snippetBase64: row.snippet_base64,
+    matchThreshold: row.match_threshold,
     visualRules: toRoutingVisualRules(row.visual_rules)
   };
 }
@@ -268,13 +290,27 @@ export class PostgresWorkerStore implements WorkerConfigStore {
 
   async listActiveSmbSources(): Promise<WorkerSmbSource[]> {
     const result = await this.db.query<SmbSourceRow>(
-      `SELECT id, owner_user_id, owner_group_id, path, domain_username, secret_ref, is_active
+      `SELECT id, owner_user_id, owner_group_id, path, domain_username, secret_ref, printer_domain_username, printer_secret_ref,
+              routing_profile_id, a4_printer_id, thermal_printer_id, include_filename_patterns, exclude_filename_patterns, is_active
        FROM smb_sources
        WHERE is_active = TRUE
        ORDER BY created_at ASC`
     );
 
     return result.rows.map(mapSmbSource);
+  }
+
+  async getSmbSource(sourceId: string): Promise<WorkerSmbSource | null> {
+    const result = await this.db.query<SmbSourceRow>(
+      `SELECT id, owner_user_id, owner_group_id, path, domain_username, secret_ref, printer_domain_username, printer_secret_ref,
+              routing_profile_id, a4_printer_id, thermal_printer_id, include_filename_patterns, exclude_filename_patterns, is_active
+       FROM smb_sources
+       WHERE id = $1
+       LIMIT 1`,
+      [sourceId]
+    );
+
+    return result.rows[0] ? mapSmbSource(result.rows[0]) : null;
   }
 
   async listActiveFilenameMasks(ownerUserId: string | null, ownerGroupId: string | null): Promise<WorkerFilenameMask[]> {
@@ -296,8 +332,8 @@ export class PostgresWorkerStore implements WorkerConfigStore {
 
   async getRoutingProfile(ownerUserId: string | null, ownerGroupId: string | null): Promise<WorkerRoutingProfile | null> {
     const result = await this.db.query<RoutingProfileRow>(
-      `SELECT id, name, owner_user_id, owner_group_id, default_route_type, thermal_label_patterns, fallback_printer_id,
-              sample_pdf_name, sample_pdf_base64, visual_rules
+      `SELECT id, name, owner_user_id, owner_group_id, printer_domain_username, printer_secret_ref, default_route_type,
+              thermal_label_patterns, fallback_printer_id, sample_pdf_name, sample_pdf_base64, snippet_base64, match_threshold, visual_rules
        FROM routing_profiles
        WHERE
          (owner_user_id IS NULL AND owner_group_id IS NULL)
@@ -312,6 +348,23 @@ export class PostgresWorkerStore implements WorkerConfigStore {
          created_at ASC
        LIMIT 1`,
       [ownerUserId, ownerGroupId]
+    );
+
+    if (!result.rows[0]) {
+      return null;
+    }
+
+    return mapRoutingProfile(result.rows[0]);
+  }
+
+  async getRoutingProfileById(id: string): Promise<WorkerRoutingProfile | null> {
+    const result = await this.db.query<RoutingProfileRow>(
+      `SELECT id, name, owner_user_id, owner_group_id, printer_domain_username, printer_secret_ref, default_route_type,
+              thermal_label_patterns, fallback_printer_id, sample_pdf_name, sample_pdf_base64, snippet_base64, match_threshold, visual_rules
+       FROM routing_profiles
+       WHERE id = $1
+       LIMIT 1`,
+      [id]
     );
 
     if (!result.rows[0]) {
@@ -549,6 +602,40 @@ export class PostgresWorkerStore implements WorkerConfigStore {
     return {
       id: row.id,
       sourceId: row.source_id ?? input.sourceId,
+      sourceFileId: row.source_file_id,
+      filePath: row.file_path,
+      checksumSha256: row.file_checksum_sha256,
+      fileMtime: row.file_mtime,
+      isCancelled: row.is_cancelled,
+      status:
+        row.status === 'FAILURE'
+          ? 'FAILURE'
+          : row.status === 'SUCCESS'
+            ? 'SUCCESS'
+            : row.status === 'CANCELLED'
+              ? 'CANCELLED'
+              : 'PENDING',
+      errorMessage: row.error_message
+    };
+  }
+
+  async getPrintJob(jobId: string): Promise<PrintJobRecord | null> {
+    const result = await this.db.query<PrintJobRow>(
+      `SELECT id, source_id, source_file_id, file_path, file_checksum_sha256, file_mtime, is_cancelled, status, error_message
+       FROM print_jobs
+       WHERE id = $1
+       LIMIT 1`,
+      [jobId]
+    );
+
+    const row = result.rows[0];
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      sourceId: row.source_id ?? '',
       sourceFileId: row.source_file_id,
       filePath: row.file_path,
       checksumSha256: row.file_checksum_sha256,

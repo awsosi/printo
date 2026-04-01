@@ -241,6 +241,13 @@ export class InMemoryAuthStore implements AuthStore {
     path: string;
     domainUsername: string;
     secretRef: string;
+    printerDomainUsername?: string;
+    printerSecretRef?: string;
+    routingProfileId?: string | null;
+    a4PrinterId?: string | null;
+    thermalPrinterId?: string | null;
+    includeFilenamePatterns?: string[];
+    excludeFilenamePatterns?: string[];
     isActive: boolean;
   }): Promise<SmbSourceRecord> {
     const record: SmbSourceRecord = {
@@ -250,6 +257,13 @@ export class InMemoryAuthStore implements AuthStore {
       path: input.path,
       domainUsername: input.domainUsername,
       secretRef: input.secretRef,
+      printerDomainUsername: input.printerDomainUsername ?? '',
+      printerSecretRef: input.printerSecretRef ?? '',
+      routingProfileId: input.routingProfileId ?? null,
+      a4PrinterId: input.a4PrinterId ?? null,
+      thermalPrinterId: input.thermalPrinterId ?? null,
+      includeFilenamePatterns: [...(input.includeFilenamePatterns ?? [])],
+      excludeFilenamePatterns: [...(input.excludeFilenamePatterns ?? [])],
       isActive: input.isActive
     };
     this.smbSources.push(record);
@@ -263,6 +277,13 @@ export class InMemoryAuthStore implements AuthStore {
     path?: string;
     domainUsername?: string;
     secretRef?: string;
+    printerDomainUsername?: string;
+    printerSecretRef?: string;
+    routingProfileId?: string | null;
+    a4PrinterId?: string | null;
+    thermalPrinterId?: string | null;
+    includeFilenamePatterns?: string[];
+    excludeFilenamePatterns?: string[];
     isActive?: boolean;
   }): Promise<SmbSourceRecord | null> {
     const record = this.smbSources.find((candidate) => candidate.id === input.id);
@@ -275,6 +296,13 @@ export class InMemoryAuthStore implements AuthStore {
     if (input.path !== undefined) record.path = input.path;
     if (input.domainUsername !== undefined) record.domainUsername = input.domainUsername;
     if (input.secretRef !== undefined) record.secretRef = input.secretRef;
+    if (input.printerDomainUsername !== undefined) record.printerDomainUsername = input.printerDomainUsername;
+    if (input.printerSecretRef !== undefined) record.printerSecretRef = input.printerSecretRef;
+    if (input.routingProfileId !== undefined) record.routingProfileId = input.routingProfileId;
+    if (input.a4PrinterId !== undefined) record.a4PrinterId = input.a4PrinterId;
+    if (input.thermalPrinterId !== undefined) record.thermalPrinterId = input.thermalPrinterId;
+    if (input.includeFilenamePatterns !== undefined) record.includeFilenamePatterns = [...input.includeFilenamePatterns];
+    if (input.excludeFilenamePatterns !== undefined) record.excludeFilenamePatterns = [...input.excludeFilenamePatterns];
     if (input.isActive !== undefined) record.isActive = input.isActive;
 
     return record;
@@ -450,11 +478,15 @@ export class InMemoryAuthStore implements AuthStore {
     name: string;
     ownerUserId?: string | null;
     ownerGroupId?: string | null;
+    printerDomainUsername?: string;
+    printerSecretRef?: string;
     defaultRouteType?: PrinterType;
     thermalLabelPatterns: string[];
     fallbackPrinterId?: string | null;
     samplePdfName?: string | null;
     samplePdfBase64?: string | null;
+    snippetBase64?: string | null;
+    matchThreshold?: number;
     visualRules?: RoutingProfileRecord['visualRules'];
   }): Promise<RoutingProfileRecord> {
     const record: RoutingProfileRecord = {
@@ -462,11 +494,15 @@ export class InMemoryAuthStore implements AuthStore {
       name: input.name,
       ownerUserId: input.ownerUserId ?? null,
       ownerGroupId: input.ownerGroupId ?? null,
+      printerDomainUsername: input.printerDomainUsername ?? '',
+      printerSecretRef: input.printerSecretRef ?? '',
       defaultRouteType: input.defaultRouteType ?? 'A4',
       thermalLabelPatterns: [...input.thermalLabelPatterns],
       fallbackPrinterId: input.fallbackPrinterId ?? null,
       samplePdfName: input.samplePdfName ?? null,
       samplePdfBase64: input.samplePdfBase64 ?? null,
+      snippetBase64: input.snippetBase64 ?? null,
+      matchThreshold: input.matchThreshold ?? 0.88,
       visualRules: (input.visualRules ?? []).map((rule) => ({
         ...rule,
         expectedWords: [...rule.expectedWords],
@@ -483,11 +519,15 @@ export class InMemoryAuthStore implements AuthStore {
     name?: string;
     ownerUserId?: string | null;
     ownerGroupId?: string | null;
+    printerDomainUsername?: string;
+    printerSecretRef?: string;
     defaultRouteType?: PrinterType;
     thermalLabelPatterns?: string[];
     fallbackPrinterId?: string | null;
     samplePdfName?: string | null;
     samplePdfBase64?: string | null;
+    snippetBase64?: string | null;
+    matchThreshold?: number;
     visualRules?: RoutingProfileRecord['visualRules'];
   }): Promise<RoutingProfileRecord | null> {
     const record = this.routingProfiles.find((candidate) => candidate.id === input.id);
@@ -498,11 +538,15 @@ export class InMemoryAuthStore implements AuthStore {
     if (input.name !== undefined) record.name = input.name;
     if (input.ownerUserId !== undefined) record.ownerUserId = input.ownerUserId;
     if (input.ownerGroupId !== undefined) record.ownerGroupId = input.ownerGroupId;
+    if (input.printerDomainUsername !== undefined) record.printerDomainUsername = input.printerDomainUsername;
+    if (input.printerSecretRef !== undefined) record.printerSecretRef = input.printerSecretRef;
     if (input.defaultRouteType !== undefined) record.defaultRouteType = input.defaultRouteType;
     if (input.thermalLabelPatterns !== undefined) record.thermalLabelPatterns = [...input.thermalLabelPatterns];
     if (input.fallbackPrinterId !== undefined) record.fallbackPrinterId = input.fallbackPrinterId;
     if (input.samplePdfName !== undefined) record.samplePdfName = input.samplePdfName;
     if (input.samplePdfBase64 !== undefined) record.samplePdfBase64 = input.samplePdfBase64;
+    if (input.snippetBase64 !== undefined) record.snippetBase64 = input.snippetBase64;
+    if (input.matchThreshold !== undefined) record.matchThreshold = input.matchThreshold;
     if (input.visualRules !== undefined) {
       record.visualRules = input.visualRules.map((rule) => ({
         ...rule,

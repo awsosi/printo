@@ -196,17 +196,21 @@ export function createWorkerApp(options: WorkerAppOptions = {}) {
   });
 
   app.post('/pipeline/jobs/:jobId/retry', async (req, res) => {
-    const job = await store.retryPrintJob(req.params.jobId);
-    if (!job) {
+    const existingJob = await store.getPrintJob(req.params.jobId);
+    if (!existingJob) {
       return res.status(404).json({ error: 'PRINT_JOB_NOT_FOUND' });
+    }
+    if (existingJob.status === 'SUCCESS') {
+      return res.status(409).json({ error: 'PRINT_JOB_ALREADY_SUCCESSFUL' });
     }
 
     try {
-      const summary = await runner.runOnce();
-      return res.json({ job, summary, runner: runner.getState() });
+      const result = await pipeline.retryJob(req.params.jobId);
+      return res.json({ job: result.retriedJob, summary: result.summary, runner: runner.getState() });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'WORKER_PIPELINE_ERROR';
-      return res.status(500).json({ job, error: message, runner: runner.getState() });
+      const statusCode = message === 'PRINT_JOB_FILE_NOT_FOUND' ? 409 : 500;
+      return res.status(statusCode).json({ job: existingJob, error: message, runner: runner.getState() });
     }
   });
 

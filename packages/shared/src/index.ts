@@ -13,3 +13,5 @@ export interface JwtClaims {
   roles: Role[];
   type: 'access' | 'refresh';
 }
+
+export { matchPdfPagesBySnippet, type PdfSnippetMatchPage, type PdfSnippetMatchResult } from './pdf-image-match.js';

@@ -1,7 +1,15 @@
 import net from 'node:net';
+import { execFile } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { promisify } from 'node:util';
 import type { DispatchRequest, PrinterDispatcher, WorkerPrinter } from '../pipeline.js';
+import { parseUncPath, resolveSecretFromRef } from '../scanner/smb-path.js';
 
-export type DispatchProviderName = 'mock' | 'socket' | 'ipp';
+const execFileAsync = promisify(execFile);
+
+export type DispatchProviderName = 'mock' | 'socket' | 'ipp' | 'windows';
 
 interface DispatchResolution {
   provider: DispatchProviderName;
@@ -19,6 +27,11 @@ type ProviderOverrideMap = Record<string, ProviderOverride>;
 
 interface DispatchProvider {
   dispatch(input: DispatchRequest, resolution: DispatchResolution): Promise<void>;
+}
+
+interface ParsedWindowsPrinterTarget {
+  server: string;
+  share: string;
 }
 
 function toPayload(fileContent: Buffer | string): Buffer {
@@ -41,7 +54,69 @@ function normalizeDispatchUri(uri: string): string {
   return uri;
 }
 
+function quoteSmbToken(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function buildAuthorizationHeader(printer: WorkerPrinter): string | null {
+  const username = printer.domainUsername.trim();
+  const password = resolveSecretFromRef(printer.secretRef);
+  if (!username || !password) {
+    return null;
+  }
+
+  return `Basic ${Buffer.from(`${username}:${password}`, 'utf8').toString('base64')}`;
+}
+
+function resolvePrinterAuth(printer: WorkerPrinter): { username: string; password: string } | null {
+  const username = printer.domainUsername.trim();
+  const password = resolveSecretFromRef(printer.secretRef);
+  if (!username || !password) {
+    return null;
+  }
+
+  return { username, password };
+}
+
+function parseWindowsPrinterTarget(targetUri: string): ParsedWindowsPrinterTarget | null {
+  const uncTarget = parseUncPath(targetUri);
+  if (uncTarget) {
+    if (uncTarget.directory) {
+      return null;
+    }
+
+    return {
+      server: uncTarget.server,
+      share: uncTarget.share
+    };
+  }
+
+  try {
+    const parsed = new URL(targetUri);
+    const protocol = parsed.protocol.replace(':', '').toLowerCase();
+    if (protocol !== 'smb' && protocol !== 'cifs') {
+      return null;
+    }
+
+    const share = decodeURIComponent(parsed.pathname.replace(/^\/+/, '').split('/')[0] ?? '').trim();
+    if (!parsed.hostname || !share) {
+      return null;
+    }
+
+    return {
+      server: parsed.hostname,
+      share
+    };
+  } catch {
+    return null;
+  }
+}
+
 function detectProviderFromTargetUri(targetUri: string): DispatchProviderName {
+  if (parseWindowsPrinterTarget(targetUri)) {
+    return 'windows';
+  }
+
   try {
     const protocol = new URL(targetUri).protocol.replace(':', '').toLowerCase();
 
@@ -75,7 +150,7 @@ function parseOverrideMap(raw: string | undefined): ProviderOverrideMap {
 function resolveMode(rawMode: string | undefined): DispatchProviderName | 'auto' {
   const mode = String(rawMode ?? 'mock').toLowerCase();
 
-  if (mode === 'auto' || mode === 'mock' || mode === 'socket' || mode === 'ipp') {
+  if (mode === 'auto' || mode === 'mock' || mode === 'socket' || mode === 'ipp' || mode === 'windows') {
     return mode;
   }
 
@@ -173,6 +248,7 @@ export class IppDispatchProvider implements DispatchProvider {
       method: 'POST',
       headers: {
         'content-type': 'application/pdf',
+        ...(buildAuthorizationHeader(input.printer) ? { authorization: buildAuthorizationHeader(input.printer)! } : {}),
         'x-printo-page-number': String(input.page.pageNumber),
         'x-printo-route-type': input.routeType,
         'x-printo-printer-id': input.printer.id
@@ -183,6 +259,45 @@ export class IppDispatchProvider implements DispatchProvider {
 
     if (!response.ok) {
       throw new Error(`IPP_DISPATCH_FAILED:${response.status}`);
+    }
+  }
+}
+
+export class WindowsSharedPrinterDispatchProvider implements DispatchProvider {
+  constructor(
+    private readonly execFileImpl: typeof execFileAsync = execFileAsync,
+    private readonly smbClientBin = process.env.SMBCLIENT_BIN ?? 'smbclient'
+  ) {}
+
+  async dispatch(input: DispatchRequest, resolution: DispatchResolution): Promise<void> {
+    const target = parseWindowsPrinterTarget(resolution.targetUri);
+    if (!target) {
+      throw new Error(`INVALID_WINDOWS_PRINTER_URI:${resolution.targetUri}`);
+    }
+
+    const payload = toPayload(input.file.content);
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'printo-printer-'));
+    const tempFilePath = path.join(tempDir, `page-${input.page.pageNumber}.pdf`);
+    const auth = resolvePrinterAuth(input.printer);
+
+    try {
+      await writeFile(tempFilePath, payload);
+
+      const args = [`//${target.server}/${target.share}`];
+      if (auth) {
+        args.push('-U', `${auth.username}%${auth.password}`);
+      } else {
+        args.push('-N');
+      }
+      args.push('-c', `print ${quoteSmbToken(tempFilePath)}`);
+
+      await this.execFileImpl(this.smbClientBin, args, {
+        encoding: 'utf8',
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: resolution.timeoutMs
+      });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
     }
   }
 }
@@ -208,7 +323,8 @@ export class ProviderPrinterDispatcher implements PrinterDispatcher {
     this.providers = {
       mock: options.providers?.mock ?? new MockDispatchProvider(),
       socket: options.providers?.socket ?? new SocketDispatchProvider(),
-      ipp: options.providers?.ipp ?? new IppDispatchProvider()
+      ipp: options.providers?.ipp ?? new IppDispatchProvider(),
+      windows: options.providers?.windows ?? new WindowsSharedPrinterDispatchProvider()
     };
   }
 

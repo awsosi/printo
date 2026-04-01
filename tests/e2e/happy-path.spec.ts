@@ -30,7 +30,12 @@ class SharedConfigWorkerStore implements WorkerConfigStore {
     return records.filter((record) => record.isActive);
   }
 
-  async listActiveFilenameMasks(ownerUserId: string | null): Promise<WorkerFilenameMask[]> {
+  async getSmbSource(sourceId: string): Promise<WorkerSmbSource | null> {
+    const records = await this.apiStore.listSmbSources();
+    return records.find((record) => record.id === sourceId) ?? null;
+  }
+
+  async listActiveFilenameMasks(ownerUserId: string | null, _ownerGroupId: string | null): Promise<WorkerFilenameMask[]> {
     const records = await this.apiStore.listFilenameMasks();
     return records.filter((record) => {
       if (!record.isActive) {
@@ -45,9 +50,36 @@ class SharedConfigWorkerStore implements WorkerConfigStore {
     });
   }
 
-  async getRoutingProfile(_ownerUserId: string | null): Promise<WorkerRoutingProfile | null> {
+  async getRoutingProfile(_ownerUserId: string | null, _ownerGroupId: string | null): Promise<WorkerRoutingProfile | null> {
     const profiles = await this.apiStore.listRoutingProfiles();
     return profiles[0] ?? null;
+  }
+
+  async getRoutingProfileById(id: string): Promise<WorkerRoutingProfile | null> {
+    const profiles = await this.apiStore.listRoutingProfiles();
+    return profiles.find((profile) => profile.id === id) ?? null;
+  }
+
+  async getSystemSettings() {
+    return {
+      globalSmbDomainUsername: '',
+      globalSmbSecretRef: '',
+      globalPrinterDomainUsername: '',
+      globalPrinterSecretRef: '',
+      workerPollIntervalMs: 5000,
+      smtpEnabled: false,
+      smtpHost: '',
+      smtpPort: 25,
+      smtpSecure: false,
+      smtpUsername: '',
+      smtpSecretRef: '',
+      smtpFrom: '',
+      smtpTo: []
+    };
+  }
+
+  async listVisualProfiles(_ownerUserId: string | null, _ownerGroupId: string | null): Promise<[]> {
+    return [];
   }
 
   async getActivePrinters(): Promise<WorkerPrinter[]> {
@@ -117,6 +149,11 @@ class SharedConfigWorkerStore implements WorkerConfigStore {
 
     this.printJobs.push(created);
     return created;
+  }
+
+  async getPrintJob(jobId: string): Promise<PrintJobRecord | null> {
+    const job = this.printJobs.find((record) => record.id === jobId);
+    return job ? { ...job } : null;
   }
 
   async listPrintJobs(limit = 100): Promise<PrintJobRecord[]> {

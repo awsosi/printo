@@ -46,6 +46,14 @@ function parseNullableString(value: unknown): string | null {
   return null;
 }
 
+function parseMatchThreshold(value: unknown): number | null {
+  const threshold = Number(value);
+  if (!Number.isFinite(threshold) || threshold < 0.5 || threshold > 0.9999) {
+    return null;
+  }
+  return threshold;
+}
+
 function parseRoutingVisualRules(value: unknown): RoutingVisualRuleRecord[] | null {
   if (!Array.isArray(value)) {
     return null;
@@ -719,18 +727,50 @@ export function createApiApp(store: AuthStore) {
       secretRef: typeof req.body?.secretRef === 'string' ? req.body.secretRef : '',
       password: typeof req.body?.password === 'string' ? req.body.password : ''
     });
+    const printerDomainUsername = typeof req.body?.printerDomainUsername === 'string' ? req.body.printerDomainUsername : '';
+    const printerSecretRef = coerceSecretRef({
+      secretRef: typeof req.body?.printerSecretRef === 'string' ? req.body.printerSecretRef : '',
+      password: typeof req.body?.printerPassword === 'string' ? req.body.printerPassword : ''
+    });
     const ownerUserId = typeof req.body?.ownerUserId === 'string' ? req.body.ownerUserId : null;
     const ownerGroupId = typeof req.body?.ownerGroupId === 'string' ? req.body.ownerGroupId : null;
+    const routingProfileId =
+      req.body && Object.prototype.hasOwnProperty.call(req.body, 'routingProfileId') ? parseNullableString(req.body.routingProfileId) : null;
+    const a4PrinterId =
+      req.body && Object.prototype.hasOwnProperty.call(req.body, 'a4PrinterId') ? parseNullableString(req.body.a4PrinterId) : null;
+    const thermalPrinterId =
+      req.body && Object.prototype.hasOwnProperty.call(req.body, 'thermalPrinterId') ? parseNullableString(req.body.thermalPrinterId) : null;
+    const includeFilenamePatterns =
+      req.body?.includeFilenamePatterns === undefined ? [] : parseStringArray(req.body.includeFilenamePatterns);
+    const excludeFilenamePatterns =
+      req.body?.excludeFilenamePatterns === undefined ? [] : parseStringArray(req.body.excludeFilenamePatterns);
     const isActive = typeof req.body?.isActive === 'boolean' ? req.body.isActive : true;
 
-    if (!path || !domainUsername || !secretRef) {
+    if (!path || includeFilenamePatterns === null || excludeFilenamePatterns === null) {
       return res.status(400).json({ error: 'INVALID_INPUT' });
     }
-    if (!isValidDomainUsername(domainUsername)) {
+    if (domainUsername && !isValidDomainUsername(domainUsername)) {
       return res.status(400).json({ error: 'INVALID_DOMAIN_USERNAME' });
     }
+    if (printerDomainUsername && !isValidDomainUsername(printerDomainUsername)) {
+      return res.status(400).json({ error: 'INVALID_PRINTER_DOMAIN_USERNAME' });
+    }
 
-    const created = await store.createSmbSource({ path, domainUsername, secretRef, ownerUserId, ownerGroupId, isActive });
+    const created = await store.createSmbSource({
+      path,
+      domainUsername,
+      secretRef,
+      printerDomainUsername,
+      printerSecretRef,
+      ownerUserId,
+      ownerGroupId,
+      routingProfileId,
+      a4PrinterId,
+      thermalPrinterId,
+      includeFilenamePatterns,
+      excludeFilenamePatterns,
+      isActive
+    });
 
     await store.writeAuditEvent({
       actorUserId: req.user!.id,
@@ -767,10 +807,49 @@ export function createApiApp(store: AuthStore) {
               password: typeof req.body?.password === 'string' ? req.body.password : ''
             })
           : undefined,
+      printerDomainUsername:
+        req.body && Object.prototype.hasOwnProperty.call(req.body, 'printerDomainUsername')
+          ? typeof req.body?.printerDomainUsername === 'string'
+            ? req.body.printerDomainUsername
+            : ''
+          : undefined,
+      printerSecretRef:
+        req.body &&
+        (Object.prototype.hasOwnProperty.call(req.body, 'printerSecretRef') ||
+          Object.prototype.hasOwnProperty.call(req.body, 'printerPassword'))
+          ? coerceSecretRef({
+              secretRef: typeof req.body?.printerSecretRef === 'string' ? req.body.printerSecretRef : '',
+              password: typeof req.body?.printerPassword === 'string' ? req.body.printerPassword : ''
+            })
+          : undefined,
+      routingProfileId:
+        req.body && Object.prototype.hasOwnProperty.call(req.body, 'routingProfileId')
+          ? parseNullableString(req.body.routingProfileId)
+          : undefined,
+      a4PrinterId:
+        req.body && Object.prototype.hasOwnProperty.call(req.body, 'a4PrinterId') ? parseNullableString(req.body.a4PrinterId) : undefined,
+      thermalPrinterId:
+        req.body && Object.prototype.hasOwnProperty.call(req.body, 'thermalPrinterId')
+          ? parseNullableString(req.body.thermalPrinterId)
+          : undefined,
+      includeFilenamePatterns:
+        req.body?.includeFilenamePatterns === undefined
+          ? undefined
+          : (parseStringArray(req.body.includeFilenamePatterns) ?? undefined),
+      excludeFilenamePatterns:
+        req.body?.excludeFilenamePatterns === undefined
+          ? undefined
+          : (parseStringArray(req.body.excludeFilenamePatterns) ?? undefined),
       isActive: typeof req.body?.isActive === 'boolean' ? req.body.isActive : undefined
     };
     if (updates.domainUsername !== undefined && !isValidDomainUsername(updates.domainUsername)) {
       return res.status(400).json({ error: 'INVALID_DOMAIN_USERNAME' });
+    }
+    if (updates.printerDomainUsername !== undefined && updates.printerDomainUsername && !isValidDomainUsername(updates.printerDomainUsername)) {
+      return res.status(400).json({ error: 'INVALID_PRINTER_DOMAIN_USERNAME' });
+    }
+    if (updates.includeFilenamePatterns === null || updates.excludeFilenamePatterns === null) {
+      return res.status(400).json({ error: 'INVALID_FILENAME_PATTERNS' });
     }
 
     const updated = await store.updateSmbSource(updates);
@@ -1045,6 +1124,11 @@ export function createApiApp(store: AuthStore) {
     const name = typeof req.body?.name === 'string' ? req.body.name : '';
     const ownerUserId = typeof req.body?.ownerUserId === 'string' ? req.body.ownerUserId : null;
     const ownerGroupId = typeof req.body?.ownerGroupId === 'string' ? req.body.ownerGroupId : null;
+    const printerDomainUsername = typeof req.body?.printerDomainUsername === 'string' ? req.body.printerDomainUsername : '';
+    const printerSecretRef = coerceSecretRef({
+      secretRef: typeof req.body?.printerSecretRef === 'string' ? req.body.printerSecretRef : '',
+      password: typeof req.body?.printerPassword === 'string' ? req.body.printerPassword : ''
+    });
     const defaultRouteType =
       req.body?.defaultRouteType === 'THERMAL'
         ? 'THERMAL'
@@ -1061,20 +1145,29 @@ export function createApiApp(store: AuthStore) {
         : null;
     const samplePdfName = req.body?.samplePdfName === undefined ? null : parseNullableString(req.body.samplePdfName);
     const samplePdfBase64 = req.body?.samplePdfBase64 === undefined ? null : parseNullableString(req.body.samplePdfBase64);
+    const snippetBase64 = req.body?.snippetBase64 === undefined ? null : parseNullableString(req.body.snippetBase64);
+    const matchThreshold = req.body?.matchThreshold === undefined ? 0.88 : parseMatchThreshold(req.body.matchThreshold);
 
-    if (!name || thermalLabelPatterns === null || visualRules === null) {
+    if (!name || thermalLabelPatterns === null || visualRules === null || matchThreshold === null) {
       return res.status(400).json({ error: 'INVALID_INPUT' });
+    }
+    if (printerDomainUsername && !isValidDomainUsername(printerDomainUsername)) {
+      return res.status(400).json({ error: 'INVALID_PRINTER_DOMAIN_USERNAME' });
     }
 
     const created = await store.createRoutingProfile({
       name,
       ownerUserId,
       ownerGroupId,
+      printerDomainUsername,
+      printerSecretRef,
       defaultRouteType,
       thermalLabelPatterns,
       fallbackPrinterId,
       samplePdfName,
       samplePdfBase64,
+      snippetBase64,
+      matchThreshold,
       visualRules
     });
 
@@ -1093,11 +1186,24 @@ export function createApiApp(store: AuthStore) {
     const thermalLabelPatterns =
       req.body?.thermalLabelPatterns === undefined ? undefined : parseStringArray(req.body.thermalLabelPatterns);
     const visualRules = req.body?.visualRules === undefined ? undefined : parseRoutingVisualRules(req.body.visualRules);
+    const matchThreshold = req.body?.matchThreshold === undefined ? undefined : parseMatchThreshold(req.body.matchThreshold);
     if (thermalLabelPatterns === null) {
       return res.status(400).json({ error: 'INVALID_THERMAL_LABEL_PATTERNS' });
     }
     if (visualRules === null) {
       return res.status(400).json({ error: 'INVALID_VISUAL_RULES' });
+    }
+    if (matchThreshold === null) {
+      return res.status(400).json({ error: 'INVALID_MATCH_THRESHOLD' });
+    }
+    if (
+      req.body &&
+      Object.prototype.hasOwnProperty.call(req.body, 'printerDomainUsername') &&
+      typeof req.body.printerDomainUsername === 'string' &&
+      req.body.printerDomainUsername &&
+      !isValidDomainUsername(req.body.printerDomainUsername)
+    ) {
+      return res.status(400).json({ error: 'INVALID_PRINTER_DOMAIN_USERNAME' });
     }
 
     const updated = await store.updateRoutingProfile({
@@ -1114,6 +1220,21 @@ export function createApiApp(store: AuthStore) {
           ? req.body.ownerGroupId === null
             ? null
             : String(req.body.ownerGroupId)
+          : undefined,
+      printerDomainUsername:
+        req.body && Object.prototype.hasOwnProperty.call(req.body, 'printerDomainUsername')
+          ? typeof req.body?.printerDomainUsername === 'string'
+            ? req.body.printerDomainUsername
+            : ''
+          : undefined,
+      printerSecretRef:
+        req.body &&
+        (Object.prototype.hasOwnProperty.call(req.body, 'printerSecretRef') ||
+          Object.prototype.hasOwnProperty.call(req.body, 'printerPassword'))
+          ? coerceSecretRef({
+              secretRef: typeof req.body?.printerSecretRef === 'string' ? req.body.printerSecretRef : '',
+              password: typeof req.body?.printerPassword === 'string' ? req.body.printerPassword : ''
+            })
           : undefined,
       defaultRouteType:
         req.body?.defaultRouteType === 'THERMAL'
@@ -1136,7 +1257,12 @@ export function createApiApp(store: AuthStore) {
       samplePdfBase64:
         req.body && Object.prototype.hasOwnProperty.call(req.body, 'samplePdfBase64')
           ? parseNullableString(req.body.samplePdfBase64)
-          : undefined
+          : undefined,
+      snippetBase64:
+        req.body && Object.prototype.hasOwnProperty.call(req.body, 'snippetBase64')
+          ? parseNullableString(req.body.snippetBase64)
+          : undefined,
+      matchThreshold
     });
 
     if (!updated) {

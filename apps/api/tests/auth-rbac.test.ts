@@ -360,6 +360,31 @@ describe('auth + rbac', () => {
     expect(invalid.body.error).toBe('INVALID_DOMAIN_USERNAME');
   });
 
+  it('supports mapping-level printer credential overrides', async () => {
+    const { app, adminToken } = await bootstrapAppWithAdminAndUser();
+
+    const created = await request(app)
+      .post('/admin/config/smb-sources')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        path: '/srv/override',
+        printerDomainUsername: 'queue-user@corp.local',
+        printerPassword: 'QueuePass123!'
+      });
+
+    expect(created.status).toBe(201);
+    expect(created.body.printerDomainUsername).toBe('queue-user@corp.local');
+    expect(created.body.printerSecretRef).toBe('plain:QueuePass123!');
+
+    const patched = await request(app)
+      .patch(`/admin/config/smb-sources/${created.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ printerDomainUsername: 'queue-updated@corp.local' });
+
+    expect(patched.status).toBe(200);
+    expect(patched.body.printerDomainUsername).toBe('queue-updated@corp.local');
+  });
+
   it('supports printer CRUD for ADMIN and blocks USER', async () => {
     const { app, adminToken, userToken } = await bootstrapAppWithAdminAndUser();
 
@@ -533,6 +558,36 @@ describe('auth + rbac', () => {
       .delete(`/admin/config/routing-profiles/${created.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`);
     expect(deleted.status).toBe(204);
+  });
+
+  it('supports routing-profile printer credentials and validates username format', async () => {
+    const { app, adminToken } = await bootstrapAppWithAdminAndUser();
+
+    const created = await request(app)
+      .post('/admin/config/routing-profiles')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'profile-with-printer-creds',
+        thermalLabelPatterns: [],
+        printerDomainUsername: 'profile-user@corp.local',
+        printerPassword: 'ProfilePass123!'
+      });
+
+    expect(created.status).toBe(201);
+    expect(created.body.printerDomainUsername).toBe('profile-user@corp.local');
+    expect(created.body.printerSecretRef).toBe('plain:ProfilePass123!');
+
+    const invalid = await request(app)
+      .post('/admin/config/routing-profiles')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'bad-profile-creds',
+        thermalLabelPatterns: [],
+        printerDomainUsername: 'bad/user'
+      });
+
+    expect(invalid.status).toBe(400);
+    expect(invalid.body.error).toBe('INVALID_PRINTER_DOMAIN_USERNAME');
   });
 
   it('supports OCR config CRUD for ADMIN and blocks USER', async () => {

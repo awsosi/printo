@@ -70,15 +70,18 @@ Host ports are configurable in `.env.example`:
 Worker adapter knobs (also in `.env.example`):
 - `WORKER_SCANNER=auto|filesystem|smb|static`
   - `auto`: local filesystem for non-UNC paths, `smbclient` scanner for UNC paths (`\\server\\share\\...`)
-- `WORKER_DISPATCH_PROVIDER_MODE=mock|auto|socket|ipp`
+- `WORKER_DISPATCH_PROVIDER_MODE=mock|auto|windows|socket|ipp`
   - `mock` is deterministic/default for local + CI
-  - `auto` infers provider per printer from `targetUri` scheme (`socket://`, `ipp://`, `http(s)://`)
+  - `auto` infers provider per printer from `targetUri` (`\\server\printer`, `smb://server/printer`, `socket://`, `ipp://`, `http(s)://`)
 - `WORKER_PRINTER_PROVIDER_OVERRIDES` JSON for per-printer hard overrides (by printer id or name)
-- `WORKER_DISPATCH_TIMEOUT_MS` default timeout for socket/IPP adapters
+- `WORKER_DISPATCH_TIMEOUT_MS` default timeout for Windows shared, socket, and IPP adapters
 - SMB secrets can be referenced as `env:YOUR_VAR` or `WORKER_SECRET_<NORMALIZED_SECRET_REF>`
+- Windows shared printer dispatch uses `smbclient`; the compose worker now installs it on startup
 
 Example printer URIs:
 - `mock://a4` (mock provider)
+- `\\printserver\A4-FrontDesk` (Windows shared printer via `smbclient`)
+- `smb://printserver/Zebra-Label` (Windows shared printer via `smbclient`)
 - `socket://10.0.0.45:9100` (raw socket)
 - `ipp://10.0.0.60/ipp/print` (IPP-over-HTTP adapter)
 
