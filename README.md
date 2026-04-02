@@ -1,119 +1,147 @@
 # printo
 
-Docker-compose-based end-to-end web application for PDF intake, OCR/visual routing, and split printing (A4 + thermal).
+`printo` is a TypeScript monorepo for PDF intake, OCR/visual routing, and print dispatch. It runs as a small multi-service stack with an admin web shell, REST API, worker, PostgreSQL, and Redis-backed compose topology.
 
-## Stack
+## Services
 
-- `apps/api` — TypeScript REST API (AAA + config)
-- `apps/web` — TypeScript admin/user web UI
-- `apps/worker` — TypeScript background pipeline (scan → OCR → route → dispatch)
-- `db` — PostgreSQL
-- `redis` — queue backbone placeholder
+- `apps/web` — Express-based admin shell and API/worker proxy
+- `apps/api` — REST API for auth, admin configuration, preferences, and audit data
+- `apps/worker` — background pipeline and worker control endpoints
+- `packages/shared` — shared PDF/image matching utilities
+- `infra/docker-compose.yml` — local stack for `web`, `api`, `worker`, `db`, and `redis`
 
-## Requirements covered
+## Current feature set
 
-- Local users with CRUD
-- Remote auth via `EXTAUTH_API.md` contract (`/RFM_Auth`)
-- RBAC roles: `USER`, `ADMIN`
-- Audit logging for auth and configuration changes
-- SMB source config + filename masks
-- A4/thermal printer config + per-user assignment + routing profile
-- OCR global config + per-user override
-- i18n JSON with `en-US` fallback
-- Theme mode: `system` / `light` / `dark` with user override
+- Local auth with bootstrap admin flow, login, refresh tokens, and RBAC (`USER`, `ADMIN`)
+- Remote auth adapter via `EXTAUTH_API.md`
+- Admin APIs for users, groups, group memberships, AD sync config/import, SMB sources, filename masks, printers, user printer assignments, routing profiles, visual profiles, OCR settings, system settings, and audit logs
+- Worker endpoints for health, run-once execution, status, notifications, job history, page history, retry, and cancel
+- Web UI for bootstrap/login, printer management, routing profile management, routing preview, notification testing, and pipeline job/status views
+- i18n message loading with `en-US` fallback and `pl-PL` messages
+- Theme preference storage via the API
 
-## Quickstart (local)
+## Repo commands
+
+From the repo root:
 
 ```bash
-npm install
+npm ci
 make lint
 make test
 make typecheck
 make build
-make e2e
+make smoke
 ```
 
-## First-time admin setup
+Available shortcuts:
 
-Open `http://127.0.0.1:${WEB_PORT:-3000}` and use the **Initial admin setup** panel.
+- `make dev`
+- `make test`
+- `make typecheck`
+- `make lint`
+- `make build`
+- `make e2e`
+- `make smoke`
+- `make up`
+- `make down`
+- `make migrate`
 
-- The first admin can be created only once.
-- After bootstrap, public registration cannot create `ADMIN` users.
-- Optional hardening: set `BOOTSTRAP_ADMIN_TOKEN` to require a one-time token during bootstrap.
+## Local install note
 
-## Run with docker compose
+`packages/shared` depends on `canvas`. On machines where a prebuilt binary is not available, `npm ci` falls back to a native build and requires the usual Cairo/Pango/Pixman toolchain.
 
-Compose file location: `infra/docker-compose.yml`
+CI uses Node 22 because `canvas@2.11.2` does not currently provide a Node 24 prebuilt binary in this repo's dependency set.
+
+## Run with Docker Compose
 
 ```bash
-# start
 docker compose -f infra/docker-compose.yml up -d
+```
 
-# web:    http://127.0.0.1:${WEB_PORT:-3000}
-# api:    http://127.0.0.1:${API_PORT:-4000}/health
-# worker: http://127.0.0.1:${WORKER_PORT:-5000}/health
+Default endpoints:
 
-# stop + cleanup
+- web: `http://127.0.0.1:3000`
+- api: `http://127.0.0.1:4000/health`
+- worker: `http://127.0.0.1:5000/health`
+
+Stop and clean up:
+
+```bash
 docker compose -f infra/docker-compose.yml down -v --remove-orphans
 ```
 
-Equivalent shortcuts:
+Or use:
 
 ```bash
 make up
 make down
 ```
 
-Host ports are configurable in `.env.example`:
-- `WEB_PORT`, `API_PORT`, `WORKER_PORT`, `DB_PORT`, `REDIS_PORT`
+Configurable ports are defined in `.env.example`:
 
-Worker adapter knobs (also in `.env.example`):
-- `WORKER_SCANNER=auto|filesystem|smb|static`
-  - `auto`: local filesystem for non-UNC paths, `smbclient` scanner for UNC paths (`\\server\\share\\...`)
-- `WORKER_DISPATCH_PROVIDER_MODE=mock|auto|windows|socket|ipp`
-  - `mock` is deterministic/default for local + CI
-  - `auto` infers provider per printer from `targetUri` (`\\server\printer`, `smb://server/printer`, `socket://`, `ipp://`, `http(s)://`)
-- `WORKER_PRINTER_PROVIDER_OVERRIDES` JSON for per-printer hard overrides (by printer id or name)
-- `WORKER_DISPATCH_TIMEOUT_MS` default timeout for Windows shared, socket, and IPP adapters
-- SMB secrets can be referenced as `env:YOUR_VAR` or `WORKER_SECRET_<NORMALIZED_SECRET_REF>`
-- Windows shared printer dispatch uses `smbclient`; the compose worker now installs it on startup
+- `WEB_PORT`
+- `API_PORT`
+- `WORKER_PORT`
+- `DB_PORT`
+- `REDIS_PORT`
+
+## First-time setup
+
+Open the web app and use the bootstrap admin form.
+
+- `GET /auth/bootstrap-status` reports whether bootstrap is still allowed
+- `POST /auth/bootstrap-admin` creates the initial admin once
+- `BOOTSTRAP_ADMIN_TOKEN` can be set to require a one-time bootstrap token
+
+## Worker configuration
+
+Relevant environment variables from `.env.example`:
+
+- `WORKER_POLL_INTERVAL_MS`
+- `WORKER_SCANNER=auto`
+- `WORKER_DISPATCH_PROVIDER_MODE=mock`
+- `WORKER_DISPATCH_TIMEOUT_MS`
+- `WORKER_PRINTER_PROVIDER_OVERRIDES`
+- `WORKER_SECRET_<NORMALIZED_SECRET_REF>`
+
+Provider behavior:
+
+- `mock` is the default deterministic mode used for local smoke runs and CI
+- scanner `auto` uses filesystem scanning for normal paths and `smbclient` handling for UNC-style SMB paths
+- printer dispatch can resolve from `targetUri` values such as `smb://`, `socket://`, and `ipp://`
 
 Example printer URIs:
-- `mock://a4` (mock provider)
-- `\\printserver\A4-FrontDesk` (Windows shared printer via `smbclient`)
-- `smb://printserver/Zebra-Label` (Windows shared printer via `smbclient`)
-- `socket://10.0.0.45:9100` (raw socket)
-- `ipp://10.0.0.60/ipp/print` (IPP-over-HTTP adapter)
 
-## Compose smoke validation
+- `mock://a4`
+- `\\\\printserver\\A4-FrontDesk`
+- `smb://printserver/Zebra-Label`
+- `socket://10.0.0.45:9100`
+- `ipp://10.0.0.60/ipp/print`
+
+## Smoke test
 
 ```bash
 make smoke
-# or: npm run smoke:compose
 ```
 
-The smoke script:
-1. boots isolated compose stack
-2. seeds admin + config entities
-3. runs worker once
-4. verifies DB rows in `processed_files`, `print_jobs`, `print_job_pages`
+The compose smoke script boots an isolated stack, seeds the minimum config, runs the worker once, and verifies persisted rows in:
+
+- `processed_files`
+- `print_jobs`
+- `print_job_pages`
 
 ## Tests
 
-- Unit/integration-style app tests: `npm run test`
-- Compose smoke E2E: `npm run test:e2e`
-  - boots isolated stack
-  - seeds admin config and routing/OCR settings
-  - runs worker and validates dedup + DB persistence (`processed_files`, `print_jobs`, `print_job_pages`)
+- `npm run test` runs workspace tests
+- `npm run test:e2e` runs the compose smoke flow
 
 ## Docs
 
-- `docs/PLAN.md` — roadmap and delivery status
-- `docs/ARCHITECTURE.md` — system design and boundaries
-- `docs/AGENTS_SUB.md` — subagent scopes and statuses
-- `EXTAUTH_API.md` — external auth integration contract
+- `docs/PLAN.md` — delivery status
+- `docs/ARCHITECTURE.md` — service boundaries and topology
+- `docs/AGENTS_SUB.md` — implementation split notes
+- `EXTAUTH_API.md` — external auth contract
 
-## Environment limitation
+## Limits
 
-This repo includes production-shaped adapters for SMB and printer integrations.
-Physical SMB auth/mounts and real printer dispatch are not validated in CI; local/CI runs use deterministic adapter behavior for repeatable tests.
+The repo includes production-shaped SMB and printer adapters, but CI and local smoke coverage stay on deterministic paths. Real SMB infrastructure and physical printer dispatch are not validated end to end in CI.
