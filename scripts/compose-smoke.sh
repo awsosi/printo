@@ -47,22 +47,37 @@ request_json() {
 
   for ((i=1; i<=attempts; i++)); do
     local headers=(-H 'accept: application/json')
+    local response_file
+    response_file="$(mktemp)"
     if [[ -n "$auth" ]]; then
       headers+=(-H "authorization: Bearer $auth")
     fi
 
     if [[ -n "$body" ]]; then
       headers+=(-H 'content-type: application/json')
-      if response="$(curl -fsS -X "$method" "$url" "${headers[@]}" -d "$body")"; then
+      status="$(curl -sS -o "$response_file" -w '%{http_code}' -X "$method" "$url" "${headers[@]}" -d "$body")"
+      if [[ "$status" =~ ^2[0-9][0-9]$ ]]; then
+        response="$(cat "$response_file")"
+        rm -f "$response_file"
         printf '%s' "$response"
         return 0
       fi
     else
-      if response="$(curl -fsS -X "$method" "$url" "${headers[@]}")"; then
+      status="$(curl -sS -o "$response_file" -w '%{http_code}' -X "$method" "$url" "${headers[@]}")"
+      if [[ "$status" =~ ^2[0-9][0-9]$ ]]; then
+        response="$(cat "$response_file")"
+        rm -f "$response_file"
         printf '%s' "$response"
         return 0
       fi
     fi
+
+    echo "Request attempt $i failed: $method $url (status=$status)" >&2
+    if [[ -s "$response_file" ]]; then
+      cat "$response_file" >&2
+      echo >&2
+    fi
+    rm -f "$response_file"
 
     sleep 1
   done
@@ -103,7 +118,7 @@ A4_ID="$(request_json GET "http://127.0.0.1:${API_PORT}/admin/config/printers" '
   | node -pe "const data=JSON.parse(require('fs').readFileSync(0,'utf8'));(data.find((row)=>row.type==='A4')||{}).id||''")"
 
 request_json POST "http://127.0.0.1:${API_PORT}/admin/config/smb-sources" \
-  '{"path":"/app/fixtures/intake","domainUsername":"EXAMPLE\\\\serviceuser","secretRef":"secret/smoke"}' \
+  '{"path":"/app/fixtures/intake","domainUsername":"serviceuser@example.local","secretRef":"secret/smoke"}' \
   "$ACCESS_TOKEN" >/dev/null
 
 request_json POST "http://127.0.0.1:${API_PORT}/admin/config/filename-masks" \
