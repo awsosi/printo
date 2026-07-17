@@ -719,8 +719,12 @@ export class PostgresWorkerStore implements WorkerConfigStore {
       printer_id: string | null;
       status: 'SUCCESS' | 'FAILURE' | 'SKIPPED';
       error_message: string | null;
+      page_class: PrintJobPageRecord['pageClass'] | null;
+      classification_confidence: number | null;
+      carrier: string | null;
     }>(
-      `SELECT print_job_id, page_number, route_type, printer_id, status, error_message
+      `SELECT print_job_id, page_number, route_type, printer_id, status, error_message,
+              page_class, classification_confidence, carrier
        FROM print_job_pages
        WHERE print_job_id = $1
        ORDER BY page_number ASC, id ASC`,
@@ -733,7 +737,10 @@ export class PostgresWorkerStore implements WorkerConfigStore {
       routeType: row.route_type,
       printerId: row.printer_id,
       status: row.status,
-      errorMessage: row.error_message ?? undefined
+      errorMessage: row.error_message ?? undefined,
+      pageClass: row.page_class ?? null,
+      classificationConfidence: row.classification_confidence ?? null,
+      carrier: row.carrier ?? null
     }));
   }
 

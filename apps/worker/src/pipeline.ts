@@ -511,7 +511,7 @@ function matchesVisualRule(page: OcrPageResult, rule: WorkerRoutingVisualRule): 
   return expectedWords.every((word) => regionText.includes(word));
 }
 
-interface ResolvedRoute {
+export interface ResolvedRoute {
   routeType: RouteType;
   forcedPrinterId: string | null;
   decidedBy: 'FORCED' | 'VISUAL_RULE' | 'THERMAL_PATTERN' | 'CLASSIFICATION' | 'DEFAULT';
@@ -537,7 +537,7 @@ function matchClassificationRoute(
  * visual rectangle rules → thermal label patterns → classification routes →
  * profile default. Explicit admin configuration always beats the classifier.
  */
-function resolveRoute(page: OcrPageResult, routing: WorkerRoutingProfile | null): ResolvedRoute {
+export function resolveRoute(page: OcrPageResult, routing: WorkerRoutingProfile | null): ResolvedRoute {
   if (page.forcedRouteType) {
     return { routeType: page.forcedRouteType, forcedPrinterId: null, decidedBy: 'FORCED' };
   }

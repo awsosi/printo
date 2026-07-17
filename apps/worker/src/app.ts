@@ -1,14 +1,18 @@
 import express from 'express';
 import { createDefaultPageClassifier } from './classify/index.js';
+import type { PageClassifier } from './classify/types.js';
 import { workerMetrics } from './metrics.js';
 import { pool } from './db/pool.js';
 import { ProviderPrinterDispatcher } from './dispatch/provider-printer-dispatcher.js';
+import { previewClassification, type ClassificationPreviewProfile } from './preview.js';
 import {
+  DEFAULT_CLASSIFICATION_ROUTES,
   InMemoryWorkerStore,
   MockOcrProvider,
   StaticSmbScanner,
   WorkerPipeline,
   type PipelineRunSummary,
+  type WorkerClassificationRoute,
   type WorkerConfigStore,
   type SmbScanner,
   type PrinterDispatcher,
@@ -26,6 +30,43 @@ export interface WorkerAppOptions {
   runner?: WorkerRunner;
   store?: WorkerConfigStore;
   notifications?: SmtpNotificationService;
+  classifier?: PageClassifier;
+  fetchImpl?: typeof fetch;
+}
+
+const PAGE_CLASSES = ['OUTGOING_LABEL_THERMAL', 'RETURN_LABEL_A4', 'DOCUMENT_A4'] as const;
+
+function parsePreviewProfile(raw: unknown): ClassificationPreviewProfile {
+  const body = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const thermalLabelPatterns = Array.isArray(body.thermalLabelPatterns)
+    ? body.thermalLabelPatterns.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+  const classificationRoutes: WorkerClassificationRoute[] = Array.isArray(body.classificationRoutes)
+    ? body.classificationRoutes.flatMap((entry) => {
+        if (!entry || typeof entry !== 'object') {
+          return [];
+        }
+        const candidate = entry as Record<string, unknown>;
+        if (!PAGE_CLASSES.includes(candidate.pageClass as (typeof PAGE_CLASSES)[number])) {
+          return [];
+        }
+        const minConfidence = Number(candidate.minConfidence ?? 0);
+        return [
+          {
+            pageClass: candidate.pageClass as (typeof PAGE_CLASSES)[number],
+            routeType: candidate.routeType === 'THERMAL' ? ('THERMAL' as const) : ('A4' as const),
+            printerId: typeof candidate.printerId === 'string' ? candidate.printerId : null,
+            minConfidence: Number.isFinite(minConfidence) ? Math.min(1, Math.max(0, minConfidence)) : 0
+          }
+        ];
+      })
+    : [];
+
+  return {
+    defaultRouteType: body.defaultRouteType === 'THERMAL' ? 'THERMAL' : 'A4',
+    thermalLabelPatterns,
+    classificationRoutes: classificationRoutes.length > 0 ? classificationRoutes : DEFAULT_CLASSIFICATION_ROUTES
+  };
 }
 
 function createDefaultStore(): WorkerConfigStore {
@@ -130,8 +171,11 @@ export function createWorkerApp(options: WorkerAppOptions = {}) {
   const notifications = options.notifications ?? createDefaultNotificationService(store);
   const pipeline = options.pipeline ?? createDefaultPipeline(store, notifications);
   const runner = options.runner ?? new WorkerRunner(pipeline);
+  const classifier = options.classifier ?? createDefaultPageClassifier();
+  const fetchImpl = options.fetchImpl ?? fetch;
 
-  app.use(express.json());
+  // Classification previews upload whole PDFs as base64.
+  app.use(express.json({ limit: '30mb' }));
 
   app.get('/health', (_req, res) => {
     res.json({ service: 'worker', status: 'ok' });
@@ -139,6 +183,51 @@ export function createWorkerApp(options: WorkerAppOptions = {}) {
 
   app.get('/metrics', (_req, res) => {
     res.type('text/plain; version=0.0.4').send(workerMetrics.render());
+  });
+
+  app.post('/pipeline/preview/classification', async (req, res) => {
+    const pdfBase64 = typeof req.body?.pdfBase64 === 'string' ? req.body.pdfBase64.trim() : '';
+    if (!pdfBase64) {
+      return res.status(400).json({ error: 'INVALID_INPUT' });
+    }
+
+    const pdfBuffer = Buffer.from(pdfBase64, 'base64');
+    if (pdfBuffer.length === 0) {
+      return res.status(400).json({ error: 'INVALID_INPUT' });
+    }
+
+    try {
+      const result = await previewClassification({
+        pdfBuffer,
+        profile: parsePreviewProfile(req.body?.profile),
+        classifier
+      });
+      return res.json(result);
+    } catch {
+      return res.status(400).json({ error: 'CLASSIFICATION_PREVIEW_FAILED' });
+    }
+  });
+
+  app.get('/pipeline/vision-status', async (_req, res) => {
+    const visionUrl = (process.env.WORKER_VISION_URL ?? '').trim().replace(/\/+$/, '');
+    const mode = (process.env.WORKER_CLASSIFIER ?? (visionUrl ? 'auto' : 'heuristic')).toLowerCase();
+
+    if (!visionUrl) {
+      return res.json({ configured: false, mode, healthy: null, backends: null });
+    }
+
+    try {
+      const response = await fetchImpl(`${visionUrl}/health`, { signal: AbortSignal.timeout(3000) });
+      const body = response.ok ? ((await response.json()) as { backends?: Record<string, boolean> }) : null;
+      return res.json({
+        configured: true,
+        mode,
+        healthy: response.ok,
+        backends: body?.backends ?? null
+      });
+    } catch {
+      return res.json({ configured: true, mode, healthy: false, backends: null });
+    }
   });
 
   app.get('/pipeline/status', (_req, res) => {
