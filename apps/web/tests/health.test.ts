@@ -20,13 +20,66 @@ describe('web app', () => {
     expect(res.text).toContain('id="routingForm"');
     expect(res.text).toContain('id="sourceForm"');
     expect(res.text).toContain('id="printerForm"');
-    expect(res.text).toContain('Recognition profile setup');
+    expect(res.text).toContain('Routing profile setup');
     expect(res.text).toContain('Input directory to printer mapping');
     expect(res.text).toContain('Printer setup');
     expect(res.text).toContain('data-tab="printers">Printers</button>');
     expect(res.text).toContain('name="printerDomainUsername"');
     expect(res.text).toContain('id="jobStatusList"');
     expect(res.text).toContain('Retry failed or partial jobs.');
+  });
+
+  it('renders the classification-first routing profile editor', async () => {
+    const app = createWebApp();
+    const res = await request(app).get('/admin/config');
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('id="classificationRoutesEditor"');
+    expect(res.text).toContain('id="addClassificationRoute"');
+    expect(res.text).toContain('name="defaultRouteType"');
+    expect(res.text).toContain('name="thermalLabelPatterns"');
+    expect(res.text).toContain('Automatic label detection');
+    expect(res.text).toContain('Image snippet matching (advanced, optional)');
+    expect(res.text).toContain('id="previewClassificationButton"');
+    expect(res.text).toContain('id="runPipelineButton"');
+    expect(res.text).toContain('cups://Queue (recommended)');
+  });
+
+  it('proxies classification preview and vision status to the worker', async () => {
+    const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).endsWith('/pipeline/vision-status')) {
+        return new Response(JSON.stringify({ configured: true, mode: 'auto', healthy: true, backends: null }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        });
+      }
+      return new Response(JSON.stringify({ pages: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const app = createWebApp({ fetchImpl: fetchMock as typeof fetch, workerBaseUrl: 'http://worker.internal' });
+
+    const statusRes = await request(app)
+      .get('/worker/pipeline/vision-status')
+      .set('authorization', 'Bearer test-token');
+    expect(statusRes.status).toBe(200);
+    expect(statusRes.body.healthy).toBe(true);
+
+    const previewRes = await request(app)
+      .post('/worker/pipeline/preview/classification')
+      .set('authorization', 'Bearer test-token')
+      .send({ pdfBase64: 'aGVsbG8=' });
+    expect(previewRes.status).toBe(200);
+    expect(previewRes.body.pages).toEqual([]);
+
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(urls).toContain('http://worker.internal/pipeline/vision-status');
+    expect(urls).toContain('http://worker.internal/pipeline/preview/classification');
+  });
+
+  it('rejects unauthenticated preview proxy requests', async () => {
+    const app = createWebApp({ fetchImpl: vi.fn() as unknown as typeof fetch });
+    const res = await request(app).post('/worker/pipeline/preview/classification').send({ pdfBase64: 'aGVsbG8=' });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('MISSING_AUTH_TOKEN');
   });
 
   it('proxies admin login requests to API', async () => {

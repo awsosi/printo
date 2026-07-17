@@ -137,11 +137,14 @@ Every page is classified as `OUTGOING_LABEL_THERMAL`, `RETURN_LABEL_A4`, or `DOC
   (zxing-cpp — Code 128/GS1-128, MaxiCode, DataMatrix), OCR (PaddleOCR) for scanned pages.
   Contract: `docs/VISION_SERVICE.md`. The worker falls back to heuristics when unreachable.
 
-Routing profiles can carry `classificationRoutes` (page class → route type + optional printer +
-minimum confidence) via `POST/PATCH /admin/config/routing-profiles`; without configuration,
-outgoing labels route to `THERMAL` and return labels stay on `A4`. Explicit visual rules and
-thermal label patterns always take precedence over the classifier. The admin UI form does not
-yet expose `classificationRoutes` (API-only for now).
+Routing profiles carry `classificationRoutes` (page class → route type + optional printer +
+minimum confidence); without configuration, outgoing labels route to `THERMAL` and return labels
+stay on `A4`. Explicit visual rules and thermal label patterns always take precedence over the
+classifier. The admin UI (Routing profiles tab) provides a full editor for these rules, a live
+"Preview routing" that runs an uploaded PDF through the same classifier the worker uses
+(`POST /pipeline/preview/classification`), per-page classification diagnostics on job cards in
+the Status tab, a classification-engine health card (`GET /pipeline/vision-status`), and a
+"Run pipeline now" control.
 
 Demo fixture: `node scripts/generate-mixed-fixture.mjs` regenerates
 `fixtures/intake/mixed-carriers.pdf` (invoice + DHL label + packing slip + UPS return label +

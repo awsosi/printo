@@ -1,7 +1,7 @@
 import express, { type Request, type Response } from 'express';
 import { matchPdfPagesBySnippet } from '@printo/shared';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { getDefaultLocale, resolveMessages } from './i18n.js';
 
 type FetchLike = typeof fetch;
@@ -345,7 +345,7 @@ function renderAdminPage(): string {
 
       .stats-grid {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         gap: 10px;
       }
 
@@ -522,6 +522,63 @@ function renderAdminPage(): string {
         gap: 12px;
       }
 
+      .route-rule {
+        display: grid;
+        grid-template-columns: 1.3fr 0.9fr 1.1fr 88px 44px;
+        gap: 8px;
+        align-items: end;
+        padding: 12px;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: color-mix(in srgb, var(--paper-strong) 92%, transparent);
+      }
+
+      .route-rule label {
+        display: grid;
+        gap: 4px;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+
+      .route-rule button {
+        padding: 10px 0;
+      }
+
+      .thumbnail-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .thumbnail-tags .pill,
+      .page-detail-row .pill {
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+
+      .page-detail-table {
+        display: grid;
+        gap: 6px;
+      }
+
+      .page-detail-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+        padding: 8px 10px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: color-mix(in srgb, var(--paper-strong) 90%, transparent);
+        font-size: 0.86rem;
+      }
+
+      @media (max-width: 980px) {
+        .route-rule {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
       .snippet-preview {
         width: 100%;
         min-height: 120px;
@@ -605,12 +662,12 @@ function renderAdminPage(): string {
           <div class="section-title">
             <div class="stack">
               <h1>Printo Admin</h1>
-              <p class="muted">Admin login, image-based recognition profiles, and input directory to printer mapping.</p>
+              <p class="muted">One print action in, correctly routed pages out: outgoing labels to thermal, invoices and return labels to A4.</p>
             </div>
           </div>
           <div class="hint muted">
-            Matched pages route to the thermal printer. Non-matched pages follow the default route, which is A4 in this setup.
-            The preview uses the same PDF-snippet matcher the worker uses for future documents.
+            Every incoming page is classified automatically (outgoing shipping label, return label, or document) and routed by
+            the rules in the profile. The preview below uses the same classifier the worker applies to future documents.
           </div>
         </section>
         <section class="card stack">
@@ -663,7 +720,7 @@ function renderAdminPage(): string {
       <section id="appStage" class="hidden">
         <nav class="tab-bar">
           <button type="button" class="active" data-tab="status">Status</button>
-          <button type="button" data-tab="recognition">Recognition</button>
+          <button type="button" data-tab="recognition">Routing profiles</button>
           <button type="button" data-tab="printers">Printers</button>
           <button type="button" data-tab="mappings">Mappings</button>
           <button id="refreshAllButton" type="button" class="secondary">Reload data</button>
@@ -675,24 +732,57 @@ function renderAdminPage(): string {
               <section class="card stack">
                 <div class="section-title">
                   <div class="stack">
-                    <h2>Recognition profile setup</h2>
-                    <p class="muted">Upload a snippet image, load a PDF, and verify which pages will route to the thermal printer.</p>
+                    <h2>Routing profile setup</h2>
+                    <p class="muted">Decide where classified pages go. Test the rules against a real PDF before saving.</p>
                   </div>
                   <span class="pill" id="profileCount">0 profiles</span>
                 </div>
 
                 <form id="routingForm" class="stack">
                   <input name="id" type="hidden" />
-                  <input name="name" placeholder="profile name" required />
-                  <details class="card" open>
+                  <div class="grid2">
+                    <label class="stack">
+                      <span class="muted">Profile name</span>
+                      <input name="name" placeholder="e.g. Standard shipping" required />
+                    </label>
+                    <label class="stack">
+                      <span class="muted">Default route for unmatched pages</span>
+                      <select name="defaultRouteType">
+                        <option value="A4">A4 printer</option>
+                        <option value="THERMAL">Thermal printer</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <section class="stack">
+                    <div class="section-title">
+                      <div class="stack">
+                        <h3>Automatic label detection</h3>
+                        <p class="muted">Each page is classified as an outgoing label, a return label, or a document. These rules map classes to printers.</p>
+                      </div>
+                    </div>
+                    <div id="classificationRoutesEditor" class="stack"></div>
+                    <div class="actions">
+                      <button id="addClassificationRoute" class="ghost" type="button">Add detection rule</button>
+                    </div>
+                  </section>
+
+                  <label class="stack">
+                    <span class="muted">Thermal keyword patterns — one per line; pages whose text matches always go to thermal (beats classification)</span>
+                    <textarea name="thermalLabelPatterns" placeholder="e.g. WAYBILL&#10;/^DHL EXPRESS/"></textarea>
+                  </label>
+
+                  <details class="card">
                     <summary><strong>Default printer credentials</strong> <span class="muted">Used by printers unless mapping or printer overrides them.</span></summary>
                     <div class="grid2" style="margin-top: 12px;">
                       <input name="printerDomainUsername" placeholder="DOMAIN\\user or user@domain" />
                       <input name="printerPassword" type="password" placeholder="password or secret override" />
                     </div>
                   </details>
-                  <div class="preview-grid">
-                    <div class="snippet-box">
+
+                  <details class="card" id="snippetSection">
+                    <summary><strong>Image snippet matching (advanced, optional)</strong> <span class="muted">Legacy pixel matching for documents the classifier cannot read.</span></summary>
+                    <div class="snippet-box" style="margin-top: 12px;">
                       <img id="snippetPreview" class="snippet-preview" alt="Snippet preview" />
                       <input id="routingSnippetFile" type="file" accept="image/*" />
                       <div class="grid2">
@@ -706,22 +796,11 @@ function renderAdminPage(): string {
                         </label>
                       </div>
                       <div class="actions">
+                        <button id="previewRoutingButton" class="secondary" type="button">Preview snippet matches</button>
                         <button id="clearSnippetButton" class="ghost" type="button">Clear snippet</button>
                       </div>
                     </div>
-
-                    <div class="stack">
-                      <input id="routingTestPdf" type="file" accept="application/pdf" />
-                      <div class="actions">
-                        <button id="previewRoutingButton" type="button">Preview matches</button>
-                        <button id="clearRoutingPreviewButton" class="secondary" type="button">Clear preview</button>
-                      </div>
-                      <div id="routingPreviewStatus" class="status muted"></div>
-                      <div id="routingPreviewSummary" class="hint muted">
-                        Load a snippet image and a PDF. Preview shows the pages that will route to THERMAL; all others stay on A4.
-                      </div>
-                    </div>
-                  </div>
+                  </details>
 
                   <div class="actions">
                     <button type="submit">Save profile</button>
@@ -734,9 +813,18 @@ function renderAdminPage(): string {
               <section class="card stack">
                 <div class="section-title">
                   <div class="stack">
-                    <h2>Preview pages</h2>
-                    <p class="muted">These scores come from the same matcher the worker uses.</p>
+                    <h2>Test with a real document</h2>
+                    <p class="muted">Upload a PDF a user would print. The preview runs the same classifier and rules the worker will apply.</p>
                   </div>
+                </div>
+                <input id="routingTestPdf" type="file" accept="application/pdf" />
+                <div class="actions">
+                  <button id="previewClassificationButton" type="button">Preview routing</button>
+                  <button id="clearRoutingPreviewButton" class="secondary" type="button">Clear preview</button>
+                </div>
+                <div id="routingPreviewStatus" class="status muted"></div>
+                <div id="routingPreviewSummary" class="hint muted">
+                  Load a test PDF and press Preview routing to see how each page will be classified and where it will print.
                 </div>
                 <div id="routingPreviewPages" class="thumbnail-grid"></div>
               </section>
@@ -772,7 +860,7 @@ function renderAdminPage(): string {
                       <option value="A4">A4</option>
                       <option value="THERMAL">THERMAL</option>
                     </select>
-                    <input name="targetUri" placeholder="\\\\printserver\\printer, smb://printserver/printer, ipp://host/printer, or socket://host:9100" required />
+                    <input name="targetUri" placeholder="cups://Queue (recommended), \\\\printserver\\printer, ipp://host/printer, or socket://host:9100" required />
                   </div>
                   <div class="grid2">
                     <input name="domainUsername" placeholder="DOMAIN\\user or user@domain" />
@@ -919,8 +1007,8 @@ function renderAdminPage(): string {
                 <section class="card stack">
                   <div class="section-title">
                     <div class="stack">
-                      <h2>Recognition Profiles</h2>
-                      <p class="muted">Usage counts, snippet readiness, and recent mapping traffic.</p>
+                      <h2>Routing Profiles</h2>
+                      <p class="muted">Detection rules in use, mapping counts, and recent traffic.</p>
                     </div>
                   </div>
                   <div id="profileStatusList" class="status-table"></div>
@@ -930,9 +1018,13 @@ function renderAdminPage(): string {
                   <div class="section-title">
                     <div class="stack">
                       <h2>Worker Controls</h2>
-                      <p class="muted">Use retry for incomplete jobs. Reload data to refresh worker state and job controls.</p>
+                      <p class="muted">The worker polls input folders on its own schedule; run it immediately after changing configuration or dropping a test file.</p>
                     </div>
                   </div>
+                  <div class="actions">
+                    <button id="runPipelineButton" type="button">Run pipeline now</button>
+                  </div>
+                  <div id="runPipelineStatus" class="status muted"></div>
                   <div class="hint muted">
                     Stalled jobs are pending jobs left behind while the worker runner is idle. Cancelling them prevents accidental automatic pickup; retrying them starts a targeted re-run of the unfinished work.
                   </div>
@@ -964,6 +1056,7 @@ function renderAdminPage(): string {
             jobs: [],
             jobPages: {},
             logs: [],
+            vision: null,
             lastUpdatedAt: null,
             error: ''
           },
@@ -971,9 +1064,28 @@ function renderAdminPage(): string {
             snippetBase64: null,
             samplePdfBase64: null,
             samplePdfName: '',
-            previewMatches: []
+            previewMatches: [],
+            classificationRoutes: []
           }
         };
+
+        const PAGE_CLASS_OPTIONS = [
+          { value: 'OUTGOING_LABEL_THERMAL', label: 'Outgoing shipping label' },
+          { value: 'RETURN_LABEL_A4', label: 'Return label (customer copy)' },
+          { value: 'DOCUMENT_A4', label: 'Document / invoice / other' }
+        ];
+
+        function pageClassLabel(value) {
+          const option = PAGE_CLASS_OPTIONS.find(function (entry) { return entry.value === value; });
+          return option ? option.label : (value || 'Unclassified');
+        }
+
+        function defaultClassificationRoutes() {
+          return [
+            { pageClass: 'OUTGOING_LABEL_THERMAL', routeType: 'THERMAL', printerId: null, minConfidence: 0.5 },
+            { pageClass: 'RETURN_LABEL_A4', routeType: 'A4', printerId: null, minConfidence: 0.5 }
+          ];
+        }
         let livePollTimer = null;
         let liveRefreshInFlight = null;
 
@@ -1078,6 +1190,7 @@ function renderAdminPage(): string {
           setOptions('sourceRoutingProfile', profiles, 'Select profile');
           setOptions('sourceA4Printer', a4Printers, 'Select A4 printer');
           setOptions('sourceThermalPrinter', thermalPrinters, 'Select thermal printer');
+          renderClassificationRoutes();
         }
 
         function updateCounts() {
@@ -1234,6 +1347,35 @@ function renderAdminPage(): string {
           };
         }
 
+        function renderJobPageDetails(job) {
+          const pages = pagesForJob(job.id);
+          if (!pages.length) {
+            return '';
+          }
+
+          const rows = pages.map(function (page) {
+            const parts = ['<strong>Page ' + escapeHtml(String(page.pageNumber)) + '</strong>'];
+            if (page.pageClass) {
+              parts.push('<span class="pill ' + (page.pageClass === 'DOCUMENT_A4' ? '' : 'info') + '">' + escapeHtml(pageClassLabel(page.pageClass)) + '</span>');
+            }
+            if (page.carrier) {
+              parts.push('<span class="pill ok">' + escapeHtml(page.carrier) + '</span>');
+            }
+            if (page.classificationConfidence != null) {
+              parts.push('<span class="muted">' + escapeHtml(Math.round(Number(page.classificationConfidence) * 100) + '%') + '</span>');
+            }
+            parts.push('<span class="muted">→ ' + escapeHtml(page.routeType + (page.printerId ? ' · ' + printerName(page.printerId) : '')) + '</span>');
+            parts.push(renderPill(page.status));
+            if (page.errorMessage && page.status !== 'SKIPPED') {
+              parts.push('<span class="muted">' + escapeHtml(page.errorMessage) + '</span>');
+            }
+            return '<div class="page-detail-row">' + parts.join('') + '</div>';
+          }).join('');
+
+          return '<details><summary class="muted">Page routing details (' + pages.length + ' page' + (pages.length === 1 ? '' : 's') + ')</summary>' +
+            '<div class="page-detail-table" style="margin-top: 8px;">' + rows + '</div></details>';
+        }
+
         function renderJobActionButton(job, action, label, enabled, tone, title) {
           return '<button type="button" class="' + escapeHtml(tone) + '" data-' + action + '-job="' + escapeHtml(job.id) + '"' +
             (enabled ? '' : ' disabled') +
@@ -1307,8 +1449,8 @@ function renderAdminPage(): string {
           if (!profile || !a4Printer || !thermalPrinter) {
             return { label: 'MISCONFIGURED', detail: 'One or more linked resources are missing.' };
           }
-          if (!profile.snippetBase64 || !a4Printer.isActive || !thermalPrinter.isActive) {
-            return { label: 'MISCONFIGURED', detail: 'Recognition snippet or mapped printer availability needs attention.' };
+          if (!a4Printer.isActive || !thermalPrinter.isActive) {
+            return { label: 'MISCONFIGURED', detail: 'A mapped printer is disabled.' };
           }
           if (hasFailure) {
             return { label: 'ERROR', detail: 'Recent worker job failed for this mapping.' };
@@ -1332,9 +1474,6 @@ function renderAdminPage(): string {
           const hasFailure = jobs.some(function (job) { return job.status === 'FAILURE' || job.status === 'CANCELLED'; });
           const hasSuccess = jobs.some(function (job) { return job.status === 'SUCCESS'; });
 
-          if (!profile.snippetBase64) {
-            return { label: 'INCOMPLETE', detail: 'Snippet image is missing.' };
-          }
           if (!mappedSources.length) {
             return { label: 'UNUSED', detail: 'No active mappings currently use this profile.' };
           }
@@ -1408,11 +1547,28 @@ function renderAdminPage(): string {
           const activeProfiles = profileStatuses.filter(function (entry) { return entry.state.label === 'ACTIVE' || entry.state.label === 'READY'; }).length;
           const runner = state.live.runner;
 
+          const vision = state.live.vision;
+          const visionSummary = !vision
+            ? { value: 'Unknown', note: 'Status unavailable' }
+            : !vision.configured
+              ? { value: 'Heuristics', note: 'Text rules only — no Vision Service configured' }
+              : vision.healthy
+                ? {
+                    value: 'Vision OK',
+                    note: vision.backends
+                      ? ['rasterizer', 'barcodes', 'ocr'].filter(function (key) {
+                          return vision.backends[key === 'rasterizer' ? 'pdf_rasterizer' : key];
+                        }).join(' + ') || 'text heuristics only'
+                      : 'Vision Service reachable'
+                  }
+                : { value: 'Fallback', note: 'Vision Service unreachable — using local text rules' };
+
           summaryTarget.innerHTML = [
             '<article class="stat-card"><span class="muted">Worker runs</span><strong>' + escapeHtml(String(runner ? runner.runCount : 0)) + '</strong><span class="muted">Last run ' + escapeHtml(formatRelativeTime(runner && runner.lastRunFinishedAt)) + '</span></article>',
             '<article class="stat-card"><span class="muted">Printers online / busy</span><strong>' + escapeHtml(String(onlinePrinters)) + ' / ' + escapeHtml(String(busyPrinters)) + '</strong><span class="muted">' + escapeHtml(String(state.printers.length)) + ' configured printers</span></article>',
             '<article class="stat-card"><span class="muted">Mappings with issues</span><strong>' + escapeHtml(String(problematicMappings)) + '</strong><span class="muted">' + escapeHtml(String(state.sources.length)) + ' total mappings</span></article>',
-            '<article class="stat-card"><span class="muted">Recognition profiles ready</span><strong>' + escapeHtml(String(activeProfiles)) + '</strong><span class="muted">' + escapeHtml(String(state.routingProfiles.length)) + ' total profiles</span></article>'
+            '<article class="stat-card"><span class="muted">Label detection</span><strong>' + escapeHtml(visionSummary.value) + '</strong><span class="muted">' + escapeHtml(visionSummary.note) + '</span></article>',
+            '<article class="stat-card"><span class="muted">Routing profiles ready</span><strong>' + escapeHtml(String(activeProfiles)) + '</strong><span class="muted">' + escapeHtml(String(state.routingProfiles.length)) + ' total profiles</span></article>'
           ].join('');
 
           mappingsTarget.innerHTML = sourceStatuses.length
@@ -1460,15 +1616,19 @@ function renderAdminPage(): string {
               const mappedSources = state.sources.filter(function (source) {
                 return source.routingProfileId === entry.profile.id && source.isActive;
               }).length;
+              const ruleCount = Array.isArray(entry.profile.classificationRoutes) && entry.profile.classificationRoutes.length
+                ? entry.profile.classificationRoutes.length + ' custom rule' + (entry.profile.classificationRoutes.length === 1 ? '' : 's')
+                : 'recommended rules';
               return '<article class="item">' +
                 '<div class="status-row">' +
-                  '<div><h3>' + escapeHtml(entry.profile.name) + '</h3><p class="muted">Threshold ' + escapeHtml(String(entry.profile.matchThreshold || 0.88)) + '</p></div>' +
+                  '<div><h3>' + escapeHtml(entry.profile.name) + '</h3><p class="muted">Default route ' + escapeHtml(entry.profile.defaultRouteType || 'A4') + '</p></div>' +
                   renderPill(entry.state.label) +
                 '</div>' +
                 '<p>' + escapeHtml(entry.state.detail) + '</p>' +
                 '<div class="status-meta">' +
                   '<span class="pill">' + escapeHtml(mappedSources + ' active mapping' + (mappedSources === 1 ? '' : 's')) + '</span>' +
-                  '<span class="pill">' + escapeHtml(entry.profile.snippetBase64 ? 'snippet ready' : 'snippet missing') + '</span>' +
+                  '<span class="pill">' + escapeHtml(ruleCount) + '</span>' +
+                  (entry.profile.snippetBase64 ? '<span class="pill">image snippet</span>' : '') +
                 '</div>' +
               '</article>';
             }).join('')
@@ -1493,6 +1653,7 @@ function renderAdminPage(): string {
                   '<span class="pill">' + escapeHtml('Status: ' + job.status) + '</span>' +
                 '</div>' +
                 (job.errorMessage ? '<p class="muted">Error: ' + escapeHtml(job.errorMessage) + '</p>' : '') +
+                renderJobPageDetails(job) +
                 '<div class="job-actions">' +
                   renderJobActionButton(job, 'retry', 'Retry job', retryEnabled, 'secondary', retryEnabled ? 'Re-run only unfinished work for this job.' : 'Successful jobs do not need a retry.') +
                   renderJobActionButton(job, 'cancel', 'Cancel job', cancelEnabled, 'ghost', cancelEnabled ? 'Mark this stalled or failed job as cancelled.' : 'Only stalled or failed jobs can be cancelled safely.') +
@@ -1548,7 +1709,8 @@ function renderAdminPage(): string {
               const liveResults = await Promise.all([
                 request('/worker/pipeline/status', 'GET'),
                 request('/worker/pipeline/jobs?limit=20', 'GET'),
-                request('/admin/logs?limit=20', 'GET')
+                request('/admin/logs?limit=20', 'GET'),
+                request('/worker/pipeline/vision-status', 'GET').catch(function () { return null; })
               ]);
               const jobs = Array.isArray(liveResults[1]) ? liveResults[1] : [];
               const pageEntries = await Promise.all(jobs.map(async function (job) {
@@ -1559,6 +1721,7 @@ function renderAdminPage(): string {
               state.live.jobs = jobs;
               state.live.jobPages = Object.fromEntries(pageEntries);
               state.live.logs = Array.isArray(liveResults[2]) ? liveResults[2] : [];
+              state.live.vision = liveResults[3];
               state.live.lastUpdatedAt = new Date().toISOString();
               state.live.error = '';
             } catch (error) {
@@ -1588,6 +1751,50 @@ function renderAdminPage(): string {
           livePollTimer = setInterval(function () {
             void refreshLiveStatus();
           }, 10000);
+        }
+
+        function renderClassificationRoutes() {
+          const target = byId('classificationRoutesEditor');
+          const routes = state.recognition.classificationRoutes;
+          if (!routes.length) {
+            target.innerHTML = '<div class="item muted">No detection rules. Pages will follow the default route only. Add a rule or reset to the recommended setup.</div>';
+            return;
+          }
+
+          const printerOptions = state.printers.filter(function (printer) { return printer.isActive; });
+          target.innerHTML = routes.map(function (route, index) {
+            const classOptions = PAGE_CLASS_OPTIONS.map(function (option) {
+              return '<option value="' + option.value + '"' + (route.pageClass === option.value ? ' selected' : '') + '>' + escapeHtml(option.label) + '</option>';
+            }).join('');
+            const printerChoices = ['<option value="">Auto (first ' + escapeHtml(route.routeType) + ' printer)</option>'].concat(
+              printerOptions.map(function (printer) {
+                return '<option value="' + escapeHtml(printer.id) + '"' + (route.printerId === printer.id ? ' selected' : '') + '>' +
+                  escapeHtml(printer.name + ' (' + printer.type + ')') + '</option>';
+              })
+            ).join('');
+            return '<div class="route-rule" data-route-index="' + index + '">' +
+              '<label>When page is<select data-route-field="pageClass">' + classOptions + '</select></label>' +
+              '<label>Send to<select data-route-field="routeType">' +
+                '<option value="THERMAL"' + (route.routeType === 'THERMAL' ? ' selected' : '') + '>Thermal</option>' +
+                '<option value="A4"' + (route.routeType === 'A4' ? ' selected' : '') + '>A4</option>' +
+              '</select></label>' +
+              '<label>Printer<select data-route-field="printerId">' + printerChoices + '</select></label>' +
+              '<label>Min conf.<input data-route-field="minConfidence" type="number" min="0" max="1" step="0.05" value="' + escapeHtml(String(route.minConfidence)) + '" /></label>' +
+              '<button type="button" class="ghost" data-remove-route="' + index + '" title="Remove this rule">✕</button>' +
+            '</div>';
+          }).join('');
+        }
+
+        function readClassificationRoutesPayload() {
+          return state.recognition.classificationRoutes.map(function (route) {
+            const minConfidence = Number(route.minConfidence);
+            return {
+              pageClass: route.pageClass,
+              routeType: route.routeType === 'THERMAL' ? 'THERMAL' : 'A4',
+              printerId: route.printerId || null,
+              minConfidence: Number.isFinite(minConfidence) ? Math.min(1, Math.max(0, minConfidence)) : 0.5
+            };
+          });
         }
 
         function renderSnippetPreview() {
@@ -1622,22 +1829,37 @@ function renderAdminPage(): string {
           }).join('');
         }
 
+        function describeClassificationRoutes(profile) {
+          const routes = Array.isArray(profile.classificationRoutes) && profile.classificationRoutes.length
+            ? profile.classificationRoutes
+            : defaultClassificationRoutes();
+          return routes.map(function (route) {
+            const printer = route.printerId ? printerName(route.printerId) : 'auto';
+            return pageClassLabel(route.pageClass) + ' → ' + route.routeType + ' (' + printer + ', ≥' + Math.round((route.minConfidence || 0) * 100) + '%)';
+          });
+        }
+
         function renderProfiles() {
           const target = byId('routingProfileList');
           if (!state.routingProfiles.length) {
-            target.innerHTML = '<div class="item muted">No recognition profiles configured.</div>';
+            target.innerHTML = '<div class="item muted">No routing profiles configured.</div>';
             return;
           }
 
           target.innerHTML = state.routingProfiles.map(function (profile) {
+            const routeSummaries = describeClassificationRoutes(profile);
+            const usingDefaults = !(Array.isArray(profile.classificationRoutes) && profile.classificationRoutes.length);
+            const patterns = Array.isArray(profile.thermalLabelPatterns) ? profile.thermalLabelPatterns : [];
             return '<article class="item">' +
               '<header>' +
-                '<div><h3>' + escapeHtml(profile.name) + '</h3><p class="muted">Matched pages route to THERMAL</p></div>' +
-                '<span class="pill">threshold ' + escapeHtml(String(profile.matchThreshold || 0.88)) + '</span>' +
+                '<div><h3>' + escapeHtml(profile.name) + '</h3><p class="muted">Default route: ' + escapeHtml(profile.defaultRouteType || 'A4') + '</p></div>' +
+                '<span class="pill ' + (usingDefaults ? '' : 'info') + '">' + (usingDefaults ? 'recommended rules' : 'custom rules') + '</span>' +
               '</header>' +
-              '<p><strong>Snippet:</strong> ' + escapeHtml(profile.snippetBase64 ? 'configured' : 'missing') + '</p>' +
+              '<p><strong>Label detection:</strong></p>' +
+              routeSummaries.map(function (line) { return '<p class="muted">' + escapeHtml(line) + '</p>'; }).join('') +
+              '<p><strong>Thermal keywords:</strong> ' + escapeHtml(patterns.length ? patterns.join(', ') : 'none') + '</p>' +
+              '<p><strong>Image snippet:</strong> ' + escapeHtml(profile.snippetBase64 ? 'configured (threshold ' + String(profile.matchThreshold || 0.88) + ')' : 'not used') + '</p>' +
               '<p><strong>Printer credentials:</strong> ' + escapeHtml(credentialSummary(profile.printerDomainUsername, profile.printerSecretRef)) + '</p>' +
-              '<p><strong>Default route:</strong> ' + escapeHtml(profile.defaultRouteType || 'A4') + '</p>' +
               '<div class="actions">' +
                 '<button type="button" class="secondary" data-edit-profile="' + escapeHtml(profile.id) + '">Edit</button>' +
                 '<button type="button" class="ghost" data-delete-profile="' + escapeHtml(profile.id) + '">Delete</button>' +
@@ -1694,7 +1916,7 @@ function renderAdminPage(): string {
           });
         }
 
-        async function renderPdfPreview(pdfBase64, matches) {
+        async function renderPdfPreview(pdfBase64, annotations) {
           const target = byId('routingPreviewPages');
           target.innerHTML = '';
           if (!pdfBase64) {
@@ -1709,8 +1931,8 @@ function renderAdminPage(): string {
               const page = await pdf.getPage(pageNumber);
               const viewport = page.getViewport({ scale: 0.32 });
               const card = document.createElement('article');
-              const match = matches.find(function (entry) { return entry.pageNumber === pageNumber; });
-              card.className = 'thumbnail' + (match && match.isMatch ? ' match' : '');
+              const annotation = annotations.find(function (entry) { return entry.pageNumber === pageNumber; });
+              card.className = 'thumbnail' + (annotation && annotation.routeType === 'THERMAL' ? ' match' : '');
 
               const canvas = document.createElement('canvas');
               canvas.width = Math.round(viewport.width);
@@ -1722,15 +1944,27 @@ function renderAdminPage(): string {
               meta.className = 'thumbnail-meta';
               meta.innerHTML =
                 '<strong>Page ' + pageNumber + '</strong>' +
-                '<span class="pill">' + (match && match.isMatch ? 'THERMAL' : 'A4') + '</span>';
+                '<span class="pill ' + (annotation && annotation.routeType === 'THERMAL' ? 'info' : '') + '">' +
+                escapeHtml(annotation ? annotation.routeType : '?') + '</span>';
 
-              const score = document.createElement('div');
-              score.className = 'muted';
-              score.textContent = 'score ' + (match ? Number(match.score).toFixed(3) : '0.000');
+              const tags = document.createElement('div');
+              tags.className = 'thumbnail-tags';
+              tags.innerHTML = (annotation && annotation.tags ? annotation.tags : []).map(function (tag) {
+                return '<span class="pill ' + escapeHtml(tag.tone || '') + '">' + escapeHtml(tag.label) + '</span>';
+              }).join('');
+
+              const note = document.createElement('div');
+              note.className = 'muted';
+              note.textContent = annotation && annotation.note ? annotation.note : '';
 
               card.appendChild(canvas);
               card.appendChild(meta);
-              card.appendChild(score);
+              if (tags.innerHTML) {
+                card.appendChild(tags);
+              }
+              if (note.textContent) {
+                card.appendChild(note);
+              }
               target.appendChild(card);
             }
           } finally {
@@ -1738,6 +1972,36 @@ function renderAdminPage(): string {
               await pdf.destroy();
             }
           }
+        }
+
+        function classificationAnnotations(pages) {
+          return pages.map(function (page) {
+            const tags = [{ label: pageClassLabel(page.pageClass), tone: page.pageClass === 'DOCUMENT_A4' ? '' : 'info' }];
+            if (page.carrier) {
+              tags.push({ label: page.carrier, tone: 'ok' });
+            }
+            if (!page.hasTextLayer) {
+              tags.push({ label: 'scanned page', tone: 'warn' });
+            }
+            const percent = Math.round(Number(page.confidence || 0) * 100);
+            return {
+              pageNumber: page.pageNumber,
+              routeType: page.routeType,
+              tags: tags,
+              note: percent + '% confidence · decided by ' + String(page.decidedBy || '').replace(/_/g, ' ').toLowerCase()
+            };
+          });
+        }
+
+        function snippetAnnotations(matches) {
+          return matches.map(function (match) {
+            return {
+              pageNumber: match.pageNumber,
+              routeType: match.isMatch ? 'THERMAL' : 'A4',
+              tags: [{ label: 'snippet score ' + Number(match.score).toFixed(3), tone: match.isMatch ? 'ok' : '' }],
+              note: ''
+            };
+          });
         }
 
         function syncThresholdInputs(value) {
@@ -1772,38 +2036,49 @@ function renderAdminPage(): string {
           state.recognition.previewMatches = [];
           byId('routingPreviewPages').innerHTML = '';
           setStatus('routingPreviewStatus', 'Preview cleared.', 'muted');
-          byId('routingPreviewSummary').textContent = 'Load a snippet image and a PDF. Preview shows the pages that will route to THERMAL; all others stay on A4.';
+          byId('routingPreviewSummary').textContent = 'Load a test PDF and press Preview routing to see how each page will be classified and where it will print.';
         }
 
         function resetRoutingForm() {
           const form = byId('routingForm');
           form.reset();
           field(form, 'id').value = '';
+          field(form, 'defaultRouteType').value = 'A4';
+          field(form, 'thermalLabelPatterns').value = '';
           field(form, 'printerDomainUsername').value = '';
           field(form, 'printerPassword').value = '';
           syncThresholdInputs('0.88');
           state.recognition.snippetBase64 = null;
           state.recognition.samplePdfBase64 = null;
           state.recognition.samplePdfName = '';
+          state.recognition.classificationRoutes = defaultClassificationRoutes();
+          renderClassificationRoutes();
           renderSnippetPreview();
           clearRoutingPreview();
-          setStatus('routingStatus', 'Create a profile by uploading a snippet image and checking it against a PDF.', 'muted');
+          setStatus('routingStatus', 'Recommended setup preloaded: outgoing labels print on thermal, everything else on A4.', 'muted');
         }
 
         function fillRoutingForm(profile) {
           const form = byId('routingForm');
           field(form, 'id').value = profile.id;
           field(form, 'name').value = profile.name || '';
+          field(form, 'defaultRouteType').value = profile.defaultRouteType === 'THERMAL' ? 'THERMAL' : 'A4';
+          field(form, 'thermalLabelPatterns').value = Array.isArray(profile.thermalLabelPatterns) ? profile.thermalLabelPatterns.join('\\n') : '';
           field(form, 'printerDomainUsername').value = profile.printerDomainUsername || '';
           field(form, 'printerPassword').value = '';
           syncThresholdInputs(String(profile.matchThreshold || 0.88));
           state.recognition.snippetBase64 = profile.snippetBase64 || null;
           state.recognition.samplePdfBase64 = profile.samplePdfBase64 || null;
           state.recognition.samplePdfName = profile.samplePdfName || '';
+          state.recognition.classificationRoutes = Array.isArray(profile.classificationRoutes) && profile.classificationRoutes.length
+            ? profile.classificationRoutes.map(function (route) { return Object.assign({}, route); })
+            : defaultClassificationRoutes();
+          renderClassificationRoutes();
           renderSnippetPreview();
+          byId('snippetSection').open = Boolean(profile.snippetBase64);
           byId('routingPreviewPages').innerHTML = '';
-          setStatus('routingStatus', 'Editing recognition profile ' + profile.name + '.', 'muted');
-          setStatus('routingPreviewStatus', profile.samplePdfBase64 ? 'Saved sample PDF available. Use Preview matches after loading or re-uploading a test PDF.' : 'Load a test PDF to preview matches.', 'muted');
+          setStatus('routingStatus', 'Editing routing profile ' + profile.name + '.', 'muted');
+          setStatus('routingPreviewStatus', 'Load a test PDF and press Preview routing to test this profile.', 'muted');
           showTab('recognition');
         }
 
@@ -1997,13 +2272,88 @@ function renderAdminPage(): string {
             const matchedPages = state.recognition.previewMatches.filter(function (page) { return page.isMatch; }).map(function (page) { return page.pageNumber; });
             byId('routingPreviewSummary').textContent =
               matchedPages.length > 0
-                ? 'Matched pages route to THERMAL: ' + matchedPages.join(', ') + '. All other pages route to A4.'
-                : 'No pages matched at the current threshold. All pages would route to A4.';
-            await renderPdfPreview(state.recognition.samplePdfBase64, state.recognition.previewMatches);
-            setStatus('routingPreviewStatus', 'Preview ready.', 'ok');
+                ? 'Snippet-matched pages route to THERMAL: ' + matchedPages.join(', ') + '. All other pages follow classification and default rules.'
+                : 'No pages matched the snippet at the current threshold.';
+            await renderPdfPreview(state.recognition.samplePdfBase64, snippetAnnotations(state.recognition.previewMatches));
+            setStatus('routingPreviewStatus', 'Snippet preview ready.', 'ok');
           } catch (error) {
             setStatus('routingPreviewStatus', String(error.message || error), 'danger');
           }
+        });
+
+        byId('previewClassificationButton').addEventListener('click', async function () {
+          if (!state.recognition.samplePdfBase64) {
+            setStatus('routingPreviewStatus', 'Load a test PDF first.', 'danger');
+            return;
+          }
+
+          const form = byId('routingForm');
+          try {
+            setStatus('routingPreviewStatus', 'Classifying pages...', 'muted');
+            const result = await request('/worker/pipeline/preview/classification', 'POST', {
+              pdfBase64: state.recognition.samplePdfBase64,
+              profile: {
+                defaultRouteType: field(form, 'defaultRouteType').value === 'THERMAL' ? 'THERMAL' : 'A4',
+                thermalLabelPatterns: splitLines(field(form, 'thermalLabelPatterns').value),
+                classificationRoutes: readClassificationRoutesPayload()
+              }
+            });
+            const pages = Array.isArray(result.pages) ? result.pages : [];
+            const thermalPages = pages.filter(function (page) { return page.routeType === 'THERMAL'; }).map(function (page) { return page.pageNumber; });
+            const scannedPages = pages.filter(function (page) { return !page.hasTextLayer; }).length;
+            byId('routingPreviewSummary').textContent =
+              (thermalPages.length
+                ? 'Pages ' + thermalPages.join(', ') + ' print on thermal; the rest print on A4.'
+                : 'All pages print on A4 with the current rules.') +
+              (scannedPages ? ' ' + scannedPages + ' page(s) have no text layer — accuracy for those depends on the Vision Service.' : '');
+            await renderPdfPreview(state.recognition.samplePdfBase64, classificationAnnotations(pages));
+            setStatus('routingPreviewStatus', 'Routing preview ready.', 'ok');
+          } catch (error) {
+            setStatus('routingPreviewStatus', String(error.message || error), 'danger');
+          }
+        });
+
+        byId('classificationRoutesEditor').addEventListener('change', function (event) {
+          const row = event.target.closest('[data-route-index]');
+          const fieldName = event.target.getAttribute('data-route-field');
+          if (!row || !fieldName) {
+            return;
+          }
+          const index = Number(row.getAttribute('data-route-index'));
+          const route = state.recognition.classificationRoutes[index];
+          if (!route) {
+            return;
+          }
+          if (fieldName === 'minConfidence') {
+            route.minConfidence = Math.min(1, Math.max(0, Number(event.target.value) || 0));
+          } else if (fieldName === 'printerId') {
+            route.printerId = event.target.value || null;
+          } else {
+            route[fieldName] = event.target.value;
+          }
+          if (fieldName === 'routeType') {
+            // Printer choices show the route type in the "auto" option; re-render to keep them honest.
+            renderClassificationRoutes();
+          }
+        });
+
+        byId('classificationRoutesEditor').addEventListener('click', function (event) {
+          const removeButton = event.target.closest('[data-remove-route]');
+          if (!removeButton) {
+            return;
+          }
+          state.recognition.classificationRoutes.splice(Number(removeButton.getAttribute('data-remove-route')), 1);
+          renderClassificationRoutes();
+        });
+
+        byId('addClassificationRoute').addEventListener('click', function () {
+          state.recognition.classificationRoutes.push({
+            pageClass: 'OUTGOING_LABEL_THERMAL',
+            routeType: 'THERMAL',
+            printerId: null,
+            minConfidence: 0.5
+          });
+          renderClassificationRoutes();
         });
 
         byId('routingForm').addEventListener('submit', async function (event) {
@@ -2013,8 +2363,9 @@ function renderAdminPage(): string {
           const payload = {
             name: field(form, 'name').value.trim(),
             printerDomainUsername: field(form, 'printerDomainUsername').value.trim(),
-            defaultRouteType: 'A4',
-            thermalLabelPatterns: [],
+            defaultRouteType: field(form, 'defaultRouteType').value === 'THERMAL' ? 'THERMAL' : 'A4',
+            thermalLabelPatterns: splitLines(field(form, 'thermalLabelPatterns').value),
+            classificationRoutes: readClassificationRoutesPayload(),
             fallbackPrinterId: null,
             samplePdfName: state.recognition.samplePdfName || null,
             samplePdfBase64: state.recognition.samplePdfBase64 || null,
@@ -2027,21 +2378,13 @@ function renderAdminPage(): string {
             payload.printerPassword = printerPassword;
           }
 
-          if (!payload.snippetBase64) {
-            setStatus('routingStatus', 'A snippet image is required.', 'danger');
-            return;
-          }
-
           try {
-            if (id) {
-              await request('/admin/config/routing-profiles/' + id, 'PATCH', payload);
-              setStatus('routingStatus', 'Recognition profile updated.', 'ok');
-            } else {
-              await request('/admin/config/routing-profiles', 'POST', payload);
-              setStatus('routingStatus', 'Recognition profile created.', 'ok');
-            }
+            await (id
+              ? request('/admin/config/routing-profiles/' + id, 'PATCH', payload)
+              : request('/admin/config/routing-profiles', 'POST', payload));
             await refreshAll();
             resetRoutingForm();
+            setStatus('routingStatus', id ? 'Routing profile updated.' : 'Routing profile created.', 'ok');
           } catch (error) {
             setStatus('routingStatus', String(error.message || error), 'danger');
           }
@@ -2064,15 +2407,12 @@ function renderAdminPage(): string {
           }
 
           try {
-            if (id) {
-              await request('/admin/config/printers/' + id, 'PATCH', payload);
-              setStatus('printerStatus', 'Printer updated.', 'ok');
-            } else {
-              await request('/admin/config/printers', 'POST', payload);
-              setStatus('printerStatus', 'Printer created.', 'ok');
-            }
+            await (id
+              ? request('/admin/config/printers/' + id, 'PATCH', payload)
+              : request('/admin/config/printers', 'POST', payload));
             await refreshAll();
             resetPrinterForm();
+            setStatus('printerStatus', id ? 'Printer updated.' : 'Printer created.', 'ok');
           } catch (error) {
             setStatus('printerStatus', String(error.message || error), 'danger');
           }
@@ -2103,17 +2443,37 @@ function renderAdminPage(): string {
           }
 
           try {
-            if (id) {
-              await request('/admin/config/smb-sources/' + id, 'PATCH', payload);
-              setStatus('sourceStatus', 'Mapping updated.', 'ok');
-            } else {
-              await request('/admin/config/smb-sources', 'POST', payload);
-              setStatus('sourceStatus', 'Mapping created.', 'ok');
-            }
+            await (id
+              ? request('/admin/config/smb-sources/' + id, 'PATCH', payload)
+              : request('/admin/config/smb-sources', 'POST', payload));
             await refreshAll();
             resetSourceForm();
+            setStatus('sourceStatus', id ? 'Mapping updated.' : 'Mapping created.', 'ok');
           } catch (error) {
             setStatus('sourceStatus', String(error.message || error), 'danger');
+          }
+        });
+
+        byId('runPipelineButton').addEventListener('click', async function () {
+          const button = byId('runPipelineButton');
+          button.disabled = true;
+          try {
+            setStatus('runPipelineStatus', 'Running pipeline...', 'muted');
+            const result = await request('/worker/pipeline/run-once', 'POST', {});
+            const summary = result && result.summary;
+            setStatus(
+              'runPipelineStatus',
+              summary
+                ? 'Done: ' + summary.filesProcessed + ' file(s) processed, ' + summary.pageDispatches + ' page(s) printed, ' +
+                  summary.filesSkippedDedup + ' duplicate(s) skipped, ' + summary.failures + ' failure(s).'
+                : 'Pipeline run finished.',
+              summary && summary.failures ? 'danger' : 'ok'
+            );
+            await refreshLiveStatus();
+          } catch (error) {
+            setStatus('runPipelineStatus', String(error.message || error), 'danger');
+          } finally {
+            button.disabled = false;
           }
         });
 
@@ -2139,6 +2499,10 @@ function renderAdminPage(): string {
 
           const deletePrinter = event.target.closest('[data-delete-printer]');
           if (deletePrinter) {
+            const printerToDelete = state.printers.find(function (entry) { return entry.id === deletePrinter.getAttribute('data-delete-printer'); });
+            if (!window.confirm('Delete printer "' + (printerToDelete ? printerToDelete.name : 'unknown') + '"? Mappings that use it will stop routing to it.')) {
+              return;
+            }
             try {
               await request('/admin/config/printers/' + deletePrinter.getAttribute('data-delete-printer'), 'DELETE');
               await refreshAll();
@@ -2161,6 +2525,10 @@ function renderAdminPage(): string {
 
           const deleteProfile = event.target.closest('[data-delete-profile]');
           if (deleteProfile) {
+            const profileToDelete = state.routingProfiles.find(function (entry) { return entry.id === deleteProfile.getAttribute('data-delete-profile'); });
+            if (!window.confirm('Delete routing profile "' + (profileToDelete ? profileToDelete.name : 'unknown') + '"? Mappings that use it fall back to default routing.')) {
+              return;
+            }
             try {
               await request('/admin/config/routing-profiles/' + deleteProfile.getAttribute('data-delete-profile'), 'DELETE');
               await refreshAll();
@@ -2183,6 +2551,10 @@ function renderAdminPage(): string {
 
           const deleteSource = event.target.closest('[data-delete-source]');
           if (deleteSource) {
+            const sourceToDelete = state.sources.find(function (entry) { return entry.id === deleteSource.getAttribute('data-delete-source'); });
+            if (!window.confirm('Delete mapping for "' + (sourceToDelete ? sourceToDelete.path : 'unknown') + '"? Files in that folder will no longer be printed.')) {
+              return;
+            }
             try {
               await request('/admin/config/smb-sources/' + deleteSource.getAttribute('data-delete-source'), 'DELETE');
               await refreshAll();
@@ -2266,10 +2638,13 @@ export function createWebApp(options: CreateWebAppOptions = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const apiBaseUrl = options.apiBaseUrl ?? process.env.API_BASE_URL ?? 'http://127.0.0.1:4000';
   const workerBaseUrl = options.workerBaseUrl ?? process.env.WORKER_BASE_URL ?? 'http://127.0.0.1:5000';
-  const currentDir = dirname(fileURLToPath(import.meta.url));
+  // Resolve pdfjs-dist wherever npm hoisted it — a fixed ../node_modules path
+  // breaks under workspace hoisting and 404s the in-browser PDF previews.
+  const require = createRequire(import.meta.url);
+  const pdfjsDistDir = dirname(require.resolve('pdfjs-dist/package.json'));
 
   app.use(express.json({ limit: '30mb' }));
-  app.use('/vendor/pdfjs', express.static(join(currentDir, '../node_modules/pdfjs-dist/build')));
+  app.use('/vendor/pdfjs', express.static(join(pdfjsDistDir, 'build')));
 
   app.get('/health', (_req, res) => {
     res.json({ service: 'web', status: 'ok' });
@@ -2412,6 +2787,8 @@ export function createWebApp(options: CreateWebAppOptions = {}) {
     { method: 'get', path: '/worker/pipeline/notifications', upstreamPath: () => '/pipeline/notifications' },
     { method: 'post', path: '/worker/pipeline/notifications/test', upstreamPath: () => '/pipeline/notifications/test' },
     { method: 'get', path: '/worker/pipeline/jobs', upstreamPath: () => '/pipeline/jobs' },
+    { method: 'get', path: '/worker/pipeline/vision-status', upstreamPath: () => '/pipeline/vision-status' },
+    { method: 'post', path: '/worker/pipeline/preview/classification', upstreamPath: () => '/pipeline/preview/classification' },
     { method: 'get', path: '/worker/pipeline/jobs/:jobId/pages', upstreamPath: (req) => `/pipeline/jobs/${req.params.jobId}/pages` },
     { method: 'post', path: '/worker/pipeline/jobs/:jobId/cancel', upstreamPath: (req) => `/pipeline/jobs/${req.params.jobId}/cancel` },
     { method: 'post', path: '/worker/pipeline/jobs/:jobId/retry', upstreamPath: (req) => `/pipeline/jobs/${req.params.jobId}/retry` }
