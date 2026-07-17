@@ -5,9 +5,33 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { matchPdfPagesBySnippet } from '@printo/shared';
+import { HeuristicPageClassifier } from './classify/heuristic-classifier.js';
+import type { PageClass, PageClassification, PageClassifier } from './classify/types.js';
 import { extractPdfPages, type PdfTextItem } from './pdf.js';
 
 export type RouteType = 'A4' | 'THERMAL';
+
+/**
+ * Maps a Vision Service / heuristic page class to a route (and optionally a
+ * specific printer). Rules are evaluated in order; a rule only applies when the
+ * classification confidence reaches minConfidence.
+ */
+export interface WorkerClassificationRoute {
+  pageClass: PageClass;
+  routeType: RouteType;
+  printerId: string | null;
+  minConfidence: number;
+}
+
+/**
+ * Default classification routing: outgoing labels go to thermal, return labels
+ * stay on A4. DOCUMENT_A4 intentionally has no default rule so such pages keep
+ * following the profile's defaultRouteType (backward compatible).
+ */
+export const DEFAULT_CLASSIFICATION_ROUTES: WorkerClassificationRoute[] = [
+  { pageClass: 'OUTGOING_LABEL_THERMAL', routeType: 'THERMAL', printerId: null, minConfidence: 0.5 },
+  { pageClass: 'RETURN_LABEL_A4', routeType: 'A4', printerId: null, minConfidence: 0.5 }
+];
 
 export interface WorkerSmbSource {
   id: string;
@@ -76,6 +100,8 @@ export interface WorkerRoutingProfile {
   snippetBase64: string | null;
   matchThreshold: number;
   visualRules: WorkerRoutingVisualRule[];
+  /** Classification → route mapping; falls back to DEFAULT_CLASSIFICATION_ROUTES when omitted/empty. */
+  classificationRoutes?: WorkerClassificationRoute[];
 }
 
 export interface WorkerRoutingVisualRule {
@@ -140,6 +166,7 @@ export interface OcrPageResult {
   forcedRouteType?: RouteType;
   forcedPrinterId?: string | null;
   matchScore?: number;
+  classification?: PageClassification;
 }
 
 export interface OcrDocumentResult {
@@ -160,6 +187,9 @@ export interface PrintJobPageRecord {
   printerId: string | null;
   status: 'SUCCESS' | 'FAILURE' | 'SKIPPED';
   errorMessage?: string;
+  pageClass?: PageClass | null;
+  classificationConfidence?: number | null;
+  carrier?: string | null;
 }
 
 export interface ProcessedFileRecord {
@@ -480,28 +510,68 @@ function matchesVisualRule(page: OcrPageResult, rule: WorkerRoutingVisualRule): 
   return expectedWords.every((word) => regionText.includes(word));
 }
 
-function resolveRouteType(page: OcrPageResult, routing: WorkerRoutingProfile | null): RouteType {
-  if (page.forcedRouteType) {
-    return page.forcedRouteType;
+interface ResolvedRoute {
+  routeType: RouteType;
+  forcedPrinterId: string | null;
+  decidedBy: 'FORCED' | 'VISUAL_RULE' | 'THERMAL_PATTERN' | 'CLASSIFICATION' | 'DEFAULT';
+}
+
+function matchClassificationRoute(
+  classification: PageClassification | undefined,
+  routes: WorkerClassificationRoute[]
+): WorkerClassificationRoute | null {
+  if (!classification) {
+    return null;
   }
 
+  return (
+    routes.find(
+      (route) => route.pageClass === classification.pageClass && classification.confidence >= route.minConfidence
+    ) ?? null
+  );
+}
+
+/**
+ * Route precedence: explicit per-page forcing (image-snippet / visual profile) →
+ * visual rectangle rules → thermal label patterns → classification routes →
+ * profile default. Explicit admin configuration always beats the classifier.
+ */
+function resolveRoute(page: OcrPageResult, routing: WorkerRoutingProfile | null): ResolvedRoute {
+  if (page.forcedRouteType) {
+    return { routeType: page.forcedRouteType, forcedPrinterId: null, decidedBy: 'FORCED' };
+  }
+
+  const classificationRoutes =
+    routing?.classificationRoutes && routing.classificationRoutes.length > 0
+      ? routing.classificationRoutes
+      : DEFAULT_CLASSIFICATION_ROUTES;
+
   if (!routing) {
-    return 'A4';
+    const route = matchClassificationRoute(page.classification, classificationRoutes);
+    if (route) {
+      return { routeType: route.routeType, forcedPrinterId: route.printerId, decidedBy: 'CLASSIFICATION' };
+    }
+    return { routeType: 'A4', forcedPrinterId: null, decidedBy: 'DEFAULT' };
   }
 
   for (const rule of routing.visualRules) {
     if (matchesVisualRule(page, rule)) {
-      return rule.routeType;
+      return { routeType: rule.routeType, forcedPrinterId: null, decidedBy: 'VISUAL_RULE' };
     }
   }
 
   for (const label of page.labels) {
     if (routing.thermalLabelPatterns.some((pattern) => matchesThermalPattern(label, pattern))) {
-      return 'THERMAL';
+      return { routeType: 'THERMAL', forcedPrinterId: null, decidedBy: 'THERMAL_PATTERN' };
     }
   }
 
-  return routing.defaultRouteType;
+  const route = matchClassificationRoute(page.classification, classificationRoutes);
+  if (route) {
+    return { routeType: route.routeType, forcedPrinterId: route.printerId, decidedBy: 'CLASSIFICATION' };
+  }
+
+  return { routeType: routing.defaultRouteType, forcedPrinterId: null, decidedBy: 'DEFAULT' };
 }
 
 function selectPrinter(input: {
@@ -558,8 +628,38 @@ export class WorkerPipeline {
     private readonly scanner: SmbScanner,
     private readonly ocrProvider: OcrProvider,
     private readonly dispatcher: PrinterDispatcher,
-    private readonly notifier: PipelineNotifier = new NoopPipelineNotifier()
+    private readonly notifier: PipelineNotifier = new NoopPipelineNotifier(),
+    private readonly classifier: PageClassifier = new HeuristicPageClassifier()
   ) {}
+
+  private async classifyPages(ocrResult: OcrDocumentResult, file: ScannedFile): Promise<void> {
+    for (const page of ocrResult.pages) {
+      if (page.classification) {
+        continue;
+      }
+      try {
+        page.classification = await this.classifier.classifyPage({
+          pageNumber: page.pageNumber,
+          text: page.text ?? '',
+          textItems: page.textItems,
+          pageWidth: page.pageWidth,
+          pageHeight: page.pageHeight
+        });
+      } catch (error) {
+        // Classification is advisory; routing falls back to profile rules.
+        // eslint-disable-next-line no-console
+        console.warn(
+          JSON.stringify({
+            service: 'worker',
+            event: 'page_classification_failed',
+            filePath: file.path,
+            pageNumber: page.pageNumber,
+            error: error instanceof Error ? error.message : 'CLASSIFIER_ERROR'
+          })
+        );
+      }
+    }
+  }
 
   async runOnce(): Promise<PipelineRunSummary> {
     const summary = createSummary();
@@ -811,9 +911,27 @@ export class WorkerPipeline {
               config: ocrConfig
             });
 
+      await this.classifyPages(ocrResult, file);
+
       for (const page of ocrResult.pages) {
-        const routeType = resolveRouteType(page, routing);
-        const effectiveRouteType = routeType;
+        const resolvedRoute = resolveRoute(page, routing);
+        const effectiveRouteType = resolvedRoute.routeType;
+        // eslint-disable-next-line no-console
+        console.log(
+          JSON.stringify({
+            service: 'worker',
+            event: 'page_routed',
+            jobId: job.id,
+            filePath: file.path,
+            pageNumber: page.pageNumber,
+            pageClass: page.classification?.pageClass ?? null,
+            confidence: page.classification?.confidence ?? null,
+            carrier: page.classification?.carrier ?? null,
+            classifier: page.classification?.classifier ?? null,
+            routeType: effectiveRouteType,
+            decidedBy: resolvedRoute.decidedBy
+          })
+        );
         const pageKey = `${page.pageNumber}:${effectiveRouteType}`;
         if (successfulPageKeys.has(pageKey)) {
           await this.store.addPrintJobPage({
@@ -822,7 +940,10 @@ export class WorkerPipeline {
             routeType: effectiveRouteType,
             printerId: null,
             status: 'SKIPPED',
-            errorMessage: 'ALREADY_DISPATCHED_SUCCESSFULLY'
+            errorMessage: 'ALREADY_DISPATCHED_SUCCESSFULLY',
+            pageClass: page.classification?.pageClass ?? null,
+            classificationConfidence: page.classification?.confidence ?? null,
+            carrier: page.classification?.carrier ?? null
           });
           summary.pageDispatchesSkipped += 1;
           continue;
@@ -833,7 +954,7 @@ export class WorkerPipeline {
           printers,
           fallbackPrinterId: routing?.fallbackPrinterId ?? null,
           userAssignment: userPrinterAssignment,
-          forcedPrinterId: page.forcedPrinterId ?? null,
+          forcedPrinterId: page.forcedPrinterId ?? resolvedRoute.forcedPrinterId,
           sourceA4PrinterId: source.a4PrinterId,
           sourceThermalPrinterId: source.thermalPrinterId
         });
@@ -856,7 +977,10 @@ export class WorkerPipeline {
           pageNumber: page.pageNumber,
           routeType: effectiveRouteType,
           printerId: effectivePrinter.id,
-          status: 'SUCCESS'
+          status: 'SUCCESS',
+          pageClass: page.classification?.pageClass ?? null,
+          classificationConfidence: page.classification?.confidence ?? null,
+          carrier: page.classification?.carrier ?? null
         });
         summary.pageDispatches += 1;
       }

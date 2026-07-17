@@ -1,4 +1,5 @@
 import express from 'express';
+import { createDefaultPageClassifier } from './classify/index.js';
 import { pool } from './db/pool.js';
 import { ProviderPrinterDispatcher } from './dispatch/provider-printer-dispatcher.js';
 import {
@@ -117,8 +118,9 @@ function createDefaultPipeline(store: WorkerConfigStore, notifications: SmtpNoti
   const scanner = createDefaultScanner();
   const ocrProvider = createDefaultOcrProvider();
   const dispatcher = createDefaultDispatcher();
+  const classifier = createDefaultPageClassifier();
 
-  return new WorkerPipeline(store, scanner, ocrProvider, dispatcher, new WorkerPipelineNotifier(notifications));
+  return new WorkerPipeline(store, scanner, ocrProvider, dispatcher, new WorkerPipelineNotifier(notifications), classifier);
 }
 
 export function createWorkerApp(options: WorkerAppOptions = {}) {

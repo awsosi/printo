@@ -809,4 +809,171 @@ describe('worker pipeline', () => {
       expect.objectContaining({ pageNumber: 2, status: 'SUCCESS' })
     ]);
   });
+
+  const classificationStoreInput = (routingOverrides: Record<string, unknown> = {}) => ({
+    sources: [
+      {
+        id: 'source-1',
+        ownerUserId: null,
+        ownerGroupId: null,
+        path: '\\\\srv\\share',
+        domainUsername: '',
+        secretRef: '',
+        printerDomainUsername: '',
+        printerSecretRef: '',
+        routingProfileId: null,
+        a4PrinterId: null,
+        thermalPrinterId: null,
+        includeFilenamePatterns: [],
+        excludeFilenamePatterns: [],
+        isActive: true
+      }
+    ],
+    masks: [],
+    printers: [
+      {
+        id: 'printer-a4',
+        name: 'Office A4',
+        type: 'A4' as const,
+        targetUri: 'ipp://a4.local',
+        domainUsername: '',
+        secretRef: '',
+        isActive: true
+      },
+      {
+        id: 'printer-thermal',
+        name: 'Zebra',
+        type: 'THERMAL' as const,
+        targetUri: 'socket://thermal.local:9100',
+        domainUsername: '',
+        secretRef: '',
+        isActive: true
+      },
+      {
+        id: 'printer-thermal-returns',
+        name: 'Returns Zebra',
+        type: 'THERMAL' as const,
+        targetUri: 'socket://returns.local:9100',
+        domainUsername: '',
+        secretRef: '',
+        isActive: true
+      }
+    ],
+    routingProfiles: [
+      {
+        id: 'routing-1',
+        name: 'default',
+        ownerUserId: null,
+        ownerGroupId: null,
+        printerDomainUsername: '',
+        printerSecretRef: '',
+        defaultRouteType: 'A4' as const,
+        thermalLabelPatterns: [],
+        fallbackPrinterId: null,
+        samplePdfName: null,
+        samplePdfBase64: null,
+        snippetBase64: null,
+        matchThreshold: 0.88,
+        visualRules: [],
+        ...routingOverrides
+      }
+    ]
+  });
+
+  const mixedDocumentContent = [
+    'Faktura VAT nr 2026/07/001 suma brutto 1234,56 PLN termin płatności 14 dni',
+    'DHL EXPRESS WORLDWIDE Ship to: Jan Kowalski Waybill Tracking number JJD0099887766554433',
+    'UPS RETURN LABEL Ship to: Returns Center Shipper Tracking number 1Z999AA10123456784'
+  ].join('\n');
+
+  it('routes classified pages: outgoing label to thermal, return label and invoice to A4', async () => {
+    const store = new InMemoryWorkerStore(classificationStoreInput());
+    const scanner = new StaticSmbScanner({
+      'source-1': [
+        {
+          sourceId: 'source-1',
+          path: '/in/mixed-shipment.txt',
+          content: mixedDocumentContent,
+          modifiedAt: new Date('2026-07-17T08:00:00.000Z')
+        }
+      ]
+    });
+    const dispatcher = new RecordingPrinterDispatcher();
+    const pipeline = new WorkerPipeline(store, scanner, new MockOcrProvider(), dispatcher);
+
+    const summary = await pipeline.runOnce();
+
+    expect(summary.filesProcessed).toBe(1);
+    expect(dispatcher.calls.map((call) => call.routeType)).toEqual(['A4', 'THERMAL', 'A4']);
+    expect(dispatcher.calls[1]?.printer.id).toBe('printer-thermal');
+    expect(dispatcher.calls[1]?.page.classification?.pageClass).toBe('OUTGOING_LABEL_THERMAL');
+    expect(dispatcher.calls[1]?.page.classification?.carrier).toBe('DHL');
+    expect(dispatcher.calls[2]?.page.classification?.pageClass).toBe('RETURN_LABEL_A4');
+
+    expect(store.printJobPages).toEqual([
+      expect.objectContaining({ pageNumber: 1, pageClass: 'DOCUMENT_A4' }),
+      expect.objectContaining({ pageNumber: 2, pageClass: 'OUTGOING_LABEL_THERMAL', carrier: 'DHL' }),
+      expect.objectContaining({ pageNumber: 3, pageClass: 'RETURN_LABEL_A4', carrier: 'UPS' })
+    ]);
+  });
+
+  it('honors profile classification routes including printer overrides and confidence gates', async () => {
+    const store = new InMemoryWorkerStore(
+      classificationStoreInput({
+        classificationRoutes: [
+          { pageClass: 'OUTGOING_LABEL_THERMAL', routeType: 'THERMAL', printerId: null, minConfidence: 0.99 },
+          { pageClass: 'RETURN_LABEL_A4', routeType: 'THERMAL', printerId: 'printer-thermal-returns', minConfidence: 0.5 }
+        ]
+      })
+    );
+    const scanner = new StaticSmbScanner({
+      'source-1': [
+        {
+          sourceId: 'source-1',
+          path: '/in/mixed-shipment.txt',
+          // Page 2 has weak label signals (carrier + one keyword ≈ 0.5 confidence),
+          // page 3 is a confident UPS return label.
+          content: [
+            'Faktura VAT nr 2026/07/001 suma brutto 1234,56 PLN termin płatności 14 dni',
+            'DPD Classic parcel service point',
+            'UPS RETURN LABEL Ship to: Returns Center Shipper Tracking number 1Z999AA10123456784'
+          ].join('\n'),
+          modifiedAt: new Date('2026-07-17T08:00:00.000Z')
+        }
+      ]
+    });
+    const dispatcher = new RecordingPrinterDispatcher();
+    const pipeline = new WorkerPipeline(store, scanner, new MockOcrProvider(), dispatcher);
+
+    await pipeline.runOnce();
+
+    // Outgoing label fails the 0.99 confidence gate → falls back to defaultRouteType A4.
+    // Return label rule redirects to the dedicated returns thermal printer.
+    expect(dispatcher.calls.map((call) => call.routeType)).toEqual(['A4', 'A4', 'THERMAL']);
+    expect(dispatcher.calls[1]?.page.classification?.pageClass).toBe('OUTGOING_LABEL_THERMAL');
+    expect(dispatcher.calls[2]?.printer.id).toBe('printer-thermal-returns');
+  });
+
+  it('lets explicit thermal label patterns win over classification', async () => {
+    // Page 3 ("UPS RETURN LABEL …") is classified RETURN_LABEL_A4, but the profile's
+    // explicit thermal pattern matches its OCR label — explicit config must win.
+    const store = new InMemoryWorkerStore(classificationStoreInput({ thermalLabelPatterns: ['label'] }));
+    const scanner = new StaticSmbScanner({
+      'source-1': [
+        {
+          sourceId: 'source-1',
+          path: '/in/mixed-shipment.txt',
+          content: mixedDocumentContent,
+          modifiedAt: new Date('2026-07-17T08:00:00.000Z')
+        }
+      ]
+    });
+    const dispatcher = new RecordingPrinterDispatcher();
+    const pipeline = new WorkerPipeline(store, scanner, new MockOcrProvider(), dispatcher);
+
+    await pipeline.runOnce();
+
+    expect(dispatcher.calls.map((call) => call.routeType)).toEqual(['A4', 'THERMAL', 'THERMAL']);
+    expect(dispatcher.calls[2]?.page.classification?.pageClass).toBe('RETURN_LABEL_A4');
+  });
 });
