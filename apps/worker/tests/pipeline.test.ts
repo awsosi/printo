@@ -12,7 +12,9 @@ import {
 } from '../src/pipeline.js';
 
 const require = createRequire(import.meta.url);
-const { createCanvas } = require('canvas') as {
+// The native canvas module is optional now; the image-snippet test below is skipped
+// on hosts where it is not installed (matching the lazy load in @printo/shared).
+type CanvasModule = {
   createCanvas(width: number, height: number, type?: 'pdf'): {
     getContext(kind: '2d'): {
       fillStyle: string;
@@ -36,6 +38,16 @@ const { createCanvas } = require('canvas') as {
     toBuffer(input?: string): Buffer;
   };
 };
+
+function tryLoadCanvas(): CanvasModule | null {
+  try {
+    return require('canvas') as CanvasModule;
+  } catch {
+    return null;
+  }
+}
+
+const canvasModule = tryLoadCanvas();
 const pdfjs = require('pdfjs-dist/legacy/build/pdf.js') as {
   getDocument(input: {
     data: Uint8Array;
@@ -410,7 +422,8 @@ describe('worker pipeline', () => {
     expect(dispatcher.calls[1]?.routeType).toBe('A4');
   });
 
-  it('routes matched PDF pages to thermal using image snippets', async () => {
+  it.skipIf(!canvasModule)('routes matched PDF pages to thermal using image snippets', async () => {
+    const { createCanvas } = canvasModule!;
     const pdfCanvas = createCanvas(420, 420, 'pdf');
     const pdfContext = pdfCanvas.getContext('2d');
     pdfContext.fillStyle = '#ffffff';

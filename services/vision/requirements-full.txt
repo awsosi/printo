@@ -1,0 +1,8 @@
+-r requirements.txt
+# Optional backends — enable rasterization, barcode detection and OCR.
+pypdfium2>=4.30
+zxing-cpp>=2.2
+pillow>=10.3
+paddleocr>=2.8
+paddlepaddle>=2.6
+numpy>=1.26

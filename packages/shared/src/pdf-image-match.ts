@@ -28,10 +28,30 @@ const pdfjs = loadOptionalModule<{
   join(process.cwd(), 'apps/worker/node_modules/pdfjs-dist/legacy/build/pdf.js'),
   join(process.cwd(), 'apps/web/node_modules/pdfjs-dist/legacy/build/pdf.js')
 ]);
-const canvasLib = require('canvas') as {
+interface CanvasModule {
   createCanvas(width: number, height: number): CanvasLike;
   loadImage(source: Buffer): Promise<{ width: number; height: number }>;
-};
+}
+
+let cachedCanvasLib: CanvasModule | null = null;
+
+// The native canvas module is only needed for the legacy image-snippet matcher.
+// Loading it lazily keeps the worker (which now classifies via text heuristics
+// and the Vision Service) runnable on hosts without the Cairo toolchain.
+function loadCanvasLib(): CanvasModule {
+  if (!cachedCanvasLib) {
+    try {
+      cachedCanvasLib = require('canvas') as CanvasModule;
+    } catch (error) {
+      throw new Error(
+        `CANVAS_UNAVAILABLE: image-snippet matching requires the optional native 'canvas' module (${
+          error instanceof Error ? error.message : 'load failed'
+        })`
+      );
+    }
+  }
+  return cachedCanvasLib;
+}
 
 interface CanvasLike {
   width: number;
@@ -176,6 +196,7 @@ function findBestTemplateScore(page: GrayImage, template: GrayImage): number {
 
 async function decodeSnippet(snippetBase64: string): Promise<GrayImage> {
   const buffer = Buffer.from(snippetBase64, 'base64');
+  const canvasLib = loadCanvasLib();
   const image = await canvasLib.loadImage(buffer);
   const canvas = canvasLib.createCanvas(image.width, image.height);
   const context = canvas.getContext('2d');
@@ -200,7 +221,7 @@ async function renderPdfPages(pdfBuffer: Buffer): Promise<GrayImage[]> {
       const baseViewport = page.getViewport({ scale: 1 });
       const scale = DEFAULT_RENDER_WIDTH / baseViewport.width;
       const viewport = page.getViewport({ scale });
-      const canvas = canvasLib.createCanvas(Math.max(1, Math.round(viewport.width)), Math.max(1, Math.round(viewport.height)));
+      const canvas = loadCanvasLib().createCanvas(Math.max(1, Math.round(viewport.width)), Math.max(1, Math.round(viewport.height)));
       const context = canvas.getContext('2d');
       await page.render({ canvasContext: context, viewport }).promise;
       const imageData = context.getImageData(0, 0, canvas.width, canvas.height).data;

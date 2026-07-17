@@ -6,8 +6,10 @@
   "types": "src/index.ts",
   "exports": "./src/index.ts",
   "dependencies": {
-    "canvas": "^2.11.2",
     "pdfjs-dist": "^3.11.174"
+  },
+  "optionalDependencies": {
+    "canvas": "^2.11.2"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
