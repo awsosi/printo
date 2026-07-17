@@ -488,6 +488,7 @@ export class InMemoryAuthStore implements AuthStore {
     snippetBase64?: string | null;
     matchThreshold?: number;
     visualRules?: RoutingProfileRecord['visualRules'];
+    classificationRoutes?: RoutingProfileRecord['classificationRoutes'];
   }): Promise<RoutingProfileRecord> {
     const record: RoutingProfileRecord = {
       id: randomUUID(),
@@ -507,7 +508,8 @@ export class InMemoryAuthStore implements AuthStore {
         ...rule,
         expectedWords: [...rule.expectedWords],
         rect: { ...rule.rect }
-      }))
+      })),
+      classificationRoutes: (input.classificationRoutes ?? []).map((route) => ({ ...route }))
     };
 
     this.routingProfiles.push(record);
@@ -529,6 +531,7 @@ export class InMemoryAuthStore implements AuthStore {
     snippetBase64?: string | null;
     matchThreshold?: number;
     visualRules?: RoutingProfileRecord['visualRules'];
+    classificationRoutes?: RoutingProfileRecord['classificationRoutes'];
   }): Promise<RoutingProfileRecord | null> {
     const record = this.routingProfiles.find((candidate) => candidate.id === input.id);
     if (!record) {
@@ -553,6 +556,9 @@ export class InMemoryAuthStore implements AuthStore {
         expectedWords: [...rule.expectedWords],
         rect: { ...rule.rect }
       }));
+    }
+    if (input.classificationRoutes !== undefined) {
+      record.classificationRoutes = input.classificationRoutes.map((route) => ({ ...route }));
     }
 
     return record;

@@ -83,6 +83,7 @@ type RoutingProfileRow = {
   snippet_base64: string | null;
   match_threshold: number;
   visual_rules: unknown;
+  classification_routes: unknown;
 };
 
 type VisualProfileRow = {
@@ -191,6 +192,33 @@ function toRoutingVisualRules(value: unknown): WorkerRoutingProfile['visualRules
   });
 }
 
+const PAGE_CLASSES = ['OUTGOING_LABEL_THERMAL', 'RETURN_LABEL_A4', 'DOCUMENT_A4'] as const;
+
+function toClassificationRoutes(value: unknown): NonNullable<WorkerRoutingProfile['classificationRoutes']> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return [];
+    }
+    const candidate = entry as Record<string, unknown>;
+    if (!PAGE_CLASSES.includes(candidate.pageClass as (typeof PAGE_CLASSES)[number])) {
+      return [];
+    }
+    const minConfidence = Number(candidate.minConfidence ?? 0);
+    return [
+      {
+        pageClass: candidate.pageClass as (typeof PAGE_CLASSES)[number],
+        routeType: candidate.routeType === 'THERMAL' ? ('THERMAL' as const) : ('A4' as const),
+        printerId: typeof candidate.printerId === 'string' ? candidate.printerId : null,
+        minConfidence: Number.isFinite(minConfidence) ? Math.min(1, Math.max(0, minConfidence)) : 0
+      }
+    ];
+  });
+}
+
 function mapSmbSource(row: SmbSourceRow): WorkerSmbSource {
   return {
     id: row.id,
@@ -266,7 +294,8 @@ function mapRoutingProfile(row: RoutingProfileRow): WorkerRoutingProfile {
     samplePdfBase64: row.sample_pdf_base64,
     snippetBase64: row.snippet_base64,
     matchThreshold: row.match_threshold,
-    visualRules: toRoutingVisualRules(row.visual_rules)
+    visualRules: toRoutingVisualRules(row.visual_rules),
+    classificationRoutes: toClassificationRoutes(row.classification_routes)
   };
 }
 
@@ -333,7 +362,7 @@ export class PostgresWorkerStore implements WorkerConfigStore {
   async getRoutingProfile(ownerUserId: string | null, ownerGroupId: string | null): Promise<WorkerRoutingProfile | null> {
     const result = await this.db.query<RoutingProfileRow>(
       `SELECT id, name, owner_user_id, owner_group_id, printer_domain_username, printer_secret_ref, default_route_type,
-              thermal_label_patterns, fallback_printer_id, sample_pdf_name, sample_pdf_base64, snippet_base64, match_threshold, visual_rules
+              thermal_label_patterns, fallback_printer_id, sample_pdf_name, sample_pdf_base64, snippet_base64, match_threshold, visual_rules, classification_routes
        FROM routing_profiles
        WHERE
          (owner_user_id IS NULL AND owner_group_id IS NULL)
@@ -360,7 +389,7 @@ export class PostgresWorkerStore implements WorkerConfigStore {
   async getRoutingProfileById(id: string): Promise<WorkerRoutingProfile | null> {
     const result = await this.db.query<RoutingProfileRow>(
       `SELECT id, name, owner_user_id, owner_group_id, printer_domain_username, printer_secret_ref, default_route_type,
-              thermal_label_patterns, fallback_printer_id, sample_pdf_name, sample_pdf_base64, snippet_base64, match_threshold, visual_rules
+              thermal_label_patterns, fallback_printer_id, sample_pdf_name, sample_pdf_base64, snippet_base64, match_threshold, visual_rules, classification_routes
        FROM routing_profiles
        WHERE id = $1
        LIMIT 1`,
@@ -815,9 +844,20 @@ export class PostgresWorkerStore implements WorkerConfigStore {
 
   async addPrintJobPage(input: PrintJobPageRecord): Promise<void> {
     await this.db.query(
-      `INSERT INTO print_job_pages(print_job_id, page_number, route_type, printer_id, status, error_message)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [input.printJobId, input.pageNumber, input.routeType, input.printerId, input.status, input.errorMessage ?? null]
+      `INSERT INTO print_job_pages(print_job_id, page_number, route_type, printer_id, status, error_message,
+                                   page_class, classification_confidence, carrier)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        input.printJobId,
+        input.pageNumber,
+        input.routeType,
+        input.printerId,
+        input.status,
+        input.errorMessage ?? null,
+        input.pageClass ?? null,
+        input.classificationConfidence ?? null,
+        input.carrier ?? null
+      ]
     );
   }
 

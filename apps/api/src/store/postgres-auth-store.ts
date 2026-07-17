@@ -4,6 +4,7 @@ import type {
   AdSyncConfigRecord,
   AuditEvent,
   AuditLogRecord,
+  ClassificationRouteRecord,
   FilenameMaskRecord,
   GroupMembershipRecord,
   GroupRecord,
@@ -104,6 +105,7 @@ type RoutingProfileRow = {
   snippet_base64: string | null;
   match_threshold: number;
   visual_rules: unknown;
+  classification_routes: unknown;
 };
 
 type VisualProfileRow = {
@@ -214,6 +216,33 @@ function toRoutingVisualRules(value: unknown): RoutingVisualRuleRecord[] {
   });
 }
 
+const PAGE_CLASSES = ['OUTGOING_LABEL_THERMAL', 'RETURN_LABEL_A4', 'DOCUMENT_A4'] as const;
+
+function toClassificationRoutes(value: unknown): ClassificationRouteRecord[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return [];
+    }
+    const candidate = entry as Record<string, unknown>;
+    if (!PAGE_CLASSES.includes(candidate.pageClass as (typeof PAGE_CLASSES)[number])) {
+      return [];
+    }
+    const minConfidence = Number(candidate.minConfidence ?? 0);
+    return [
+      {
+        pageClass: candidate.pageClass as (typeof PAGE_CLASSES)[number],
+        routeType: candidate.routeType === 'THERMAL' ? ('THERMAL' as const) : ('A4' as const),
+        printerId: typeof candidate.printerId === 'string' ? candidate.printerId : null,
+        minConfidence: Number.isFinite(minConfidence) ? Math.min(1, Math.max(0, minConfidence)) : 0
+      }
+    ];
+  });
+}
+
 function mapUserRow(row: UserRow): UserRecord {
   return {
     id: row.id,
@@ -308,7 +337,8 @@ function mapRoutingProfileRow(row: RoutingProfileRow): RoutingProfileRecord {
     samplePdfBase64: row.sample_pdf_base64,
     snippetBase64: row.snippet_base64,
     matchThreshold: row.match_threshold,
-    visualRules: toRoutingVisualRules(row.visual_rules)
+    visualRules: toRoutingVisualRules(row.visual_rules),
+    classificationRoutes: toClassificationRoutes(row.classification_routes)
   };
 }
 
@@ -1225,7 +1255,7 @@ export class PostgresAuthStore implements AuthStore {
     const result = await this.db.query<RoutingProfileRow>(
       `SELECT id, name, owner_user_id, owner_group_id, printer_domain_username, printer_secret_ref,
               default_route_type, thermal_label_patterns, fallback_printer_id, sample_pdf_name, sample_pdf_base64,
-              snippet_base64, match_threshold, visual_rules
+              snippet_base64, match_threshold, visual_rules, classification_routes
        FROM routing_profiles
        WHERE id = $1`,
       [id]
@@ -1242,7 +1272,7 @@ export class PostgresAuthStore implements AuthStore {
     const result = await this.db.query<RoutingProfileRow>(
       `SELECT id, name, owner_user_id, owner_group_id, printer_domain_username, printer_secret_ref,
               default_route_type, thermal_label_patterns, fallback_printer_id, sample_pdf_name, sample_pdf_base64,
-              snippet_base64, match_threshold, visual_rules
+              snippet_base64, match_threshold, visual_rules, classification_routes
        FROM routing_profiles
        ORDER BY created_at ASC`
     );
@@ -1264,16 +1294,18 @@ export class PostgresAuthStore implements AuthStore {
     snippetBase64?: string | null;
     matchThreshold?: number;
     visualRules?: RoutingVisualRuleRecord[];
+    classificationRoutes?: ClassificationRouteRecord[];
   }): Promise<RoutingProfileRecord> {
     const result = await this.db.query<RoutingProfileRow>(
       `INSERT INTO routing_profiles(
          name, owner_user_id, owner_group_id, printer_domain_username, printer_secret_ref, default_route_type,
-         thermal_label_patterns, fallback_printer_id, sample_pdf_name, sample_pdf_base64, snippet_base64, match_threshold, visual_rules
+         thermal_label_patterns, fallback_printer_id, sample_pdf_name, sample_pdf_base64, snippet_base64, match_threshold, visual_rules,
+         classification_routes
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb, $14::jsonb)
        RETURNING id, name, owner_user_id, owner_group_id, printer_domain_username, printer_secret_ref,
                  default_route_type, thermal_label_patterns, fallback_printer_id, sample_pdf_name, sample_pdf_base64,
-                 snippet_base64, match_threshold, visual_rules`,
+                 snippet_base64, match_threshold, visual_rules, classification_routes`,
       [
         input.name,
         input.ownerUserId ?? null,
@@ -1287,7 +1319,8 @@ export class PostgresAuthStore implements AuthStore {
         input.samplePdfBase64 ?? null,
         input.snippetBase64 ?? null,
         input.matchThreshold ?? 0.88,
-        JSON.stringify(input.visualRules ?? [])
+        JSON.stringify(input.visualRules ?? []),
+        JSON.stringify(input.classificationRoutes ?? [])
       ]
     );
 
@@ -1309,6 +1342,7 @@ export class PostgresAuthStore implements AuthStore {
     snippetBase64?: string | null;
     matchThreshold?: number;
     visualRules?: RoutingVisualRuleRecord[];
+    classificationRoutes?: ClassificationRouteRecord[];
   }): Promise<RoutingProfileRecord | null> {
     const setParts: string[] = [];
     const values: unknown[] = [input.id];
@@ -1389,6 +1423,12 @@ export class PostgresAuthStore implements AuthStore {
     if (input.visualRules !== undefined) {
       setParts.push(`visual_rules = $${index}::jsonb`);
       values.push(JSON.stringify(input.visualRules));
+      index += 1;
+    }
+
+    if (input.classificationRoutes !== undefined) {
+      setParts.push(`classification_routes = $${index}::jsonb`);
+      values.push(JSON.stringify(input.classificationRoutes));
       index += 1;
     }
 

@@ -7,7 +7,9 @@ import { requireAuth, requireRole } from './middleware/auth.js';
 import { hashPassword } from './auth/password.js';
 import type {
   AdDiscoverySnapshot,
+  ClassificationRouteRecord,
   JsonObject,
+  PageClass,
   PrinterType,
   RoutingVisualRuleRecord,
   UserRecord,
@@ -99,6 +101,41 @@ function parseRoutingVisualRules(value: unknown): RoutingVisualRuleRecord[] | nu
   }
 
   return rules;
+}
+
+const ALLOWED_PAGE_CLASSES: PageClass[] = ['OUTGOING_LABEL_THERMAL', 'RETURN_LABEL_A4', 'DOCUMENT_A4'];
+
+function parseClassificationRoutes(value: unknown): ClassificationRouteRecord[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const routes: ClassificationRouteRecord[] = [];
+  for (const entry of value) {
+    if (!isJsonObject(entry)) {
+      return null;
+    }
+    if (!ALLOWED_PAGE_CLASSES.includes(entry.pageClass as PageClass)) {
+      return null;
+    }
+    const routeType = entry.routeType === 'THERMAL' ? 'THERMAL' : entry.routeType === 'A4' ? 'A4' : null;
+    if (!routeType) {
+      return null;
+    }
+    const printerId = entry.printerId === undefined || entry.printerId === null ? null : String(entry.printerId);
+    const minConfidence = entry.minConfidence === undefined ? 0 : Number(entry.minConfidence);
+    if (!Number.isFinite(minConfidence) || minConfidence < 0 || minConfidence > 1) {
+      return null;
+    }
+    routes.push({
+      pageClass: entry.pageClass as PageClass,
+      routeType,
+      printerId,
+      minConfidence
+    });
+  }
+
+  return routes;
 }
 
 function inferPrinterType(name: string): PrinterType {
@@ -1137,6 +1174,8 @@ export function createApiApp(store: AuthStore) {
           : 'A4';
     const thermalLabelPatterns = req.body?.thermalLabelPatterns === undefined ? [] : parseStringArray(req.body.thermalLabelPatterns);
     const visualRules = req.body?.visualRules === undefined ? [] : parseRoutingVisualRules(req.body.visualRules);
+    const classificationRoutes =
+      req.body?.classificationRoutes === undefined ? [] : parseClassificationRoutes(req.body.classificationRoutes);
     const fallbackPrinterId =
       req.body && Object.prototype.hasOwnProperty.call(req.body, 'fallbackPrinterId')
         ? req.body.fallbackPrinterId === null
@@ -1148,7 +1187,7 @@ export function createApiApp(store: AuthStore) {
     const snippetBase64 = req.body?.snippetBase64 === undefined ? null : parseNullableString(req.body.snippetBase64);
     const matchThreshold = req.body?.matchThreshold === undefined ? 0.88 : parseMatchThreshold(req.body.matchThreshold);
 
-    if (!name || thermalLabelPatterns === null || visualRules === null || matchThreshold === null) {
+    if (!name || thermalLabelPatterns === null || visualRules === null || matchThreshold === null || classificationRoutes === null) {
       return res.status(400).json({ error: 'INVALID_INPUT' });
     }
     if (printerDomainUsername && !isValidDomainUsername(printerDomainUsername)) {
@@ -1168,7 +1207,8 @@ export function createApiApp(store: AuthStore) {
       samplePdfBase64,
       snippetBase64,
       matchThreshold,
-      visualRules
+      visualRules,
+      classificationRoutes
     });
 
     await store.writeAuditEvent({
@@ -1187,11 +1227,16 @@ export function createApiApp(store: AuthStore) {
       req.body?.thermalLabelPatterns === undefined ? undefined : parseStringArray(req.body.thermalLabelPatterns);
     const visualRules = req.body?.visualRules === undefined ? undefined : parseRoutingVisualRules(req.body.visualRules);
     const matchThreshold = req.body?.matchThreshold === undefined ? undefined : parseMatchThreshold(req.body.matchThreshold);
+    const classificationRoutes =
+      req.body?.classificationRoutes === undefined ? undefined : parseClassificationRoutes(req.body.classificationRoutes);
     if (thermalLabelPatterns === null) {
       return res.status(400).json({ error: 'INVALID_THERMAL_LABEL_PATTERNS' });
     }
     if (visualRules === null) {
       return res.status(400).json({ error: 'INVALID_VISUAL_RULES' });
+    }
+    if (classificationRoutes === null) {
+      return res.status(400).json({ error: 'INVALID_CLASSIFICATION_ROUTES' });
     }
     if (matchThreshold === null) {
       return res.status(400).json({ error: 'INVALID_MATCH_THRESHOLD' });
@@ -1244,6 +1289,7 @@ export function createApiApp(store: AuthStore) {
             : undefined,
       thermalLabelPatterns,
       visualRules,
+      classificationRoutes,
       fallbackPrinterId:
         req.body && Object.prototype.hasOwnProperty.call(req.body, 'fallbackPrinterId')
           ? req.body.fallbackPrinterId === null

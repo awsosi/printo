@@ -1,5 +1,6 @@
 import type { Role } from '@printo/shared';
 import type {
+  ClassificationRouteRecord,
   RoutingVisualRuleRecord,
   AdSyncConfigRecord,
   AuditEvent,
@@ -149,6 +150,7 @@ export interface AuthStore {
     snippetBase64?: string | null;
     matchThreshold?: number;
     visualRules?: RoutingVisualRuleRecord[];
+    classificationRoutes?: ClassificationRouteRecord[];
   }): Promise<RoutingProfileRecord>;
   updateRoutingProfile(input: {
     id: string;
@@ -165,6 +167,7 @@ export interface AuthStore {
     snippetBase64?: string | null;
     matchThreshold?: number;
     visualRules?: RoutingVisualRuleRecord[];
+    classificationRoutes?: ClassificationRouteRecord[];
   }): Promise<RoutingProfileRecord | null>;
   deleteRoutingProfile(id: string): Promise<boolean>;
 

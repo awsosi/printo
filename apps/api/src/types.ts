@@ -72,6 +72,16 @@ export interface RoutingProfileRecord {
   snippetBase64: string | null;
   matchThreshold: number;
   visualRules: RoutingVisualRuleRecord[];
+  classificationRoutes: ClassificationRouteRecord[];
+}
+
+export type PageClass = 'OUTGOING_LABEL_THERMAL' | 'RETURN_LABEL_A4' | 'DOCUMENT_A4';
+
+export interface ClassificationRouteRecord {
+  pageClass: PageClass;
+  routeType: PrinterType;
+  printerId: string | null;
+  minConfidence: number;
 }
 
 export interface RoutingVisualRectRecord {
