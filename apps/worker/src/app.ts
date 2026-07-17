@@ -1,5 +1,6 @@
 import express from 'express';
 import { createDefaultPageClassifier } from './classify/index.js';
+import { workerMetrics } from './metrics.js';
 import { pool } from './db/pool.js';
 import { ProviderPrinterDispatcher } from './dispatch/provider-printer-dispatcher.js';
 import {
@@ -134,6 +135,10 @@ export function createWorkerApp(options: WorkerAppOptions = {}) {
 
   app.get('/health', (_req, res) => {
     res.json({ service: 'worker', status: 'ok' });
+  });
+
+  app.get('/metrics', (_req, res) => {
+    res.type('text/plain; version=0.0.4').send(workerMetrics.render());
   });
 
   app.get('/pipeline/status', (_req, res) => {

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { matchPdfPagesBySnippet } from '@printo/shared';
 import { HeuristicPageClassifier } from './classify/heuristic-classifier.js';
 import type { PageClass, PageClassification, PageClassifier } from './classify/types.js';
+import { workerMetrics } from './metrics.js';
 import { extractPdfPages, type PdfTextItem } from './pdf.js';
 
 export type RouteType = 'A4' | 'THERMAL';
@@ -645,6 +646,11 @@ export class WorkerPipeline {
           pageWidth: page.pageWidth,
           pageHeight: page.pageHeight
         });
+        workerMetrics.pagesClassifiedTotal.inc({
+          page_class: page.classification.pageClass,
+          classifier: page.classification.classifier
+        });
+        workerMetrics.classificationConfidence.observe(page.classification.confidence);
       } catch (error) {
         // Classification is advisory; routing falls back to profile rules.
         // eslint-disable-next-line no-console
@@ -916,6 +922,7 @@ export class WorkerPipeline {
       for (const page of ocrResult.pages) {
         const resolvedRoute = resolveRoute(page, routing);
         const effectiveRouteType = resolvedRoute.routeType;
+        workerMetrics.pagesRoutedTotal.inc({ route_type: effectiveRouteType, decided_by: resolvedRoute.decidedBy });
         // eslint-disable-next-line no-console
         console.log(
           JSON.stringify({
@@ -965,12 +972,32 @@ export class WorkerPipeline {
           settings: systemSettings
         });
 
-        await this.dispatcher.dispatch({
-          routeType: effectiveRouteType,
-          printer: effectivePrinter,
-          file,
-          page
-        });
+        try {
+          await this.dispatcher.dispatch({
+            routeType: effectiveRouteType,
+            printer: effectivePrinter,
+            file,
+            page
+          });
+        } catch (error) {
+          workerMetrics.pageDispatchTotal.inc({ route_type: effectiveRouteType, status: 'FAILURE' });
+          // eslint-disable-next-line no-console
+          console.error(
+            JSON.stringify({
+              service: 'worker',
+              event: 'page_dispatch_failed',
+              jobId: job.id,
+              filePath: file.path,
+              pageNumber: page.pageNumber,
+              routeType: effectiveRouteType,
+              printerId: effectivePrinter.id,
+              printerName: effectivePrinter.name,
+              error: error instanceof Error ? error.message : 'DISPATCH_FAILED'
+            })
+          );
+          throw error;
+        }
+        workerMetrics.pageDispatchTotal.inc({ route_type: effectiveRouteType, status: 'SUCCESS' });
 
         await this.store.addPrintJobPage({
           printJobId: job.id,
@@ -1005,6 +1032,8 @@ export class WorkerPipeline {
       job.sourceFileId = processedFile.id;
       job.status = 'SUCCESS';
       summary.filesProcessed += 1;
+      workerMetrics.jobsTotal.inc({ status: 'SUCCESS' });
+      workerMetrics.filesProcessedTotal.inc();
       return job;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'UNKNOWN_PIPELINE_ERROR';
@@ -1024,6 +1053,7 @@ export class WorkerPipeline {
       job.status = 'FAILURE';
       job.errorMessage = message;
       summary.failures += 1;
+      workerMetrics.jobsTotal.inc({ status: 'FAILURE' });
       await this.notifier.notify({
         kind: 'JOB_FAILURE',
         source,
