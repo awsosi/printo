@@ -5,22 +5,27 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { DispatchRequest, PrinterDispatcher, WorkerPrinter } from '../pipeline.js';
+import { extractSinglePagePdf } from '../pdf-split.js';
 import { parseUncPath, resolveSecretFromRef } from '../scanner/smb-path.js';
+import { looksLikeZpl } from './zpl.js';
 
 const execFileAsync = promisify(execFile);
 
-export type DispatchProviderName = 'mock' | 'socket' | 'ipp' | 'windows';
+export type DispatchProviderName = 'mock' | 'socket' | 'ipp' | 'windows' | 'cups';
 
 interface DispatchResolution {
   provider: DispatchProviderName;
   targetUri: string;
   timeoutMs: number;
+  lpOptions?: string[];
 }
 
 interface ProviderOverride {
   provider?: DispatchProviderName;
   targetUri?: string;
   timeoutMs?: number;
+  /** Extra `lp -o` options for the cups provider (e.g. ["sides=two-sided-long-edge"]). */
+  lpOptions?: string[];
 }
 
 type ProviderOverrideMap = Record<string, ProviderOverride>;
@@ -112,7 +117,41 @@ function parseWindowsPrinterTarget(targetUri: string): ParsedWindowsPrinterTarge
   }
 }
 
+export interface ParsedCupsTarget {
+  /** CUPS server host (empty = local cupsd / CUPS_SERVER env). */
+  host: string;
+  queue: string;
+}
+
+/**
+ * Parses `cups://<queue>` or `cups://<host[:port]>/<queue>`. Manual parsing —
+ * URL() lowercases hostnames, and we must preserve the queue name as typed.
+ */
+export function parseCupsTarget(targetUri: string): ParsedCupsTarget | null {
+  if (!targetUri.toLowerCase().startsWith('cups://')) {
+    return null;
+  }
+
+  const rest = targetUri.slice('cups://'.length).replace(/\/+$/, '');
+  if (!rest) {
+    return null;
+  }
+
+  const segments = rest.split('/').filter(Boolean);
+  if (segments.length === 1) {
+    return { host: '', queue: segments[0]! };
+  }
+  if (segments.length === 2) {
+    return { host: segments[0]!, queue: segments[1]! };
+  }
+  return null;
+}
+
 function detectProviderFromTargetUri(targetUri: string): DispatchProviderName {
+  if (parseCupsTarget(targetUri)) {
+    return 'cups';
+  }
+
   if (parseWindowsPrinterTarget(targetUri)) {
     return 'windows';
   }
@@ -150,7 +189,7 @@ function parseOverrideMap(raw: string | undefined): ProviderOverrideMap {
 function resolveMode(rawMode: string | undefined): DispatchProviderName | 'auto' {
   const mode = String(rawMode ?? 'mock').toLowerCase();
 
-  if (mode === 'auto' || mode === 'mock' || mode === 'socket' || mode === 'ipp' || mode === 'windows') {
+  if (mode === 'auto' || mode === 'mock' || mode === 'socket' || mode === 'ipp' || mode === 'windows' || mode === 'cups') {
     return mode;
   }
 
@@ -302,6 +341,81 @@ export class WindowsSharedPrinterDispatchProvider implements DispatchProvider {
   }
 }
 
+/**
+ * Dispatches through CUPS queues via `lp`. The recommended target for all new
+ * printer configs:
+ *   - A4 queues receive per-page PDFs (`-o fit-to-page`, `media=A4` default),
+ *     so return labels are scaled onto A4 automatically.
+ *   - THERMAL queues are expected to be raw queues
+ *     (`lpadmin -p Zebra -E -v ipp://<ip>/ipp/print -m raw`); raw ZPL payloads
+ *     pass straight through with `-o raw`, PDF pages are submitted per page
+ *     and rely on the queue's driver/filter.
+ */
+export class CupsDispatchProvider implements DispatchProvider {
+  constructor(
+    private readonly execFileImpl: typeof execFileAsync = execFileAsync,
+    private readonly lpBin = process.env.LP_BIN ?? 'lp'
+  ) {}
+
+  async dispatch(input: DispatchRequest, resolution: DispatchResolution): Promise<void> {
+    const target = parseCupsTarget(resolution.targetUri);
+    if (!target) {
+      throw new Error(`INVALID_CUPS_URI:${resolution.targetUri}`);
+    }
+
+    const wholePayload = toPayload(input.file.content);
+    const isPdf = input.file.path.toLowerCase().endsWith('.pdf');
+    const isZpl = looksLikeZpl(wholePayload);
+    const rawMode = input.routeType === 'THERMAL' && isZpl;
+
+    let payload = wholePayload;
+    let extension = rawMode ? 'zpl' : 'bin';
+    if (isPdf && !rawMode) {
+      extension = 'pdf';
+      const singlePage = await extractSinglePagePdf(wholePayload, input.page.pageNumber);
+      if (singlePage) {
+        payload = singlePage;
+      }
+    }
+
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'printo-cups-'));
+    const tempFilePath = path.join(tempDir, `page-${input.page.pageNumber}.${extension}`);
+
+    try {
+      await writeFile(tempFilePath, payload);
+
+      const args: string[] = [];
+      if (target.host) {
+        args.push('-h', target.host);
+      }
+      args.push('-d', target.queue);
+      args.push('-t', `printo ${path.basename(input.file.path)} p${input.page.pageNumber}`);
+
+      if (rawMode) {
+        args.push('-o', 'raw');
+      } else if (isPdf) {
+        if (input.routeType === 'A4') {
+          args.push('-o', 'media=A4');
+        }
+        args.push('-o', 'fit-to-page');
+      }
+      for (const option of resolution.lpOptions ?? []) {
+        args.push('-o', option);
+      }
+
+      args.push(tempFilePath);
+
+      await this.execFileImpl(this.lpBin, args, {
+        encoding: 'utf8',
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: resolution.timeoutMs
+      });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  }
+}
+
 export interface ProviderPrinterDispatcherOptions {
   mode?: DispatchProviderName | 'auto';
   timeoutMs?: number;
@@ -324,7 +438,8 @@ export class ProviderPrinterDispatcher implements PrinterDispatcher {
       mock: options.providers?.mock ?? new MockDispatchProvider(),
       socket: options.providers?.socket ?? new SocketDispatchProvider(),
       ipp: options.providers?.ipp ?? new IppDispatchProvider(),
-      windows: options.providers?.windows ?? new WindowsSharedPrinterDispatchProvider()
+      windows: options.providers?.windows ?? new WindowsSharedPrinterDispatchProvider(),
+      cups: options.providers?.cups ?? new CupsDispatchProvider()
     };
   }
 
@@ -338,7 +453,10 @@ export class ProviderPrinterDispatcher implements PrinterDispatcher {
     return {
       provider,
       targetUri: effectiveTargetUri,
-      timeoutMs: effectiveTimeoutMs
+      timeoutMs: effectiveTimeoutMs,
+      lpOptions: Array.isArray(override.lpOptions)
+        ? override.lpOptions.filter((option): option is string => typeof option === 'string')
+        : undefined
     };
   }
 
