@@ -101,22 +101,54 @@ Relevant environment variables from `.env.example`:
 - `WORKER_SCANNER=auto`
 - `WORKER_DISPATCH_PROVIDER_MODE=mock`
 - `WORKER_DISPATCH_TIMEOUT_MS`
-- `WORKER_PRINTER_PROVIDER_OVERRIDES`
+- `WORKER_PRINTER_PROVIDER_OVERRIDES` (per-printer `provider`, `targetUri`, `timeoutMs`, `lpOptions`)
 - `WORKER_SECRET_<NORMALIZED_SECRET_REF>`
+- `WORKER_VISION_URL` (Vision Service base URL; unset = heuristic-only classification)
+- `WORKER_CLASSIFIER` (`heuristic` | `vision` | `auto`)
+- `WORKER_VISION_TIMEOUT_MS`
 
 Provider behavior:
 
 - `mock` is the default deterministic mode used for local smoke runs and CI
 - scanner `auto` uses filesystem scanning for normal paths and `smbclient` handling for UNC-style SMB paths
-- printer dispatch can resolve from `targetUri` values such as `smb://`, `socket://`, and `ipp://`
+- printer dispatch can resolve from `targetUri` values such as `cups://`, `smb://`, `socket://`, and `ipp://`
+- `cups://` is the recommended target for new configs: A4 pages are submitted per page with
+  `-o media=A4 -o fit-to-page` (return labels scale onto A4), thermal ZPL passes through raw
+  (`lpadmin -p Zebra-Label -E -v ipp://<printer-ip>/ipp/print -m raw`)
 
 Example printer URIs:
 
 - `mock://a4`
+- `cups://OfficeA4`
+- `cups://cups.local:631/Zebra-Label`
 - `\\\\printserver\\A4-FrontDesk`
 - `smb://printserver/Zebra-Label`
 - `socket://10.0.0.45:9100`
 - `ipp://10.0.0.60/ipp/print`
+
+## Page classification
+
+Every page is classified as `OUTGOING_LABEL_THERMAL`, `RETURN_LABEL_A4`, or `DOCUMENT_A4`:
+
+- Worker-local heuristics (deterministic, CI-safe): carrier signatures for DHL/UPS/FedEx/DPD/GLS/
+  InPost/Poczta Polska, label/return/document keywords (EN/PL/DE), tracking-number patterns,
+  label-sized-page detection.
+- Vision Service (`services/vision`, Python FastAPI): rasterization (pypdfium2), barcode detection
+  (zxing-cpp — Code 128/GS1-128, MaxiCode, DataMatrix), OCR (PaddleOCR) for scanned pages.
+  Contract: `docs/VISION_SERVICE.md`. The worker falls back to heuristics when unreachable.
+
+Routing profiles can carry `classificationRoutes` (page class → route type + optional printer +
+minimum confidence) via `POST/PATCH /admin/config/routing-profiles`; without configuration,
+outgoing labels route to `THERMAL` and return labels stay on `A4`. Explicit visual rules and
+thermal label patterns always take precedence over the classifier. The admin UI form does not
+yet expose `classificationRoutes` (API-only for now).
+
+Demo fixture: `node scripts/generate-mixed-fixture.mjs` regenerates
+`fixtures/intake/mixed-carriers.pdf` (invoice + DHL label + packing slip + UPS return label +
+FedEx label); `apps/worker/tests/e2e-mixed-routing.test.ts` runs it through the full pipeline.
+
+Worker metrics: `GET :5000/metrics` (Prometheus text) — job outcomes, page-class distribution,
+classification confidence histogram, routing decisions, dispatch success/failure.
 
 ## Smoke test
 

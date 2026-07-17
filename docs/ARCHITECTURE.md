@@ -11,14 +11,15 @@ Defines service boundaries, data flow, and docker-compose topology for `printo`.
 Services:
 - `web` — frontend/admin UI + API proxy (TypeScript)
 - `api` — REST API + AAA + configuration (TypeScript)
-- `worker` — scan/ocr/route/dispatch pipeline (TypeScript)
+- `worker` — scan/classify/route/dispatch pipeline (TypeScript)
+- `vision` — OCR/barcode/rasterization page classifier (Python FastAPI, see `docs/VISION_SERVICE.md`)
 - `db` — PostgreSQL
 - `redis` — async backbone placeholder (ready for queue expansion)
 
 All services expose `/health` and write structured logs to stdout.
 
 Host ports are configurable via compose env vars:
-`WEB_PORT`, `API_PORT`, `WORKER_PORT`, `DB_PORT`, `REDIS_PORT`.
+`WEB_PORT`, `API_PORT`, `WORKER_PORT`, `VISION_PORT`, `DB_PORT`, `REDIS_PORT`.
 
 ## 2. Bounded Contexts
 
@@ -42,9 +43,10 @@ Host ports are configurable via compose env vars:
 - Source scan adapter (`auto` mode with filesystem + `smbclient` UNC path support)
 - Mask filtering + dedup guard
 - OCR provider abstraction (`mock` baseline)
-- Routing decision engine (thermal labels vs A4 fallback)
-- Dispatch provider abstraction (`mock`, `socket`, `ipp`) configurable per printer
-- Persistent print job/page records
+- Page classification (heuristic text rules locally, Vision Service over HTTP, composite fallback)
+- Routing decision engine (forced/visual rules → thermal patterns → classification routes → default)
+- Dispatch provider abstraction (`mock`, `socket`, `ipp`, `windows`, `cups`) configurable per printer
+- Persistent print job/page records with per-page classification diagnostics
 
 ### Presentation (`web`)
 - Admin configuration surface for all required entities
@@ -97,9 +99,16 @@ No direct `web`/`worker` calls are allowed.
 3. Mask engine filters candidates.
 4. Dedup check prevents re-processing.
 5. OCR adapter normalizes page labels/text.
-6. Routing maps each page to `THERMAL` or `A4`.
-7. Dispatcher resolves provider per printer (`mock`/`socket`/`ipp`) and submits print actions.
-8. Worker stores processed file + job/page outcomes.
+6. Each page is classified as `OUTGOING_LABEL_THERMAL`, `RETURN_LABEL_A4`, or `DOCUMENT_A4`
+   (Vision Service when configured, deterministic text heuristics otherwise).
+7. Routing maps each page to `THERMAL` or `A4` with precedence:
+   forced (image snippet / visual profile) → visual rectangle rules → thermal label
+   patterns → classification routes (confidence-gated, per routing profile) → profile default.
+8. Dispatcher resolves provider per printer (`mock`/`socket`/`ipp`/`windows`/`cups`) and submits
+   print actions. The `cups` provider extracts the single page as a standalone PDF
+   (A4: `-o media=A4 -o fit-to-page`, so return labels scale onto A4) and passes raw
+   ZPL through to raw thermal queues (`-o raw`).
+9. Worker stores processed file + job/page outcomes including page class, confidence, carrier.
 
 ## 7. OCR/Vision Abstraction
 
@@ -108,6 +117,14 @@ Contract:
 
 Implemented providers:
 - `mock` (deterministic, CI-safe)
+
+Page classification (separate from the OCR provider seam):
+- `heuristic` — carrier signatures (DHL/UPS/FedEx/DPD/GLS/InPost/Poczta Polska), label/return/
+  document keywords (EN/PL/DE), tracking-number patterns, label-sized-page detection.
+- `vision-service` — HTTP client for the Python Vision Service (PaddleOCR + zxing-cpp barcodes +
+  pypdfium2 rasterization as optional layers). Contract in `docs/VISION_SERVICE.md`.
+- `composite` — vision first, heuristic fallback; selected via `WORKER_CLASSIFIER` /
+  `WORKER_VISION_URL` / `WORKER_VISION_TIMEOUT_MS`.
 
 Planned provider slots:
 - `tesseract` (offline)
@@ -135,8 +152,11 @@ Stored per user and applied by web runtime.
 
 ## 10. Observability Baseline
 
-- Structured service logs
+- Structured service logs (`page_routed`, `page_dispatch_failed`, `page_classification_failed`,
+  `vision_classify_fallback` events with job/page/class/confidence context)
 - `/health` endpoints across services
+- Worker `/metrics` (Prometheus text): jobs by status, classification distribution and
+  confidence histogram, routing decisions by rule, per-page dispatch outcomes
 - Pipeline summary endpoint (`/pipeline/status`) for worker state
 
 ## 11. CI/CD Baseline
