@@ -12,12 +12,36 @@ interface CarrierSignature {
   patterns: RegExp[];
 }
 
+/**
+ * Carrier signatures, most specific first.
+ *
+ * The GLS entry is deliberately guarded. Every MyDHL label prints the literal footer
+ * `*GLS certified label*`, and a bare `/\bgls\b/i` reads that as a GLS shipment: 278 pages of
+ * the reference corpus carry the footer. Most of them are rescued by chance, because the DHL
+ * signatures match the same page and DHL is tested first — but a DHL *DOMESTIC EXPRESS* label
+ * matches none of the old DHL patterns (`\bdhl\b` does not match "MyDHL"), falls through, and
+ * is attributed to GLS. So the footer is registered as the DHL artifact it is, `MyDHL` and the
+ * remaining DHL product names are recognised, and the GLS keyword only counts outside that
+ * phrase.
+ */
 const BUILTIN_CARRIERS: CarrierSignature[] = [
-  { carrier: 'DHL', patterns: [/\bdhl\b/i, /express worldwide/i, /\bpaket\b/i, /deutsche post/i] },
+  {
+    carrier: 'DHL',
+    patterns: [
+      /\bdhl\b/i,
+      /mydhl/i,
+      /express worldwide/i,
+      /economy select/i,
+      /domestic express/i,
+      /gls\s*certified\s*label/i,
+      /\bpaket\b/i,
+      /deutsche post/i
+    ]
+  },
   { carrier: 'UPS', patterns: [/\bups\b/i, /united parcel/i, /\b1Z[0-9A-Z]{15,16}\b/, /ups (standard|express|ground|saver)/i] },
   { carrier: 'FEDEX', patterns: [/fed\s?ex/i, /smartpost/i, /fedex (ground|express|international)/i] },
   { carrier: 'DPD', patterns: [/\bdpd\b/i, /dpd (classic|pickup)/i] },
-  { carrier: 'GLS', patterns: [/\bgls\b/i, /general logistics systems/i] },
+  { carrier: 'GLS', patterns: [/\bgls\b(?!\s*certified\s*label)/i, /general logistics systems/i] },
   { carrier: 'INPOST', patterns: [/inpost/i, /paczkomat/i] },
   { carrier: 'POCZTA_POLSKA', patterns: [/poczta polska/i, /pocztex/i] }
 ];

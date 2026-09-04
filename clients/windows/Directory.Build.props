@@ -1,0 +1,20 @@
+<Project>
+
+  <!--
+    Shared settings for every Printo agent project. Kept here rather than repeated in each
+    csproj so a change to the language level or the analysis bar applies to the whole client.
+  -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <Product>Printo Agent</Product>
+    <Company>Printo</Company>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+</Project>

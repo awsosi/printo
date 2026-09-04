@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "name": "DHL courier waybill sheet routes to A4 from its text layer",
+      "rationale": "The courier sheet and the parcel label are geometrically near-identical (ink 92.2x183.6mm vs 91.9x180.3mm at the same origin); routing the courier copy to thermal would stick it on a parcel.",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": "*WAYBILL DOC*\nNot to be attached to package - Hand to Courier\n2026-08-20 MyDHL API 1.0 / *GLS certified label*\nEXPRESS WORLDWIDE",
+            "inkBox": { "xMm": 34, "yMm": 15, "widthMm": 92.2, "heightMm": 183.6, "aspect": 1.991, "coverage": 0.0281 },
+            "barcodes": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": "dhl-waybill-sheet-text",
+            "confidence": 1,
+            "carrier": "DHL",
+            "fallbackReason": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "DHL parcel label on the same page geometry routes to thermal and is cropped",
+      "rationale": "Same page size, same origin, near-identical ink box as the waybill sheet above. Only the content differs, which is why geometry alone cannot decide.",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": "EXPRESS WORLDWIDE\n2026-08-20 MyDHL API 1.0 / *GLS certified label* WPX\nFrom : CTD - see data\nRef No: Return DJE446845468",
+            "inkBox": { "xMm": 33.8, "yMm": 15, "widthMm": 91.9, "heightMm": 180.3, "aspect": 1.962, "coverage": 0.0651 },
+            "barcodes": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "dhl-label-embedded-text",
+            "confidence": 0.95,
+            "carrier": "DHL",
+            "fallbackReason": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "A DHL outgoing label for a return shipment still prints on thermal stock",
+      "rationale": "`Ref No: Return` marks the shipment, not the sheet. The label still goes on a parcel, so keying the return rule on the word RETURN would misroute it.",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": "ECONOMY SELECT\nRef No: Return DJE446845468 235918522287\nWAYBILL 83 0121 8004",
+            "inkBox": { "xMm": 33, "yMm": 15.2, "widthMm": 96.8, "heightMm": 190.2, "aspect": 1.965, "coverage": 0.065 },
+            "barcodes": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [{ "pageNumber": 1, "route": "THERMAL", "ruleId": "dhl-label-embedded-text", "carrier": "DHL" }]
+      }
+    },
+    {
+      "name": "DHL label on its own 99x200mm stock prints whole, no crop",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 99,
+            "pageHeightMm": 200,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "EXPRESS WORLDWIDE\n2026-08-20 MyDHL API 1.0 / *GLS certified label* WPX",
+            "inkBox": { "xMm": 0, "yMm": 0, "widthMm": 99.1, "heightMm": 195.6, "aspect": 1.974, "coverage": 0.2395 },
+            "barcodes": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          { "pageNumber": 1, "route": "THERMAL", "ruleId": "dhl-label-stock", "confidence": 1, "carrier": "DHL" }
+        ]
+      }
+    }
+  ]
+}

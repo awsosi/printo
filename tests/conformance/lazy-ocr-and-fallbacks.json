@@ -1,0 +1,251 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "name": "A DHL-shaped page with no usable text stops and asks for OCR of the ink box",
+      "rationale": "Pins the lazy-evaluation contract: cheap rules first, OCR only for what survives them.",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": null,
+            "inkBox": { "xMm": 33.02, "yMm": 15.24, "widthMm": 96.8, "heightMm": 192.5, "aspect": 1.989, "coverage": 0.0288 },
+            "barcodes": []
+          }
+        ]
+      },
+      "expectNeedsOcr": [{ "pageNumber": 1, "key": "33.0,15.2,96.8,192.5", "ruleId": "dhl-waybill-sheet-ocr" }]
+    },
+    {
+      "name": "OCR recovers the waybill markings the anonymiser flattened into an image",
+      "rationale": "The recogniser loses the spaces in the bold header, returning *WAYBILLDOC*; the rule must match whitespace-insensitively.",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": "Marendo Systems Partners B.V. 89112054754\nLaura Adamczyk\nAUSTRIA\n226749587",
+            "inkBox": { "xMm": 33.02, "yMm": 15.24, "widthMm": 96.8, "heightMm": 192.5, "aspect": 1.989, "coverage": 0.0288 },
+            "barcodes": [],
+            "ocrRegions": [
+              {
+                "key": "33.0,15.2,96.8,192.5",
+                "rect": { "xMm": 33.02, "yMm": 15.24, "widthMm": 96.8, "heightMm": 192.5 },
+                "text": "*WAYBILLDOC*\nEST\nNot to be attached to package -Hand to Courier\n2026-08-20 MyDHL API 1.0 / GLS certified label",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": "dhl-waybill-sheet-ocr",
+            "confidence": 0.9,
+            "ocrRectsUsed": ["33.0,15.2,96.8,192.5"]
+          }
+        ]
+      }
+    },
+    {
+      "name": "OCR that finds no waybill markings leaves the page as the parcel label",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": null,
+            "inkBox": { "xMm": 33.02, "yMm": 15.24, "widthMm": 96.8, "heightMm": 190.2, "aspect": 1.965, "coverage": 0.065 },
+            "barcodes": [],
+            "ocrRegions": [
+              {
+                "key": "33.0,15.2,96.8,190.2",
+                "rect": { "xMm": 33.02, "yMm": 15.24, "widthMm": 96.8, "heightMm": 190.2 },
+                "text": "ECONOMYSELECT\nCTD Aastsee data\nOrigin: ZRH\nWAYBILL8301218004",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          { "pageNumber": 1, "route": "THERMAL", "ruleId": "dhl-label-embedded", "confidence": 0.85, "carrier": "DHL" }
+        ]
+      }
+    },
+    {
+      "name": "FedEx label geometry decides without any OCR",
+      "rationale": "Ink aspect 1.48 (a 4x6in label) separates FedEx from the DHL family, which sits at 1.96-2.00 on the same page size.",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": null,
+            "inkBox": { "xMm": 34.3, "yMm": 19.3, "widthMm": 101.1, "heightMm": 149.9, "aspect": 1.483, "coverage": 0.0646 },
+            "barcodes": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "fedex-label-embedded",
+            "confidence": 0.95,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "FedEx return label on Letter stays on A4",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 215.9,
+            "pageHeightMm": 279.4,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "SHIP DATE: 29AUG26\nREF: RETURN\nPO: RETURN DEPT:\nBILL SENDER",
+            "inkBox": { "xMm": 11.9, "yMm": 12.4, "widthMm": 100.8, "heightMm": 151.6, "aspect": 1.504, "coverage": 0.0683 },
+            "barcodes": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [{ "pageNumber": 1, "route": "A4", "ruleId": "fedex-return-label", "confidence": 0.9 }]
+      }
+    },
+    {
+      "name": "UPS label embedded in its 231x318mm carrier sheet routes to thermal",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 231.07,
+            "pageHeightMm": 318.21,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "1Z 727 3X6 01 5521 0490\nwww.ups.com",
+            "inkBox": { "xMm": 10.4, "yMm": 10.4, "widthMm": 99.1, "heightMm": 196.8, "aspect": 1.987, "coverage": 0.0625 },
+            "barcodes": [
+              { "symbology": "MaxiCode", "value": "[)>", "xMm": 20, "yMm": 30, "widthMm": 25, "heightMm": 25 }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          { "pageNumber": 1, "route": "THERMAL", "ruleId": "ups-label-embedded", "confidence": 0.95, "carrier": "UPS" }
+        ]
+      }
+    },
+    {
+      "name": "An A4 invoice takes the profile default silently",
+      "rationale": "Documents are the majority of every bundle; prompting for them would make the picker useless.",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "Sales Invoice\nTotal amount 177.62 CHF\nVAT\nIBAN",
+            "inkBox": { "xMm": 9.9, "yMm": 16, "widthMm": 190.2, "heightMm": 234.2, "aspect": 1.231, "coverage": 0.0612 },
+            "barcodes": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          { "pageNumber": 1, "route": "A4", "ruleId": null, "confidence": 0.6, "fallbackReason": null, "carrier": null }
+        ]
+      }
+    },
+    {
+      "name": "An unknown carrier with a label-shaped region and a barcode prompts rather than guessing",
+      "rationale": "Generic fallback: a new carrier works on day one, below the confidence threshold, so the user confirms and the admin gets a review-queue entry.",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "Sendungsnummer 0034 5566 7788\nEmpfaenger",
+            "inkBox": { "xMm": 12, "yMm": 12, "widthMm": 100, "heightMm": 152, "aspect": 1.52, "coverage": 0.07 },
+            "barcodes": [
+              { "symbology": "Code128", "value": "0034556677889900", "xMm": 20, "yMm": 120, "widthMm": 60, "heightMm": 12 }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "generic-label-region",
+            "confidence": 0.6,
+            "fallbackReason": "LOW_CONFIDENCE",
+            "carrier": null
+          }
+        ]
+      }
+    }
+  ]
+}

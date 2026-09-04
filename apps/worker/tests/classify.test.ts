@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HeuristicPageClassifier } from '../src/classify/heuristic-classifier.js';
+import { HeuristicPageClassifier, scorePageText } from '../src/classify/heuristic-classifier.js';
 import { CompositePageClassifier, VisionServiceClassifier } from '../src/classify/vision-classifier.js';
 import type { PageClassification, PageClassifier, PageClassifierInput } from '../src/classify/types.js';
 
@@ -138,5 +138,39 @@ describe('CompositePageClassifier', () => {
     const result = await composite.classifyPage({ pageNumber: 1, text: 'x' });
     expect(result.classifier).toBe('heuristic');
     expect(result.pageClass).toBe('DOCUMENT_A4');
+  });
+});
+
+describe('carrier attribution regression: the MyDHL certified-label footer', () => {
+  // Every MyDHL label prints the literal `*GLS certified label*`; 278 pages of the reference
+  // corpus carry it. Reading that as a GLS shipment is the defect this guards.
+  const domesticExpress =
+    'DOMESTIC EXPRESS\n2026-08-19 MyDHL API 1.0 / *GLS certified label* DOM\n' +
+    'From : CTD - see data Origin: WAW\nWAYBILL\nRef Code:';
+
+  it('attributes a DHL DOMESTIC EXPRESS label to DHL, not GLS', () => {
+    // The old patterns missed this one entirely: `\bdhl\b` does not match "MyDHL", and the
+    // product name is not "EXPRESS WORLDWIDE", so the page fell through to the GLS keyword.
+    const score = scorePageText({ text: domesticExpress });
+    expect(score.carrier).toBe('DHL');
+  });
+
+  it('attributes an EXPRESS WORLDWIDE label carrying the footer to DHL', () => {
+    const score = scorePageText({
+      text: 'EXPRESS WORLDWIDE\n2026-08-20 MyDHL API 1.0 / *GLS certified label* WPX\nFrom : CTD - see data'
+    });
+    expect(score.carrier).toBe('DHL');
+  });
+
+  it('does not read the footer alone as a GLS shipment', () => {
+    const score = scorePageText({ text: 'Ref Code: 1234\n*GLS certified label*\nPce/Shpt Weight' });
+    expect(score.carrier).not.toBe('GLS');
+  });
+
+  it('still recognises a genuine GLS shipment', () => {
+    const score = scorePageText({
+      text: 'GLS ParcelShop\nGeneral Logistics Systems Germany GmbH\nEmpfaenger: Anna Nowak'
+    });
+    expect(score.carrier).toBe('GLS');
   });
 });

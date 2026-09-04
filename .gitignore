@@ -6,3 +6,8 @@ dist
 playwright-report
 test-results
 __pycache__/
+
+# .NET build output (clients/windows)
+bin/
+obj/
+*.user

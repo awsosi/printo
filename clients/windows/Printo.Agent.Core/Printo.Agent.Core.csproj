@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Printo.Agent.Core</RootNamespace>
+    <AssemblyName>Printo.Agent.Core</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    The built-in routing profiles are authored once in TypeScript and exported to
+    `profiles/*.json` at the repository root. Embedding the exported files means the agent and
+    the server worker execute byte-identical rules; a hand-maintained C# copy would drift, and
+    a rule set that differs between workstation and server is the one failure mode nobody
+    notices until a parcel goes out with the courier copy stuck to it.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)..\..\..\profiles\*.json"
+                      LogicalName="Printo.Agent.Core.Profiles.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>
