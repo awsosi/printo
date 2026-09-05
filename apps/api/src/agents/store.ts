@@ -45,6 +45,22 @@ export interface AgentStore {
   listAgents(): Promise<AgentRecord[]>;
   getAgent(agentId: string): Promise<AgentRecord | null>;
 
+  /**
+   * Changes what an administrator controls about an agent.
+   *
+   * `status` is the one that matters operationally: setting a stolen or re-imaged machine to
+   * DISABLED cuts it off on its next request without touching anyone's login, which is the
+   * whole reason agents authenticate with their own credential.
+   */
+  updateAgent(
+    agentId: string,
+    changes: {
+      decisionMode?: AgentDecisionMode;
+      confidenceThreshold?: number;
+      status?: AgentRecord['status'];
+    }
+  ): Promise<AgentRecord | null>;
+
   heartbeat(input: {
     agentId: string;
     agentVersion?: string | null;
@@ -338,6 +354,35 @@ export class PostgresAgentStore implements AgentStore {
     );
 
     return mapBundle(result.rows[0]);
+  }
+
+  async updateAgent(
+    agentId: string,
+    changes: {
+      decisionMode?: AgentDecisionMode;
+      confidenceThreshold?: number;
+      status?: AgentRecord['status'];
+    }
+  ): Promise<AgentRecord | null> {
+    // COALESCE rather than a built statement: an omitted field must keep its stored value,
+    // and a partial update that silently reset the other two would be a trap.
+    const result = await this.pool.query(
+      `UPDATE agents
+          SET decision_mode = COALESCE($2, decision_mode),
+              confidence_threshold = COALESCE($3, confidence_threshold),
+              status = COALESCE($4, status),
+              updated_at = NOW()
+        WHERE id = $1
+      RETURNING *`,
+      [
+        agentId,
+        changes.decisionMode ?? null,
+        changes.confidenceThreshold ?? null,
+        changes.status ?? null
+      ]
+    );
+
+    return result.rowCount ? mapAgent(result.rows[0]) : null;
   }
 
   async listRuleSets(): Promise<RoutingRuleSetRecord[]> {

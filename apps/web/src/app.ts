@@ -3,6 +3,7 @@ import { matchPdfPagesBySnippet } from '@printo/shared';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { getDefaultLocale, resolveMessages } from './i18n.js';
+import { fleetPanelHtml, fleetPanelScript } from './fleet-panel.js';
 
 type FetchLike = typeof fetch;
 type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
@@ -723,10 +724,11 @@ function renderAdminPage(): string {
           <button type="button" data-tab="recognition">Routing profiles</button>
           <button type="button" data-tab="printers">Printers</button>
           <button type="button" data-tab="mappings">Mappings</button>
+          <button type="button" data-tab="fleet">Fleet</button>
           <button id="refreshAllButton" type="button" class="secondary">Reload data</button>
         </nav>
 
-        <div class="tab-panels">
+        <div class="tab-panels">${fleetPanelHtml()}
           <section id="panel-recognition" class="panel">
             <div class="grid2">
               <section class="card stack">
@@ -1139,7 +1141,11 @@ function renderAdminPage(): string {
           const contentType = response.headers.get('content-type') || '';
           const payload = contentType.includes('application/json') ? await response.json() : await response.text();
           if (!response.ok) {
-            throw new Error(payload && payload.error ? payload.error : response.statusText || 'REQUEST_FAILED');
+            const code = payload && payload.error ? payload.error : response.statusText || 'REQUEST_FAILED';
+            // The detail field is where the API says *what* was wrong — the exact path of the
+            // rule a rejected bundle failed on, for instance. Showing only the code turns an
+            // actionable message into "it did not work".
+            throw new Error(payload && payload.detail ? code + ': ' + payload.detail : code);
           }
           return payload;
         }
@@ -2142,6 +2148,11 @@ function renderAdminPage(): string {
           try {
             await refreshLiveStatus();
           } catch (_error) {}
+          // The fleet is loaded separately and never blocks the rest: a deployment with no
+          // agents enrolled yet must still show its printers and profiles.
+          try {
+            await loadFleet();
+          } catch (_error) {}
           setTopStatus('Configuration loaded.', 'ok');
         }
 
@@ -2592,6 +2603,10 @@ function renderAdminPage(): string {
           }
         });
 
+${fleetPanelScript()}
+
+        bindFleet();
+
         setSession(null);
         showTab('status');
         resetRoutingForm();
@@ -2774,7 +2789,32 @@ export function createWebApp(options: CreateWebAppOptions = {}) {
     { method: 'delete', path: '/admin/config/smb-sources/:sourceId', upstreamPath: (req) => `/admin/config/smb-sources/${req.params.sourceId}` },
     { method: 'get', path: '/admin/config/system-settings', upstreamPath: () => '/admin/config/system-settings' },
     { method: 'put', path: '/admin/config/system-settings', upstreamPath: () => '/admin/config/system-settings' },
-    { method: 'get', path: '/admin/logs', upstreamPath: () => '/admin/logs' }
+    { method: 'get', path: '/admin/logs', upstreamPath: () => '/admin/logs' },
+
+    // The Windows agent fleet. Proxied like everything else so the console keeps one origin
+    // and one token, rather than the browser talking to two services with two auth headers.
+    { method: 'get', path: '/admin/agents', upstreamPath: () => '/admin/agents' },
+    { method: 'get', path: '/admin/agents/:agentId', upstreamPath: (req) => `/admin/agents/${req.params.agentId}` },
+    { method: 'patch', path: '/admin/agents/:agentId', upstreamPath: (req) => `/admin/agents/${req.params.agentId}` },
+    {
+      method: 'post',
+      path: '/admin/agents/enrollment-tokens',
+      upstreamPath: () => '/admin/agents/enrollment-tokens'
+    },
+    { method: 'get', path: '/admin/bundles/latest', upstreamPath: () => '/admin/bundles/latest' },
+    { method: 'post', path: '/admin/bundles', upstreamPath: () => '/admin/bundles' },
+    { method: 'get', path: '/admin/agent-jobs', upstreamPath: () => '/admin/agent-jobs' },
+    { method: 'get', path: '/admin/fallbacks', upstreamPath: () => '/admin/fallbacks' },
+    { method: 'get', path: '/admin/fallbacks/summary', upstreamPath: () => '/admin/fallbacks/summary' },
+    { method: 'get', path: '/admin/review-queue', upstreamPath: () => '/admin/review-queue' },
+    {
+      method: 'post',
+      path: '/admin/review-queue/:id/resolve',
+      upstreamPath: (req) => `/admin/review-queue/${req.params.id}/resolve`
+    },
+    { method: 'get', path: '/admin/retention', upstreamPath: () => '/admin/retention' },
+    { method: 'put', path: '/admin/retention/:scope', upstreamPath: (req) => `/admin/retention/${req.params.scope}` },
+    { method: 'post', path: '/admin/retention/run', upstreamPath: () => '/admin/retention/run' }
   ];
 
   for (const definition of apiProxyDefinitions) {

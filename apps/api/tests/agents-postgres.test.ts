@@ -578,6 +578,50 @@ suite('agent API (postgres)', () => {
     expect((await pool.query('SELECT COUNT(*)::int AS n FROM agent_jobs')).rows[0].n).toBe(0);
   });
 
+  it('lets an admin change an agent, and cuts a disabled one off', async () => {
+    const enrolled = await enroll(await newToken());
+    const key = enrolled.body.apiKey;
+    const id = enrolled.body.agent.id;
+
+    const patched = await request(app)
+      .patch(`/admin/agents/${id}`)
+      .set('authorization', `Bearer ${adminToken}`)
+      .send({ decisionMode: 'server', confidenceThreshold: 0.9 });
+
+    expect(patched.status).toBe(200);
+    expect(patched.body.agent.decisionMode).toBe('server');
+    expect(patched.body.agent.confidenceThreshold).toBe(0.9);
+
+    // An omitted field keeps its stored value; a partial update must not reset the rest.
+    const partial = await request(app)
+      .patch(`/admin/agents/${id}`)
+      .set('authorization', `Bearer ${adminToken}`)
+      .send({ status: 'DISABLED' });
+
+    expect(partial.body.agent.decisionMode).toBe('server');
+    expect(partial.body.agent.confidenceThreshold).toBe(0.9);
+
+    // Disabling is how a stolen or re-imaged machine is cut off, so it has to bite at once.
+    expect((await request(app).get('/agents/me').set('x-printo-agent-key', key)).status).toBe(401);
+
+    for (const body of [{ decisionMode: 'guess' }, { status: 'GONE' }, { confidenceThreshold: 5 }]) {
+      const rejected = await request(app)
+        .patch(`/admin/agents/${id}`)
+        .set('authorization', `Bearer ${adminToken}`)
+        .send(body);
+      expect(rejected.status, JSON.stringify(body)).toBe(400);
+    }
+
+    expect(
+      (
+        await request(app)
+          .patch('/admin/agents/00000000-0000-0000-0000-000000000000')
+          .set('authorization', `Bearer ${adminToken}`)
+          .send({ status: 'RETIRED' })
+      ).status
+    ).toBe(404);
+  });
+
   it('sweeps on a schedule and only once across replicas', async () => {
     const key = (await enroll(await newToken())).body.apiKey;
     await request(app)

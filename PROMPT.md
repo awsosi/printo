@@ -119,8 +119,8 @@ defect.
 - [x] M3 — Print output (complete except the hardware pass, postponed by the user)
 - [~] M4 — Agent runtime + fallback picker (all but virtual-printer ingress, which needs M1)
 - [~] M5 — Server integration (all but the worker's own engine adoption — plan §10.3)
-- [ ] M6 — Admin UI ← **next**
-- [ ] M7 — Packaging + delivery
+- [x] M6 — Admin UI (Fleet tab; driven in a real browser against a real database)
+- [ ] M7 — Packaging + delivery ← **next**
 - [ ] M8 — Hardening
 
 ### Environment answers already given by the user (2026-09-05)

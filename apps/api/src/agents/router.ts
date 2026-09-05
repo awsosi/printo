@@ -386,6 +386,34 @@ export function createAgentRouter(store: AgentStore): Router {
     });
   });
 
+  router.patch('/admin/agents/:agentId', ...admin, async (req, res) => {
+    const mode = req.body?.decisionMode;
+    if (mode !== undefined && mode !== 'local' && mode !== 'server' && mode !== 'auto') {
+      return res.status(400).json({ error: 'INVALID_DECISION_MODE' });
+    }
+
+    const status = req.body?.status;
+    if (status !== undefined && status !== 'ACTIVE' && status !== 'DISABLED' && status !== 'RETIRED') {
+      return res.status(400).json({ error: 'INVALID_STATUS' });
+    }
+
+    let threshold: number | undefined;
+    if (req.body?.confidenceThreshold !== undefined && req.body?.confidenceThreshold !== null) {
+      threshold = Number(req.body.confidenceThreshold);
+      if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+        return res.status(400).json({ error: 'INVALID_THRESHOLD' });
+      }
+    }
+
+    const agent = await store.updateAgent(req.params.agentId, {
+      decisionMode: mode,
+      confidenceThreshold: threshold,
+      status
+    });
+
+    return agent ? res.json({ agent }) : res.status(404).json({ error: 'AGENT_NOT_FOUND' });
+  });
+
   router.get('/admin/rule-sets', ...admin, async (_req, res) => {
     return res.json({ ruleSets: await store.listRuleSets() });
   });
