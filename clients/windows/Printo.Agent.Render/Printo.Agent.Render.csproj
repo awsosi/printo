@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Printo.Agent.Render</RootNamespace>
+    <AssemblyName>Printo.Agent.Render</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Printo.Agent.Core\Printo.Agent.Core.csproj" />
+  </ItemGroup>
+
+  <!--
+    PDFium is used directly through P/Invoke rather than through a managed wrapper, because
+    the crop is expressed as a negative render origin (FPDF_RenderPageBitmap's start_x/start_y)
+    and no wrapper exposes that. Rendering into a DIB rather than straight to the printer DC
+    is what keeps preview and print pixel-identical and lets the render-diff tests assert
+    output geometry without a printer.
+  -->
+  <ItemGroup>
+    <PackageReference Include="bblanchon.PDFium.Win32" Version="154.0.8035" />
+  </ItemGroup>
+
+</Project>
