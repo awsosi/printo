@@ -24,6 +24,30 @@ internal static class RepositoryPaths
 
     public static string? Profiles => Combine("profiles");
 
+    /// <summary>
+    /// The sample PDFs, which live outside the repository because they are customer data.
+    /// Overridable with PRINTO_CORPUS_DIR; otherwise looked for beside the checkout.
+    /// </summary>
+    public static string? CorpusPdfs
+    {
+        get
+        {
+            var configured = Environment.GetEnvironmentVariable("PRINTO_CORPUS_DIR");
+            if (!string.IsNullOrWhiteSpace(configured))
+            {
+                return Directory.Exists(configured) ? configured : null;
+            }
+
+            if (Root is null)
+            {
+                return null;
+            }
+
+            var sibling = Path.Combine(Directory.GetParent(Root)?.FullName ?? Root, "printo-materials");
+            return Directory.Exists(sibling) ? sibling : null;
+        }
+    }
+
     private static string? Combine(params string[] parts)
     {
         if (Root is null)

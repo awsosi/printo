@@ -18,6 +18,14 @@ internal static partial class Pdfium
     /// <summary>BGRA, 8 bits per channel — matches a Windows 32bpp DIB byte for byte.</summary>
     public const int FormatBgra = 4;
 
+    /// <summary>
+    /// 8-bit grayscale, one byte per pixel. Used for ink measurement so the agent rasterizes
+    /// exactly as `tools/corpus/extract_features.py` does through pypdfium2; rendering BGRA
+    /// and converting to luma afterwards lands edge pixels on the other side of the ink
+    /// threshold and moves a measured box by a pixel or two.
+    /// </summary>
+    public const int FormatGray = 1;
+
     /// <summary>Render flag: use anti-aliasing for text and paths (PDFium default is on).</summary>
     public const int RenderAnnotations = 0x01;
 

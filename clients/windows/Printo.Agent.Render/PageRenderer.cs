@@ -93,6 +93,69 @@ public static class PageRenderer
     }
 
     /// <summary>
+    /// Renders a page to 8-bit grayscale, one byte per pixel.
+    /// </summary>
+    /// <remarks>
+    /// Matches pypdfium2's <c>render(grayscale=True).to_numpy()</c>, which asks PDFium for a
+    /// <c>FPDFBitmap_Gray</c> surface rather than converting a colour render afterwards. The
+    /// distinction is not cosmetic: converting BGRA to luma rounds edge pixels differently and
+    /// moves a measured ink box by a pixel or two, which is enough to disagree with the
+    /// extractor the routing bands were calibrated on.
+    /// </remarks>
+    public static (byte[] Pixels, int Width, int Height) RenderGray8(PdfPage page, double dpi)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        if (dpi <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(dpi), dpi, "dpi must be positive");
+        }
+
+        var pixelsPerMm = dpi / 25.4;
+        var width = Math.Max(1, (int)Math.Round(page.WidthMm * pixelsPerMm));
+        var height = Math.Max(1, (int)Math.Round(page.HeightMm * pixelsPerMm));
+        var pixels = new byte[width * height];
+
+        var pinned = GCHandle.Alloc(pixels, GCHandleType.Pinned);
+        try
+        {
+            PdfiumRuntime.Locked(() =>
+            {
+                var bitmap = Pdfium.BitmapCreateEx(
+                    width, height, Pdfium.FormatGray, pinned.AddrOfPinnedObject(), width);
+                if (bitmap == IntPtr.Zero)
+                {
+                    throw new InvalidOperationException(
+                        $"PDFium could not allocate a {width}x{height} grayscale bitmap");
+                }
+
+                try
+                {
+                    Pdfium.BitmapFillRect(bitmap, 0, 0, width, height, 0xFFFFFFFF);
+                    Pdfium.RenderPageBitmap(
+                        bitmap,
+                        page.Handle,
+                        0,
+                        0,
+                        width,
+                        height,
+                        0,
+                        Pdfium.RenderAnnotations | Pdfium.RenderLimitedImageCache);
+                }
+                finally
+                {
+                    Pdfium.BitmapDestroy(bitmap);
+                }
+            });
+        }
+        finally
+        {
+            pinned.Free();
+        }
+
+        return (pixels, width, height);
+    }
+
+    /// <summary>
     /// Measures the ink bounding box of a page, in millimetres, using the same thresholds as
     /// <c>tools/corpus/extract_features.py</c>.
     /// </summary>
@@ -107,10 +170,7 @@ public static class PageRenderer
         const byte inkLevel = 200;
         const double noiseFraction = 0.002;
 
-        var raster = RenderPage(page, dpi, grayscale: true);
-        var gray = raster.ToGrayscale();
-        var width = raster.Width;
-        var height = raster.Height;
+        var (gray, width, height) = RenderGray8(page, dpi);
 
         var rowInk = new int[height];
         var columnInk = new int[width];
