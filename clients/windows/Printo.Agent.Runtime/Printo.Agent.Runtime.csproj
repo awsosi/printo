@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Printo.Agent.Runtime</RootNamespace>
+    <AssemblyName>Printo.Agent.Runtime</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Printo.Agent.Core\Printo.Agent.Core.csproj" />
+    <ProjectReference Include="..\Printo.Agent.Render\Printo.Agent.Render.csproj" />
+    <ProjectReference Include="..\Printo.Agent.Printing\Printo.Agent.Printing.csproj" />
+  </ItemGroup>
+
+  <!--
+    SQLite rather than a file-per-job queue: the spool has to survive a hard kill without
+    losing or duplicating a job, and "claim a row in a transaction" is a solved problem that a
+    directory of marker files is not.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+  </ItemGroup>
+
+</Project>
