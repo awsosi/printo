@@ -322,6 +322,15 @@ public enum FallbackReason
     [JsonStringEnumMemberName("NO_PROFILE_MATCH")]
     NoProfileMatch,
 
+    /// <summary>
+    /// A rule needed OCR and this machine has no recogniser — no OCR language installed, or
+    /// the agent is in a mode that cannot reach one. Distinct from the other reasons on
+    /// purpose: it is a machine health problem with a specific fix (install the language pack),
+    /// not a rule that needs improving, and the admin analytics must be able to tell them apart.
+    /// </summary>
+    [JsonStringEnumMemberName("OCR_UNAVAILABLE")]
+    OcrUnavailable,
+
     [JsonStringEnumMemberName("SERVER_UNAVAILABLE")]
     ServerUnavailable,
 
@@ -348,6 +357,7 @@ public static class FallbackReasons
         FallbackReason.Ambiguous => "AMBIGUOUS",
         FallbackReason.UnknownCarrier => "UNKNOWN_CARRIER",
         FallbackReason.NoProfileMatch => "NO_PROFILE_MATCH",
+        FallbackReason.OcrUnavailable => "OCR_UNAVAILABLE",
         FallbackReason.ServerUnavailable => "SERVER_UNAVAILABLE",
         FallbackReason.RuleHold => "RULE_HOLD",
         FallbackReason.CropImplausible => "CROP_IMPLAUSIBLE",
@@ -363,6 +373,7 @@ public static class FallbackReasons
         "AMBIGUOUS" => FallbackReason.Ambiguous,
         "UNKNOWN_CARRIER" => FallbackReason.UnknownCarrier,
         "NO_PROFILE_MATCH" => FallbackReason.NoProfileMatch,
+        "OCR_UNAVAILABLE" => FallbackReason.OcrUnavailable,
         "SERVER_UNAVAILABLE" => FallbackReason.ServerUnavailable,
         "RULE_HOLD" => FallbackReason.RuleHold,
         "CROP_IMPLAUSIBLE" => FallbackReason.CropImplausible,

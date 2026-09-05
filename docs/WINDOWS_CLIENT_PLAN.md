@@ -400,6 +400,7 @@ The engine never guesses silently. It raises a fallback with an explicit reason 
 | `AMBIGUOUS` | Conflicting rules, or more label candidates than the profile expects |
 | `UNKNOWN_CARRIER` | Label-shaped region found, carrier unresolved |
 | `NO_PROFILE_MATCH` | No routing profile matched the document at all |
+| `OCR_UNAVAILABLE` | A rule needed OCR and this machine has no recogniser (added during M4 — see below) |
 | `SERVER_UNAVAILABLE` | `server` mode, server unreachable, policy is `prompt` |
 | `RULE_HOLD` | A rule explicitly asked for confirmation |
 | `CROP_IMPLAUSIBLE` | Crop region degenerate, off-page, or wildly off the expected aspect |
@@ -407,6 +408,14 @@ The engine never guesses silently. It raises a fallback with an explicit reason 
 
 Behaviour per reason is configurable per profile: `prompt` (default), `route` (fall through to
 the A4 default), or `hold` (queue in the tray, no UI). Nothing is ever silently dropped.
+
+`OCR_UNAVAILABLE` was added to this list during M4. It is deliberately distinct from
+`LOW_CONFIDENCE`: it is a *machine* problem with a specific fix — install the OCR language
+pack, or switch that agent to `server`/`auto` — rather than a rule that needs improving, and
+the fallback analytics have to be able to tell those apart. The alternative considered was
+failing the job, which is wrong: a missing language pack would burn the retry budget and
+poison a perfectly printable document rather than asking the user a question they can answer
+in one keypress.
 
 ### 6.7 The page picker
 

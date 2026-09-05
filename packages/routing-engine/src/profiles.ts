@@ -240,6 +240,7 @@ export const ONE_CLICK_PRINT_PROFILE: RoutingProfileRules = {
       NO_THERMAL_CANDIDATE: 'prompt',
       UNKNOWN_CARRIER: 'prompt',
       CROP_IMPLAUSIBLE: 'prompt',
+      OCR_UNAVAILABLE: 'prompt',
       RULE_HOLD: 'prompt',
       RENDER_FAILED: 'hold',
       DECODE_FAILED: 'hold',

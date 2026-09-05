@@ -189,6 +189,7 @@ export type FallbackReason =
   | 'AMBIGUOUS'
   | 'UNKNOWN_CARRIER'
   | 'NO_PROFILE_MATCH'
+  | 'OCR_UNAVAILABLE'
   | 'SERVER_UNAVAILABLE'
   | 'RULE_HOLD'
   | 'CROP_IMPLAUSIBLE'
