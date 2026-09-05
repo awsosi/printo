@@ -114,35 +114,58 @@ defect.
 **Branch:** `feat/windows-agent`
 
 - [x] Corpus analysis and plan — approved (`docs/WINDOWS_CLIENT_PLAN.md`, `tools/corpus/`)
-- [ ] **M1 — Capture spike (start here)**
-- [ ] M2 — Corpus + engine core
-- [ ] M3 — Print output
+- [ ] **M1 — Capture spike — code written, BLOCKED on one elevated command (see below)**
+- [x] M2 — Corpus + engine core (core complete; two gaps listed below)
+- [ ] M3 — Print output ← **next**
 - [ ] M4 — Agent runtime + fallback picker
 - [ ] M5 — Server integration
 - [ ] M6 — Admin UI
 - [ ] M7 — Packaging + delivery
 - [ ] M8 — Hardening
 
-### M1 in detail — do this first
+### Environment answers already given by the user (2026-09-05)
 
-Two capture assumptions are unverified and the whole client depends on them. Prove them with
-throwaway code on real hardware **before** any production code assumes an answer:
+| Question | Answer |
+|---|---|
+| Win10 22H2 machine | **None available.** Build and self-test on Win11; keep Win10 paths behind capability detection and mark them explicitly unverified. |
+| Physical printers | **Postponed.** Hardware verification will be a hybrid session with the user. Use virtual/render-diff proof until then; never report hardware-verified. |
+| Code-signing cert | **Not available yet.** The user can issue one from ADCS when directed. Plan and parameterise signing; do not block on it. |
+| CI | **Leave `.github/workflows/ci.yml` alone.** Do not add a Windows job. Keep the existing ubuntu pipeline green. |
+| Dev stack | Docker Desktop compose locally; compose stays the mandatory server form factor. |
 
-1. **Tier 1** — host a minimal local IPP endpoint, add a printer with
-   `Add-Printer -IppURL http://127.0.0.1:<port>/ipp/print` (inbox *Microsoft IPP Class Driver*).
-   Does Windows send us `application/pdf` when we advertise `document-format-preferred`, or
-   PWG Raster? Which IPP job attributes arrive (user, job name, copies, media)?
-2. **Tier 2** — can an inbox *Microsoft Print To PDF* printer instance be bound to a redirected
-   port we own (not `PORTPROMPT:`), and does it emit a clean PDF per job?
+### M1 — what is done and what is blocked
 
-Test on Windows 11 (this machine is 25H2, build 26200, .NET 10 SDK present) and on Windows 10
-22H2. Record the answers in `docs/WINDOWS_CLIENT_PLAN.md` section 5 and pick the tier.
+Written, building and self-tested (`clients/windows/spike/`, plan section 5.0):
+`Printo.Spike.Ipp` (a real IPP/1.1 printer with an IPP Everywhere attribute table, switchable
+PDF/raster advertising, full request logging and PDL sniffing — verified against a Python IPP
+client), `Printo.Spike.PipePort` (named pipe with a LocalSystem ACL), and
+`Invoke-SpikePrinters.ps1` (creates/removes exactly three `Printo-Spike-*` queues, idempotent).
 
-**Creating or modifying printers and ports is a system change — ask the user before doing it,
-and clean up test printers/ports afterwards.**
+**Blocked:** `Add-Printer` needs elevation. From a standard-user session it fails with
+`Access was denied` *before any IPP traffic reaches the endpoint*, so neither capture question
+is answered. A UAC prompt was raised once and cancelled. To finish M1, run:
 
-If Tier 1 returns PWG Raster, ship it anyway (the engine consumes rasters natively) but note
-that the text layer is lost and barcode + OCR carry more weight.
+```
+! powershell -NoProfile -Command "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','C:\Users\olek\Documents\code\si\printo\clients\windows\spike\scripts\Invoke-SpikePrinters.ps1','-Action','Add'"
+```
+
+then start `printo-spike-ipp.exe`, print to `Printo-Spike-IPP` from Chrome, read
+`capture/ipp-session.jsonl`, record the answer in plan section 5.0, and run the script again
+with `-Action Remove`. **No production code may assume an answer until this is done.**
+
+### M2 — what landed, and the two gaps
+
+Green: 1266/1266 corpus pages routed correctly in **both** text-layer modes; 67 conformance
+fixtures pass on the TypeScript **and** C# engines; 0 pages attributed to GLS; `make lint` and
+`make typecheck` clean.
+
+Two honest gaps, both recorded in plan section 1.5:
+
+1. **Barcode predicates are unvalidated against real barcodes.** The anonymiser destroyed
+   them — only 4 of 1266 pages decode. Implemented and unit-tested, but unproven on real data.
+   Needs either a few non-anonymised PDFs or an anonymiser that re-encodes valid barcodes.
+2. **Template/picture matching has no extractor.** The `image` predicate is specified, wired
+   and traced, but nothing populates `templateMatches` yet. Needed for Print&Share parity (M6).
 
 ## 7. Working agreements
 

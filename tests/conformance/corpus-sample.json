@@ -1,0 +1,2963 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "name": "CUSTOMS_DECLARATION — czwart_anon/OneClickPrint_VTW189044572_anon.pdf p3",
+      "rationale": "marker:customs-declaration",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189044572_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189044572_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "Y900: The goods are not included in the list of products as per Council Regulation (EC) No. 338/97 and its following amendments on the protection\r\nof endangered flora and fauna species through trade control.\r\nY922: The goods are not cat and dog fur and/or products that contain them, as per Council Regulation (EC) No. 1523/07 and its amendments that\r\nforbid trading, imports, and exports of cat and dog fur.\r\nY901: The goods are not included in the list of products as per Council Regulation (EU) No. 821/2021 and its following amendments, instituting a\r\ncontrol system on exported products and technologies with dual use, therefore the goods are only for civil use.\r\nY903: The goods are not included in the list of products as per Council Regulation (EC) No. 116/09, and its amendments ruling export of cultural\r\ngoods.\r\nSigned: Date:",
+            "textCharCount": 836,
+            "inkBox": {
+              "xMm": 11.94,
+              "yMm": 11.68,
+              "widthMm": 182.88,
+              "heightMm": 41.15,
+              "aspect": 0.225,
+              "coverage": 0.0156
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "CUSTOMS_DECLARATION — czwart_anon/OneClickPrint_VTW189044572_anon.pdf p3 (text layer stripped)",
+      "rationale": "marker:customs-declaration",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189044572_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189044572_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 836,
+            "inkBox": {
+              "xMm": 11.94,
+              "yMm": 11.68,
+              "widthMm": 182.88,
+              "heightMm": 41.15,
+              "aspect": 0.225,
+              "coverage": 0.0156
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "CUSTOMS_DECLARATION — czwart_anon/OneClickPrint_VTW189044572_anon.pdf p5",
+      "rationale": "marker:customs-declaration",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189044572_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189044572_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "Y900: The goods are not included in the list of products as per Council Regulation (EC) No. 338/97 and its following amendments on the protection\r\nof endangered flora and fauna species through trade control.\r\nY922: The goods are not cat and dog fur and/or products that contain them, as per Council Regulation (EC) No. 1523/07 and its amendments that\r\nforbid trading, imports, and exports of cat and dog fur.\r\nY901: The goods are not included in the list of products as per Council Regulation (EU) No. 821/2021 and its following amendments, instituting a\r\ncontrol system on exported products and technologies with dual use, therefore the goods are only for civil use.\r\nY903: The goods are not included in the list of products as per Council Regulation (EC) No. 116/09, and its amendments ruling export of cultural\r\ngoods.\r\nSigned: Date:",
+            "textCharCount": 836,
+            "inkBox": {
+              "xMm": 11.94,
+              "yMm": 11.68,
+              "widthMm": 182.88,
+              "heightMm": 41.15,
+              "aspect": 0.225,
+              "coverage": 0.0156
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "CUSTOMS_DECLARATION — czwart_anon/OneClickPrint_VTW189044572_anon.pdf p5 (text layer stripped)",
+      "rationale": "marker:customs-declaration",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189044572_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189044572_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 836,
+            "inkBox": {
+              "xMm": 11.94,
+              "yMm": 11.68,
+              "widthMm": 182.88,
+              "heightMm": 41.15,
+              "aspect": 0.225,
+              "coverage": 0.0156
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "CUSTOMS_DECLARATION — czwart_anon/OneClickPrint_VTW189059607_anon.pdf p2",
+      "rationale": "marker:customs-declaration",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189059607_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189059607_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "Y900: The goods are not included in the list of products as per Council Regulation (EC) No. 338/97 and its following amendments on the protection\r\nof endangered flora and fauna species through trade control.\r\nY922: The goods are not cat and dog fur and/or products that contain them, as per Council Regulation (EC) No. 1523/07 and its amendments that\r\nforbid trading, imports, and exports of cat and dog fur.\r\nY901: The goods are not included in the list of products as per Council Regulation (EU) No. 821/2021 and its following amendments, instituting a\r\ncontrol system on exported products and technologies with dual use, therefore the goods are only for civil use.\r\nY903: The goods are not included in the list of products as per Council Regulation (EC) No. 116/09, and its amendments ruling export of cultural\r\ngoods.\r\nGST PAID FOR ITEMS UNDER 1000 AUD.\r\nGST REGISTRATION NUMBER 49 416 721 512",
+            "textCharCount": 897,
+            "inkBox": {
+              "xMm": 11.94,
+              "yMm": 11.68,
+              "widthMm": 182.88,
+              "heightMm": 36.07,
+              "aspect": 0.197,
+              "coverage": 0.0167
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "CUSTOMS_DECLARATION — czwart_anon/OneClickPrint_VTW189059607_anon.pdf p2 (text layer stripped)",
+      "rationale": "marker:customs-declaration",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189059607_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189059607_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 897,
+            "inkBox": {
+              "xMm": 11.94,
+              "yMm": 11.68,
+              "widthMm": 182.88,
+              "heightMm": 36.07,
+              "aspect": 0.197,
+              "coverage": 0.0167
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "DHL_LABEL — czwart_anon/OneClickPrint_VKI189056401_anon.pdf p2",
+      "rationale": "page:label-stock 99.0x200.0",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VKI189056401_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VKI189056401_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 99,
+            "pageHeightMm": 200,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "EXPRESS WORLDWIDE\r\n2026-08-20 MyDHL API 1.0 / *GLS certified label* WPX\r\nFrom : CTD - see data\r\nContact:\r\nOrigin:\r\nWAW\r\nTo :\r\n8533 \r\n Al \r\nContact:\r\nLAT SA-ELQ-ELQ .\r\nC-DTP-PLT\r\nDay Time\r\nRef No:\r\nPce/Shpt Weight Piece\r\n0.4 kg 1/1\r\nWAYBILL\r\nCTD - see data\r\nRef Code:\r\n(J)\r\n1363223985670\r\nANNA MOREAU\r\n0369589794503 ANNA MOREAU 0369589794503\r\nRzemieslnicza pgrabowski@kaldis.com\r\nHGDT1643\r\nHGDT1643\r\nNowogard Bergamo\r\nPORTUGAL\r\nPZH642387359\r\n84 5243 4422\r\n(4K)LK:DBLFSL+04745107\r\nJD37 4576 3489 1839 9939",
+            "textCharCount": 503,
+            "inkBox": {
+              "xMm": 0,
+              "yMm": 0,
+              "widthMm": 99.06,
+              "heightMm": 195.58,
+              "aspect": 1.974,
+              "coverage": 0.2395
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "0.0,0.0,99.1,195.6",
+                "rect": {
+                  "xMm": 0,
+                  "yMm": 0,
+                  "widthMm": 99.06,
+                  "heightMm": 195.58
+                },
+                "text": "EXPRESSWORLDWIDE\nWPX\n2026-08-20 MyDHL API 1.0 / *GLS certified label*\nFrom:CTD-see data\nOrigin:\nP\nWAW\nContact:1363223985670\nTo:\nANNAMOREAU\nContact:\n0369589794503\nANNAMOREAU\n0369589794503\nRzemieslnicza\npgrabowski@kaldis.com\n8533HGDT1643\nHGDT1643\nNowogard Al Bergamo\nPORTUGAL\nLAT\nSA-ELQ-ELQ\nDay\nTime\nC-DTP-PLT\nPce/ShptWeight\nPiece\n0.4 kg\n1/1\nRefNo:PZH642387359\nCTD-see data\nWAYBILL8452434422\n(4K)LK:DBLFSL+04745107\nRef Code:\n(J)JD374576348918399939",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "dhl-label-stock",
+            "confidence": 1,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "DHL",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "DHL_LABEL — czwart_anon/OneClickPrint_VKI189056401_anon.pdf p2 (text layer stripped)",
+      "rationale": "page:label-stock 99.0x200.0",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VKI189056401_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VKI189056401_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 99,
+            "pageHeightMm": 200,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 503,
+            "inkBox": {
+              "xMm": 0,
+              "yMm": 0,
+              "widthMm": 99.06,
+              "heightMm": 195.58,
+              "aspect": 1.974,
+              "coverage": 0.2395
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "0.0,0.0,99.1,195.6",
+                "rect": {
+                  "xMm": 0,
+                  "yMm": 0,
+                  "widthMm": 99.06,
+                  "heightMm": 195.58
+                },
+                "text": "EXPRESSWORLDWIDE\nWPX\n2026-08-20 MyDHL API 1.0 / *GLS certified label*\nFrom:CTD-see data\nOrigin:\nP\nWAW\nContact:1363223985670\nTo:\nANNAMOREAU\nContact:\n0369589794503\nANNAMOREAU\n0369589794503\nRzemieslnicza\npgrabowski@kaldis.com\n8533HGDT1643\nHGDT1643\nNowogard Al Bergamo\nPORTUGAL\nLAT\nSA-ELQ-ELQ\nDay\nTime\nC-DTP-PLT\nPce/ShptWeight\nPiece\n0.4 kg\n1/1\nRefNo:PZH642387359\nCTD-see data\nWAYBILL8452434422\n(4K)LK:DBLFSL+04745107\nRef Code:\n(J)JD374576348918399939",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "dhl-label-stock",
+            "confidence": 1,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "DHL",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "DHL_LABEL — czwart_anon/OneClickPrint_VTW189065365_anon.pdf p2",
+      "rationale": "page:label-stock 99.0x200.0",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189065365_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189065365_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 99,
+            "pageHeightMm": 200,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "EXPRESS WORLDWIDE\r\n2026-08-20 MyDHL API 1.0 / *GLS certified label* WPX\r\nFrom : CTD - see data\r\nContact:\r\nOrigin:\r\nWAW\r\nTo :\r\nAl\r\nto Al\r\nContact:\r\nLAT SA-HAS-HAS .\r\nC-DTP-PLT\r\nDay Time\r\nRef No:\r\nPce/Shpt Weight Piece\r\n0.4 kg 1/1\r\nWAYBILL\r\nCTD - see data\r\nRef Code:\r\n(J)\r\n1363223985670\r\nAndrzej Ferreira\r\n301693546647726 Andrzej Ferreira 301693546647726\r\nKwiatowa, piotr.fischer@kaldis.com\r\nWiklinowa Street Lesna Brookfield\r\nLkjs3819 Gata1888\r\nRoskilde\r\nPORTUGAL\r\nVWI704465567\r\n29 8531 4885\r\n(4G)VX:BZZXBI+66643486\r\nJD81 2775 7980 5610 6649",
+            "textCharCount": 540,
+            "inkBox": {
+              "xMm": 0,
+              "yMm": 0,
+              "widthMm": 99.06,
+              "heightMm": 195.58,
+              "aspect": 1.974,
+              "coverage": 0.24
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "0.0,0.0,99.1,195.6",
+                "rect": {
+                  "xMm": 0,
+                  "yMm": 0,
+                  "widthMm": 99.06,
+                  "heightMm": 195.58
+                },
+                "text": "EXPRESSWORLDWIDE\nWPX\n2026-08-20 MyDHL API 1.0 / *GLS certified label*\nFrom:CTD-see data\nOrigin:\nP\nWAW\nContact:1363223985670\nTo:\nAndrzej Ferreira\nContact:\n301693546647726\nAndrzej Ferreira\n301693546647726\nAl Kwiatowa,\npiotr.fischer@kaldis.com\nWiklinowaStreetLesnatoAlBrookfield\nLkjs3819 Gata1888\nRoskilde\nPORTUGAL\nLAT\nSA-HAS-HAS\nDay\nTime\nC-DTP-PLT\nPce/ShptWeight\nPiece\n0.4 kg\n1/1\nRefNo:VW1704465567\nCTD-see data\nWAYBILL2985314885\n(4G)VX:BZZXBI+66643486\nRef Code:\n(J)JD812775798056106649",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "dhl-label-stock",
+            "confidence": 1,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "DHL",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "DHL_LABEL — czwart_anon/OneClickPrint_VTW189065365_anon.pdf p2 (text layer stripped)",
+      "rationale": "page:label-stock 99.0x200.0",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189065365_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189065365_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 99,
+            "pageHeightMm": 200,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 540,
+            "inkBox": {
+              "xMm": 0,
+              "yMm": 0,
+              "widthMm": 99.06,
+              "heightMm": 195.58,
+              "aspect": 1.974,
+              "coverage": 0.24
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "0.0,0.0,99.1,195.6",
+                "rect": {
+                  "xMm": 0,
+                  "yMm": 0,
+                  "widthMm": 99.06,
+                  "heightMm": 195.58
+                },
+                "text": "EXPRESSWORLDWIDE\nWPX\n2026-08-20 MyDHL API 1.0 / *GLS certified label*\nFrom:CTD-see data\nOrigin:\nP\nWAW\nContact:1363223985670\nTo:\nAndrzej Ferreira\nContact:\n301693546647726\nAndrzej Ferreira\n301693546647726\nAl Kwiatowa,\npiotr.fischer@kaldis.com\nWiklinowaStreetLesnatoAlBrookfield\nLkjs3819 Gata1888\nRoskilde\nPORTUGAL\nLAT\nSA-HAS-HAS\nDay\nTime\nC-DTP-PLT\nPce/ShptWeight\nPiece\n0.4 kg\n1/1\nRefNo:VW1704465567\nCTD-see data\nWAYBILL2985314885\n(4G)VX:BZZXBI+66643486\nRef Code:\n(J)JD812775798056106649",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "dhl-label-stock",
+            "confidence": 1,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "DHL",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "DHL_LABEL — sroda_anon/OneClickPrint_VTW189032572_anon.pdf p2",
+      "rationale": "page:label-stock 99.0x200.0",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "sroda_anon/OneClickPrint_VTW189032572_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "sroda_anon/OneClickPrint_VTW189032572_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 99,
+            "pageHeightMm": 200,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "EXPRESS WORLDWIDE\r\n2026-08-19 MyDHL API 1.0 / *GLS certified label* WPX\r\nFrom : CTD - see data\r\nContact:\r\nOrigin:\r\nWAW\r\nTo :\r\n32\r\n4624\r\n Province\r\nContact:\r\nLAT SA-DHA-DHA .\r\nC-DTP-PLT\r\nDay Time\r\nRef No:\r\nPce/Shpt Weight Piece\r\n0.4 kg 1/1\r\nWAYBILL\r\nCTD - see data\r\nRef Code:\r\n(J)\r\n1583559938831\r\nMichal Dabrowska\r\n493242134205959 Michal Dabrowska 493242134205959\r\nelindqvist@lumaris.com\r\nQEUB8554\r\nQEUB8554\r\nRoskilde\r\nDENMARK\r\nFWB497745959\r\n15 4754 8863\r\n(9P)IF:WPIPYX+70262484\r\nJD37 7909 6550 3801 4781",
+            "textCharCount": 503,
+            "inkBox": {
+              "xMm": 0,
+              "yMm": 0,
+              "widthMm": 99.06,
+              "heightMm": 195.58,
+              "aspect": 1.974,
+              "coverage": 0.238
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "0.0,0.0,99.1,195.6",
+                "rect": {
+                  "xMm": 0,
+                  "yMm": 0,
+                  "widthMm": 99.06,
+                  "heightMm": 195.58
+                },
+                "text": "EXPRESS WORLDWIDE\nWPX\n2026-08-19 MyDHL API 1.0 / *GLS certified label*\nFrom:CTD-see data\nOrigin:\nP\nWAW\nContact:1583559938831\nTo:\nMichal Dabrowska\nContact:\n493242134205959\nMichalDabrowska\n493242134205959\n32\nelindqvist@lumaris.com\n4624QEUB8554\nQEUB8554\nRoskilde\nProvince\nDENMARK\nLAT\nSA-DHA-DHA\nDay\nTime\nC-DTP-PLT\nPce/ShptWeight\nPiece\n0.4 kg\n1/1\nRefNo:FWB497745959\nCTD-see data\nWAYBILL1547548863\n(9P)IF:WPIPYX+70262484\nRef Code:\n(J)JD377909655038014781",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "dhl-label-stock",
+            "confidence": 1,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "DHL",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "DHL_LABEL — sroda_anon/OneClickPrint_VTW189032572_anon.pdf p2 (text layer stripped)",
+      "rationale": "page:label-stock 99.0x200.0",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "sroda_anon/OneClickPrint_VTW189032572_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "sroda_anon/OneClickPrint_VTW189032572_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 99,
+            "pageHeightMm": 200,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 503,
+            "inkBox": {
+              "xMm": 0,
+              "yMm": 0,
+              "widthMm": 99.06,
+              "heightMm": 195.58,
+              "aspect": 1.974,
+              "coverage": 0.238
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "0.0,0.0,99.1,195.6",
+                "rect": {
+                  "xMm": 0,
+                  "yMm": 0,
+                  "widthMm": 99.06,
+                  "heightMm": 195.58
+                },
+                "text": "EXPRESS WORLDWIDE\nWPX\n2026-08-19 MyDHL API 1.0 / *GLS certified label*\nFrom:CTD-see data\nOrigin:\nP\nWAW\nContact:1583559938831\nTo:\nMichal Dabrowska\nContact:\n493242134205959\nMichalDabrowska\n493242134205959\n32\nelindqvist@lumaris.com\n4624QEUB8554\nQEUB8554\nRoskilde\nProvince\nDENMARK\nLAT\nSA-DHA-DHA\nDay\nTime\nC-DTP-PLT\nPce/ShptWeight\nPiece\n0.4 kg\n1/1\nRefNo:FWB497745959\nCTD-see data\nWAYBILL1547548863\n(9P)IF:WPIPYX+70262484\nRef Code:\n(J)JD377909655038014781",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "dhl-label-stock",
+            "confidence": 1,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "DHL",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "DHL_WAYBILL_DOC — czwart_anon/OneClickPrint_VKI189056401_anon.pdf p3",
+      "rationale": "marker:waybill-doc; page:a4-landscape ink-aspect 2.00 width 91.7",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VKI189056401_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VKI189056401_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": "*WAYBILL DOC*\r\nNot to be attached to package - Hand to Courier\r\n2026-08-20 MyDHL API 1.0 / GLS certified label\r\nWPX\r\nShipper :\r\nC/O\r\n29 1 4\r\n0\r\nContact:\r\nReceiver :\r\n8533 \r\nAl\r\nContact:\r\nLAT .\r\nProduct Details:\r\n[P] EXPRESS WORLDWIDE (48)\r\nPayer Details\r\nFRT:\r\nDuty & Taxes Payer:\r\nDHL Billing Service: DTP\r\nFeatures / Services (Service Code)\r\nPLT IMAGES PENDING(PK)\r\nNEUTRAL DESCRIPTION LABEL(PP)\r\nDUTY TAX PAID(DD)\r\nShipment Details\r\nRef No:\r\nDeclared Value for Customs: 740.87 SAR\r\nContent: BIRKENSTOCK boston buckle-strap clogs\r\nCust Decl Shpt Wgt (UOM) / Dim Wgt (UOM):\r\n0.4 kg\r\nPieces\r\n1\r\nShipper VAT ID :\r\nName (in Capital Letters) Signature Date (DD.MM.YYYY)\r\nWAYBILL\r\nLicense Plates of pieces in shipment\r\n- page 1 of 1 -\r\nMarendo Systems Partners B.V. 1363223985670\r\nViktor Aalto\r\nMaple Ridge Wodna C3 Lesna\r\n60-865 MALBORK\r\nROMANIA\r\nANNA MOREAU 0369589794503\r\nANNA MOREAU 0369589794503\r\nKirchheim pgrabowski@kaldis.com HGDT1643\r\nHGDT1643\r\nNowogard Bergamo\r\nPORTUGAL\r\nAX-PMF-JTK ON-HUS-RHL\r\n702431955\r\n702431955\r\nPZH642387359\r\nPL6626639686\r\n84 5243 4422\r\nJD121705206315897079",
+            "textCharCount": 1085,
+            "inkBox": {
+              "xMm": 34.04,
+              "yMm": 14.99,
+              "widthMm": 91.69,
+              "heightMm": 183.64,
+              "aspect": 2.003,
+              "coverage": 0.0278
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "34.0,15.0,91.7,183.6",
+                "rect": {
+                  "xMm": 34.04,
+                  "yMm": 14.99,
+                  "widthMm": 91.69,
+                  "heightMm": 183.64
+                },
+                "text": "*WAYBILLDOC*\nWPX=ZH\nNot to be attached to package - Hand to Courier\n2026-08-20MyDHLAPI1.0/GLScertifiedlabel\nShipper :\nContact:\nC/OMarendo SystemsPartners B.V.\n1363223985670\nViktorAalto\nMapleRidge\n29 Wodna C3 Lesna1 4\n60-865MALBORK0\nROMANIA\nReceiver:\nContact:\nANNA MOREAU\n0369589794503\nANNA MOREAU\n0369589794503\nKirchheim\npgrabowski@kaldis.com\n8533 HGDT1643\nHGDT1643\nNowogardAl Bergamo\nPORTUGAL\nLAT\nAX-PMF-JTK ON-HUS-RHL\nProduct Details:\nFeatures/Services(Service Code)\n[P] EXPRESS WORLDWIDE(48)\nPLT IMAGES PENDING(PK)\nPayer Details\nNEUTRAL DESCRIPTION LABEL(PP)\nFRT:702431955\nDUTY TAX PAID(DD)\nDuty &Taxes Payer:702431955\nDHL BillingService:DTP\nShipment Details\nRefNo:PZH642387359\nDeclaredValueforCustoms:740.87SAR\nContent:BIRKENSTOCK bostonbuckle-strap clogs\nCust Decl Shpt Wgt (UOM) / Dim Wgt (UOM):\nPieces\n0.4 kg\n1\nShipper VAT ID :PL6626639686\nName (in Capital Letters)\nSignature\nDate (DD.MM.YYYY)\nWAYBILL8452434422\nLicense Plates of pieces in shipment\nJD121705206315897079\n-page 1 of 1-",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": "dhl-waybill-sheet-text",
+            "confidence": 1,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "DHL",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "DHL_WAYBILL_DOC — czwart_anon/OneClickPrint_VKI189056401_anon.pdf p3 (text layer stripped)",
+      "rationale": "marker:waybill-doc; page:a4-landscape ink-aspect 2.00 width 91.7",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VKI189056401_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VKI189056401_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 1085,
+            "inkBox": {
+              "xMm": 34.04,
+              "yMm": 14.99,
+              "widthMm": 91.69,
+              "heightMm": 183.64,
+              "aspect": 2.003,
+              "coverage": 0.0278
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "34.0,15.0,91.7,183.6",
+                "rect": {
+                  "xMm": 34.04,
+                  "yMm": 14.99,
+                  "widthMm": 91.69,
+                  "heightMm": 183.64
+                },
+                "text": "*WAYBILLDOC*\nWPX=ZH\nNot to be attached to package - Hand to Courier\n2026-08-20MyDHLAPI1.0/GLScertifiedlabel\nShipper :\nContact:\nC/OMarendo SystemsPartners B.V.\n1363223985670\nViktorAalto\nMapleRidge\n29 Wodna C3 Lesna1 4\n60-865MALBORK0\nROMANIA\nReceiver:\nContact:\nANNA MOREAU\n0369589794503\nANNA MOREAU\n0369589794503\nKirchheim\npgrabowski@kaldis.com\n8533 HGDT1643\nHGDT1643\nNowogardAl Bergamo\nPORTUGAL\nLAT\nAX-PMF-JTK ON-HUS-RHL\nProduct Details:\nFeatures/Services(Service Code)\n[P] EXPRESS WORLDWIDE(48)\nPLT IMAGES PENDING(PK)\nPayer Details\nNEUTRAL DESCRIPTION LABEL(PP)\nFRT:702431955\nDUTY TAX PAID(DD)\nDuty &Taxes Payer:702431955\nDHL BillingService:DTP\nShipment Details\nRefNo:PZH642387359\nDeclaredValueforCustoms:740.87SAR\nContent:BIRKENSTOCK bostonbuckle-strap clogs\nCust Decl Shpt Wgt (UOM) / Dim Wgt (UOM):\nPieces\n0.4 kg\n1\nShipper VAT ID :PL6626639686\nName (in Capital Letters)\nSignature\nDate (DD.MM.YYYY)\nWAYBILL8452434422\nLicense Plates of pieces in shipment\nJD121705206315897079\n-page 1 of 1-",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": "dhl-waybill-sheet-ocr",
+            "confidence": 0.9,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "DHL",
+            "ocrRectsUsed": [
+              "34.0,15.0,91.7,183.6"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "DHL_WAYBILL_DOC — czwart_anon/OneClickPrint_VTW189065365_anon.pdf p3",
+      "rationale": "marker:waybill-doc; page:a4-landscape ink-aspect 2.00 width 91.7",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189065365_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189065365_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": "*WAYBILL DOC*\r\nNot to be attached to package - Hand to Courier\r\n2026-08-20 MyDHL API 1.0 / GLS certified label\r\nWPX\r\nShipper :\r\nC/O\r\n29 1 4\r\n0\r\nContact:\r\nReceiver :\r\nAl\r\nto Al\r\nContact:\r\nLAT .\r\nProduct Details:\r\n[P] EXPRESS WORLDWIDE (48)\r\nPayer Details\r\nFRT:\r\nDuty & Taxes Payer:\r\nDHL Billing Service: DTP\r\nFeatures / Services (Service Code)\r\nPLT IMAGES PENDING(PK)\r\nNEUTRAL DESCRIPTION LABEL(PP)\r\nDUTY TAX PAID(DD)\r\nShipment Details\r\nRef No:\r\nDeclared Value for Customs: 806.96 SAR\r\nContent: ASICS Gel-Nimbus 10.1 mesh-panel sneakers\r\nCust Decl Shpt Wgt (UOM) / Dim Wgt (UOM):\r\n0.4 kg\r\nPieces\r\n1\r\nShipper VAT ID :\r\nName (in Capital Letters) Signature Date (DD.MM.YYYY)\r\nWAYBILL\r\nLicense Plates of pieces in shipment\r\n- page 1 of 1 -\r\nMarendo Systems Partners B.V. 1363223985670\r\nViktor Aalto\r\nMaple Ridge Wodna C3 Lesna\r\n60-865 MALBORK\r\nROMANIA\r\nAndrzej Ferreira 301693546647726\r\nAndrzej Ferreira 301693546647726\r\nKwiatowa, piotr.fischer@kaldis.com Wiklinowa Street Lesna Brookfield\r\nFkpk2766 Feir2683\r\nRoskilde\r\nPORTUGAL\r\nYJ-XOF-RVV DO-UUL-GQC\r\n702431955\r\n702431955\r\nVWI704465567\r\nPL6626639686\r\n29 8531 4885\r\nJD580943564424870833",
+            "textCharCount": 1132,
+            "inkBox": {
+              "xMm": 34.04,
+              "yMm": 14.99,
+              "widthMm": 91.69,
+              "heightMm": 183.64,
+              "aspect": 2.003,
+              "coverage": 0.0278
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "34.0,15.0,91.7,183.6",
+                "rect": {
+                  "xMm": 34.04,
+                  "yMm": 14.99,
+                  "widthMm": 91.69,
+                  "heightMm": 183.64
+                },
+                "text": "*WAYBILLDOC*\nWPX=ZH\nNot to be attached to package - Hand to Courier\n2026-08-20MyDHLAPI1.0/GLScertifiedlabel\nShipper :\nContact:\nC/O Marendo Systems Partners B.V.\n1363223985670\nViktorAalto\nMapleRidge\n29 Wodna C3 Lesna1 4\n60-865MALBORK0\nROMANIA\nReceiver:\nContact:\nAndrzej Ferreira\n301693546647726\nAndrzej Ferreira\n301693546647726\nAl Kwiatowa,\nWiklinowa Street Lesna to Al Brookfield\npiotr.fischer@kaldis.com\nFkpk2766 Feir2683\nRoskilde\nPORTUGAL\nLAT\nYJ-XOF-RVV DO-UUL-GQC\nProduct Details:\nFeatures/Services(Service Code)\n[P] EXPRESS WORLDWIDE(48)\nPLT IMAGES PENDING(PK)\nPayer Details\nNEUTRAL DESCRIPTION LABEL(PP)\nFRT:702431955\nDUTY TAX PAID(DD)\nDuty & Taxes Payer:702431955\nDHL Billing Service:DTP\nShipmentDetails\nRefNo:VW1704465567\nDeclaredValueforCustoms:806.96SAR\nContent:ASICSGel-Nimbus10.1mesh-panelsneakers\nCust Decl Shpt Wgt (UOM) / Dim Wgt (UOM):\nPieces\n0.4 kg\n1\nShipper VAT ID :PL6626639686\nName (in Capital Letters)\nSignature\nDate (DD.MM.YYYY)\nWAYBILL2985314885\nLicense Plates of pieces in shipment\nJD580943564424870833\n-page 1 of 1-",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": "dhl-waybill-sheet-text",
+            "confidence": 1,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "DHL",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "DHL_WAYBILL_DOC — czwart_anon/OneClickPrint_VTW189065365_anon.pdf p3 (text layer stripped)",
+      "rationale": "marker:waybill-doc; page:a4-landscape ink-aspect 2.00 width 91.7",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189065365_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189065365_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 1132,
+            "inkBox": {
+              "xMm": 34.04,
+              "yMm": 14.99,
+              "widthMm": 91.69,
+              "heightMm": 183.64,
+              "aspect": 2.003,
+              "coverage": 0.0278
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "34.0,15.0,91.7,183.6",
+                "rect": {
+                  "xMm": 34.04,
+                  "yMm": 14.99,
+                  "widthMm": 91.69,
+                  "heightMm": 183.64
+                },
+                "text": "*WAYBILLDOC*\nWPX=ZH\nNot to be attached to package - Hand to Courier\n2026-08-20MyDHLAPI1.0/GLScertifiedlabel\nShipper :\nContact:\nC/O Marendo Systems Partners B.V.\n1363223985670\nViktorAalto\nMapleRidge\n29 Wodna C3 Lesna1 4\n60-865MALBORK0\nROMANIA\nReceiver:\nContact:\nAndrzej Ferreira\n301693546647726\nAndrzej Ferreira\n301693546647726\nAl Kwiatowa,\nWiklinowa Street Lesna to Al Brookfield\npiotr.fischer@kaldis.com\nFkpk2766 Feir2683\nRoskilde\nPORTUGAL\nLAT\nYJ-XOF-RVV DO-UUL-GQC\nProduct Details:\nFeatures/Services(Service Code)\n[P] EXPRESS WORLDWIDE(48)\nPLT IMAGES PENDING(PK)\nPayer Details\nNEUTRAL DESCRIPTION LABEL(PP)\nFRT:702431955\nDUTY TAX PAID(DD)\nDuty & Taxes Payer:702431955\nDHL Billing Service:DTP\nShipmentDetails\nRefNo:VW1704465567\nDeclaredValueforCustoms:806.96SAR\nContent:ASICSGel-Nimbus10.1mesh-panelsneakers\nCust Decl Shpt Wgt (UOM) / Dim Wgt (UOM):\nPieces\n0.4 kg\n1\nShipper VAT ID :PL6626639686\nName (in Capital Letters)\nSignature\nDate (DD.MM.YYYY)\nWAYBILL2985314885\nLicense Plates of pieces in shipment\nJD580943564424870833\n-page 1 of 1-",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": "dhl-waybill-sheet-ocr",
+            "confidence": 0.9,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "DHL",
+            "ocrRectsUsed": [
+              "34.0,15.0,91.7,183.6"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "DHL_WAYBILL_DOC — sroda_anon/OneClickPrint_VTW189032572_anon.pdf p3",
+      "rationale": "marker:waybill-doc; page:a4-landscape ink-aspect 2.00 width 91.7",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "sroda_anon/OneClickPrint_VTW189032572_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "sroda_anon/OneClickPrint_VTW189032572_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": "*WAYBILL DOC*\r\nNot to be attached to package - Hand to Courier\r\n2026-08-19 MyDHL API 1.0 / GLS certified label\r\nWPX\r\nShipper :\r\nC/O\r\n29 1 4\r\n0\r\nContact:\r\nReceiver :\r\n32\r\n4624\r\nProvince\r\nContact:\r\nLAT .\r\nProduct Details:\r\n[P] EXPRESS WORLDWIDE (48)\r\nPayer Details\r\nFRT:\r\nDuty & Taxes Payer:\r\nDHL Billing Service: DTP\r\nFeatures / Services (Service Code)\r\nPLT IMAGES PENDING(PK)\r\nNEUTRAL DESCRIPTION LABEL(PP)\r\nDUTY TAX PAID(DD)\r\nShipment Details\r\nRef No:\r\nDeclared Value for Customs: 610.65 SAR\r\nContent: Nike Air Max Muse sneakers\r\nCust Decl Shpt Wgt (UOM) / Dim Wgt (UOM):\r\n0.4 kg\r\nPieces\r\n1\r\nShipper VAT ID :\r\nName (in Capital Letters) Signature Date (DD.MM.YYYY)\r\nWAYBILL\r\nLicense Plates of pieces in shipment\r\n- page 1 of 1 -\r\nZenitor Systems Logistics B.V. 1583559938831\r\nBarbara Petrov\r\nModrzewiowa Polna C4 Lesna\r\n84-060 GRODZISK\r\nAUSTRIA\r\nMichal Dabrowska 493242134205959\r\nMichal Dabrowska 493242134205959\r\nelindqvist@lumaris.com QEUB8554\r\nQEUB8554\r\nRoskilde\r\nDENMARK\r\nRD-YGX-NFT IY-GCI-SPP\r\n734698346\r\n734698346\r\nFWB497745959\r\nPL2844512734\r\n15 4754 8863\r\nJD464584679470838853",
+            "textCharCount": 1083,
+            "inkBox": {
+              "xMm": 34.04,
+              "yMm": 14.99,
+              "widthMm": 91.69,
+              "heightMm": 183.64,
+              "aspect": 2.003,
+              "coverage": 0.0275
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "34.0,15.0,91.7,183.6",
+                "rect": {
+                  "xMm": 34.04,
+                  "yMm": 14.99,
+                  "widthMm": 91.69,
+                  "heightMm": 183.64
+                },
+                "text": "*WAYBILLDOC*\nWPX=ZHL\nNot to be attached to package - Hand to Courier\n2026-08-19 MyDHL API 1.0/ GLS certified label\nShipper :\nContact:\nC/O Zenitor Systems Logistics B.V.\n1583559938831\nBarbaraPetrov\nModrzewiowa\n29PolnaC4Lesna14\n84-060GRODZISK0\nAUSTRIA\nReceiver:\nContact:\nMichal Dabrowska\n493242134205959\nMichal Dabrowska\n493242134205959\n32\nelindqvist@lumaris.com\n4624 QEUB8554\nQEUB8554\nRoskilde\nProvince\nDENMARK\nLAT\nRD-YGX-NFT IY-GCI-SPP\nProduct Details:\nFeatures/Services(Service Code)\n[P] EXPRESS WORLDWIDE(48)\nPLT IMAGES PENDING(PK)\nPayerDetails\nNEUTRAL DESCRIPTION LABEL(PP)\nFRT:734698346\nDUTY TAX PAID(DD)\nDuty &Taxes Payer:734698346\nDHL Billing Service: DTP\nShipmentDetails\nRefNo:FWB497745959\nDeclaredValueforCustoms:610.65SAR\nContent:NikeAirMaxMusesneakers\nCust Decl Shpt Wgt(UOM)/ Dim Wgt(UOM):\nPieces\n0.4 kg\n1\nShipper VAT ID : PL2844512734\nName (in Capital Letters)\nSignature\nDate (DD.MM.YYYY)\nWAYBILL1547548863\nLicense Plates of pieces in shipment\nJD464584679470838853\n-page 1 of 1-",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": "dhl-waybill-sheet-text",
+            "confidence": 1,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "DHL",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "DHL_WAYBILL_DOC — sroda_anon/OneClickPrint_VTW189032572_anon.pdf p3 (text layer stripped)",
+      "rationale": "marker:waybill-doc; page:a4-landscape ink-aspect 2.00 width 91.7",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "sroda_anon/OneClickPrint_VTW189032572_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "sroda_anon/OneClickPrint_VTW189032572_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 1083,
+            "inkBox": {
+              "xMm": 34.04,
+              "yMm": 14.99,
+              "widthMm": 91.69,
+              "heightMm": 183.64,
+              "aspect": 2.003,
+              "coverage": 0.0275
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "34.0,15.0,91.7,183.6",
+                "rect": {
+                  "xMm": 34.04,
+                  "yMm": 14.99,
+                  "widthMm": 91.69,
+                  "heightMm": 183.64
+                },
+                "text": "*WAYBILLDOC*\nWPX=ZHL\nNot to be attached to package - Hand to Courier\n2026-08-19 MyDHL API 1.0/ GLS certified label\nShipper :\nContact:\nC/O Zenitor Systems Logistics B.V.\n1583559938831\nBarbaraPetrov\nModrzewiowa\n29PolnaC4Lesna14\n84-060GRODZISK0\nAUSTRIA\nReceiver:\nContact:\nMichal Dabrowska\n493242134205959\nMichal Dabrowska\n493242134205959\n32\nelindqvist@lumaris.com\n4624 QEUB8554\nQEUB8554\nRoskilde\nProvince\nDENMARK\nLAT\nRD-YGX-NFT IY-GCI-SPP\nProduct Details:\nFeatures/Services(Service Code)\n[P] EXPRESS WORLDWIDE(48)\nPLT IMAGES PENDING(PK)\nPayerDetails\nNEUTRAL DESCRIPTION LABEL(PP)\nFRT:734698346\nDUTY TAX PAID(DD)\nDuty &Taxes Payer:734698346\nDHL Billing Service: DTP\nShipmentDetails\nRefNo:FWB497745959\nDeclaredValueforCustoms:610.65SAR\nContent:NikeAirMaxMusesneakers\nCust Decl Shpt Wgt(UOM)/ Dim Wgt(UOM):\nPieces\n0.4 kg\n1\nShipper VAT ID : PL2844512734\nName (in Capital Letters)\nSignature\nDate (DD.MM.YYYY)\nWAYBILL1547548863\nLicense Plates of pieces in shipment\nJD464584679470838853\n-page 1 of 1-",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": "dhl-waybill-sheet-ocr",
+            "confidence": 0.9,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "DHL",
+            "ocrRectsUsed": [
+              "34.0,15.0,91.7,183.6"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "FEDEX_LABEL — czwart_anon/OneClickPrint_VTW188989264_anon.pdf p2",
+      "rationale": "page:a4-landscape ink-aspect 1.49 width 100.6; geometry:4x6-label",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW188989264_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW188989264_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": "ID:YNEV 1363223985670\r\nNATALIA\r\nSOSNOWA 36021\r\nCLARA FISCHER\r\nCLARA FISCHER\r\nPASEO NADBRZEZNA 953-366\r\nBYSTRZYCA 17182\r\nVTfxwsewkhu1 zekkmltpxvsz\r\nBe\r\nMarendo\r\ncz\r\n1877 2895 3047",
+            "textCharCount": 178,
+            "inkBox": {
+              "xMm": 34.29,
+              "yMm": 19.3,
+              "widthMm": 100.58,
+              "heightMm": 149.86,
+              "aspect": 1.49,
+              "coverage": 0.063
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "34.3,19.3,100.6,149.9",
+                "rect": {
+                  "xMm": 34.29,
+                  "yMm": 19.3,
+                  "widthMm": 100.58,
+                  "heightMm": 149.86
+                },
+                "text": "ORIGIN ID:YNEV\n1363223985670\nSHIPDATE:19AUG26\nNATALIA\nACTWGT:0.40KG\n!Y!EUROPETRADING B.V.\nCAD:255145792/FAPI2208\nMOSZNA PARCELA 29 BUD CODOK 1 4\nDIMS: 35x2x28CM\n√，MZ\nBILL SENDER\nSOSNOWA\n36021\n58K.J6/C457/484R\nTO\nCLARAFISCHER\nCLARAFISCHER\nPASEONADBRZEZNA953-366\nDF 17182\n(MX)\nBYSTRZYCA\nREF:\nVTfxwsewkhu1\nzekkmltpxvsz\nFedEx\nExpress\nE\nJ261026012002uV\nAA\nTRK#\nIP EOD\n0430\n187728953047\nDSR ETD\nV3 TLCA\n05100\nTLC\nDF-MX",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "fedex-label-embedded",
+            "confidence": 0.95,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "FEDEX",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "FEDEX_LABEL — czwart_anon/OneClickPrint_VTW188989264_anon.pdf p2 (text layer stripped)",
+      "rationale": "page:a4-landscape ink-aspect 1.49 width 100.6; geometry:4x6-label",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW188989264_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW188989264_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 178,
+            "inkBox": {
+              "xMm": 34.29,
+              "yMm": 19.3,
+              "widthMm": 100.58,
+              "heightMm": 149.86,
+              "aspect": 1.49,
+              "coverage": 0.063
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "34.3,19.3,100.6,149.9",
+                "rect": {
+                  "xMm": 34.29,
+                  "yMm": 19.3,
+                  "widthMm": 100.58,
+                  "heightMm": 149.86
+                },
+                "text": "ORIGIN ID:YNEV\n1363223985670\nSHIPDATE:19AUG26\nNATALIA\nACTWGT:0.40KG\n!Y!EUROPETRADING B.V.\nCAD:255145792/FAPI2208\nMOSZNA PARCELA 29 BUD CODOK 1 4\nDIMS: 35x2x28CM\n√，MZ\nBILL SENDER\nSOSNOWA\n36021\n58K.J6/C457/484R\nTO\nCLARAFISCHER\nCLARAFISCHER\nPASEONADBRZEZNA953-366\nDF 17182\n(MX)\nBYSTRZYCA\nREF:\nVTfxwsewkhu1\nzekkmltpxvsz\nFedEx\nExpress\nE\nJ261026012002uV\nAA\nTRK#\nIP EOD\n0430\n187728953047\nDSR ETD\nV3 TLCA\n05100\nTLC\nDF-MX",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "fedex-label-embedded",
+            "confidence": 0.95,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "FEDEX",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "FEDEX_LABEL — sroda_anon/OneClickPrint_VTW189028721_anon.pdf p2",
+      "rationale": "page:a4-landscape ink-aspect 1.49 width 100.3; geometry:4x6-label",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "sroda_anon/OneClickPrint_VTW189028721_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "sroda_anon/OneClickPrint_VTW189028721_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": "ID:UJWQ (948) 253-1802\r\nAHORNWEG, 77231\r\nSEBASTIAN LINDQVIST 08.01(e)\r\n3 PARKOWA\r\nZENITOR SYSTEMS LOGISTICS B.V.\r\nMODRZEWIOWA\r\nPARKOWA 72040\r\neqseunxee8\r\n8234 1202 3553",
+            "textCharCount": 168,
+            "inkBox": {
+              "xMm": 34.54,
+              "yMm": 19.3,
+              "widthMm": 100.33,
+              "heightMm": 149.86,
+              "aspect": 1.494,
+              "coverage": 0.0698
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "34.5,19.3,100.3,149.9",
+                "rect": {
+                  "xMm": 34.54,
+                  "yMm": 19.3,
+                  "widthMm": 100.33,
+                  "heightMm": 149.86
+                },
+                "text": "PRIGIN- ID:UJWQ n(948) 253-1802\nSHIPDATE:28AUG26\nTERRENCL\nACTWGT:0.40 KG\nTERRENCE_STALLINGS\nCAD:255145792/FAPI2208\n6172 REDT0PL00P\nDIMS:35×2×28CM\nAHORNWEG, ....\nGA 77231--US\nBILL SENDER\nNO EEI\n58K.J6/C457/484R\n08.01(e)\nWAREHOUSE PARKOWA\nY\nC/O ZENITOR SYSTEMS LOGISTICS B.V.\nMODRZEWIOWA\n29 BUD C0 D0K 1 4\nMZ\n72040\n(PL)\nPARKOWA\n4402039622\nREF:RETURN875977892190\nINU:\nPO:\nRETURNeqseunXee8\nDEPT:\nFedEx\nExpress\nE\nJ261026012002uV\nPM\nTRK#\nINTLECONOMY\n0430\n823412023553\nETD\nT7 WAWA\n05840\nWAW\nMZ -PL",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "fedex-label-embedded",
+            "confidence": 0.95,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "FEDEX",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "FEDEX_LABEL — sroda_anon/OneClickPrint_VTW189028721_anon.pdf p2 (text layer stripped)",
+      "rationale": "page:a4-landscape ink-aspect 1.49 width 100.3; geometry:4x6-label",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "sroda_anon/OneClickPrint_VTW189028721_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "sroda_anon/OneClickPrint_VTW189028721_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 168,
+            "inkBox": {
+              "xMm": 34.54,
+              "yMm": 19.3,
+              "widthMm": 100.33,
+              "heightMm": 149.86,
+              "aspect": 1.494,
+              "coverage": 0.0698
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "34.5,19.3,100.3,149.9",
+                "rect": {
+                  "xMm": 34.54,
+                  "yMm": 19.3,
+                  "widthMm": 100.33,
+                  "heightMm": 149.86
+                },
+                "text": "PRIGIN- ID:UJWQ n(948) 253-1802\nSHIPDATE:28AUG26\nTERRENCL\nACTWGT:0.40 KG\nTERRENCE_STALLINGS\nCAD:255145792/FAPI2208\n6172 REDT0PL00P\nDIMS:35×2×28CM\nAHORNWEG, ....\nGA 77231--US\nBILL SENDER\nNO EEI\n58K.J6/C457/484R\n08.01(e)\nWAREHOUSE PARKOWA\nY\nC/O ZENITOR SYSTEMS LOGISTICS B.V.\nMODRZEWIOWA\n29 BUD C0 D0K 1 4\nMZ\n72040\n(PL)\nPARKOWA\n4402039622\nREF:RETURN875977892190\nINU:\nPO:\nRETURNeqseunXee8\nDEPT:\nFedEx\nExpress\nE\nJ261026012002uV\nPM\nTRK#\nINTLECONOMY\n0430\n823412023553\nETD\nT7 WAWA\n05840\nWAW\nMZ -PL",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "fedex-label-embedded",
+            "confidence": 0.95,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "FEDEX",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "FEDEX_LABEL — wtorek_anon/OneClickPrint_VTW188953844_anon.pdf p5",
+      "rationale": "page:a4-landscape ink-aspect 1.47 width 101.8; geometry:4x6-label",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "wtorek_anon/OneClickPrint_VTW188953844_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "wtorek_anon/OneClickPrint_VTW188953844_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": "ID:WBCK 64041362129\r\nMagdalena Ricci\r\nBystrzyca Chodziez 060475380/CSH 08248\r\nLESNA NOWA 0570\r\nBOCZNA 15q2m30\r\nTERNI 555669\r\nKaldis 0893890469862\r\nTessera Distribution Solutions B.V.\r\nVestergade mila nowa\r\nAVEIRO, 22239\r\n7217 8252 8572\r\n890688127834\r\nZAFH1:44114069\r\nMagdalena Ricci\r\n959396654\r\n959396654",
+            "textCharCount": 304,
+            "inkBox": {
+              "xMm": 33.02,
+              "yMm": 18.8,
+              "widthMm": 101.85,
+              "heightMm": 149.35,
+              "aspect": 1.466,
+              "coverage": 0.0337
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "33.0,18.8,101.8,149.3",
+                "rect": {
+                  "xMm": 33.02,
+                  "yMm": 18.8,
+                  "widthMm": 101.85,
+                  "heightMm": 149.35
+                },
+                "text": "ORIGIN ID:WBCK\n64041362129\nSHIPDATE:27AUG26\nMagdalena Ricci\nACTWGT:0.40KG\nC/O Bystrzyca\nChodziez\nCAD: 060475380/CSH 08248\nPU LESNA\nXIN QU NOWA\nGAO NAN LU\n0570\nBOCZNA79HA0201SHI\nDIMS:15q2m30\nCM\nTERNI\nHAI SHI，SH 555669\nBILL THIRD PARTY\nCN\nEIN/VAT:\nT0 Warehouse Kaldis\n0893890469862\nC/0 Tessera Distribution Solutions B.V.\nFedEx\nVestergade\n29 milaC0 nowa 14\nExpress\nJ261026012020uv\nE\nMZ 22239\nAVEIRO,\n(PL)\nPL\nAWB\n9W WAWA\nETD\nPKG:YOUR PKG\nTRK#\nForm\n7217 8252 8572\n0430\nPM\nINTLECONOMY\nREF:RETURN890688127834\nZAFH1:44114069\nshirt in fluid Prince of Wales denim\nDESC2:\nDESC3:\nDESC4:\nCTRY/TERR MFR:TN\nSIGN:_Magdalena Ricci\nCARRIAGE VALUE:\nT/C:O 959396654\nD/T:O 959396654\nFor all commodities,technology or software previously exported from the\nUnited States, this was done in accordance with the Export Administration\nRegulations. Diversion of these items contrary to U.S. law or any other\napplicable country's law isprohibited.\nThe Montreal or Warsaw Convention may apply and will govern and in most\ncases limit the liabilityof Federal Express forloss or delay of or\ndamage to your shipment Subject to the conditions of the\ncontract on the reverse.\nFEDEXAWB\nCOPY\nPLEASEPLACEINPOUCH",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "fedex-label-embedded",
+            "confidence": 0.95,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "FEDEX",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "FEDEX_LABEL — wtorek_anon/OneClickPrint_VTW188953844_anon.pdf p5 (text layer stripped)",
+      "rationale": "page:a4-landscape ink-aspect 1.47 width 101.8; geometry:4x6-label",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "wtorek_anon/OneClickPrint_VTW188953844_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "wtorek_anon/OneClickPrint_VTW188953844_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 297,
+            "pageHeightMm": 210,
+            "orientation": "landscape",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 304,
+            "inkBox": {
+              "xMm": 33.02,
+              "yMm": 18.8,
+              "widthMm": 101.85,
+              "heightMm": 149.35,
+              "aspect": 1.466,
+              "coverage": 0.0337
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "33.0,18.8,101.8,149.3",
+                "rect": {
+                  "xMm": 33.02,
+                  "yMm": 18.8,
+                  "widthMm": 101.85,
+                  "heightMm": 149.35
+                },
+                "text": "ORIGIN ID:WBCK\n64041362129\nSHIPDATE:27AUG26\nMagdalena Ricci\nACTWGT:0.40KG\nC/O Bystrzyca\nChodziez\nCAD: 060475380/CSH 08248\nPU LESNA\nXIN QU NOWA\nGAO NAN LU\n0570\nBOCZNA79HA0201SHI\nDIMS:15q2m30\nCM\nTERNI\nHAI SHI，SH 555669\nBILL THIRD PARTY\nCN\nEIN/VAT:\nT0 Warehouse Kaldis\n0893890469862\nC/0 Tessera Distribution Solutions B.V.\nFedEx\nVestergade\n29 milaC0 nowa 14\nExpress\nJ261026012020uv\nE\nMZ 22239\nAVEIRO,\n(PL)\nPL\nAWB\n9W WAWA\nETD\nPKG:YOUR PKG\nTRK#\nForm\n7217 8252 8572\n0430\nPM\nINTLECONOMY\nREF:RETURN890688127834\nZAFH1:44114069\nshirt in fluid Prince of Wales denim\nDESC2:\nDESC3:\nDESC4:\nCTRY/TERR MFR:TN\nSIGN:_Magdalena Ricci\nCARRIAGE VALUE:\nT/C:O 959396654\nD/T:O 959396654\nFor all commodities,technology or software previously exported from the\nUnited States, this was done in accordance with the Export Administration\nRegulations. Diversion of these items contrary to U.S. law or any other\napplicable country's law isprohibited.\nThe Montreal or Warsaw Convention may apply and will govern and in most\ncases limit the liabilityof Federal Express forloss or delay of or\ndamage to your shipment Subject to the conditions of the\ncontract on the reverse.\nFEDEXAWB\nCOPY\nPLEASEPLACEINPOUCH",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "fedex-label-embedded",
+            "confidence": 0.95,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "FEDEX",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "FEDEX_RETURN_LABEL — czwart_anon/OneClickPrint_VTW189066252_anon.pdf p2",
+      "rationale": "page:letter",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189066252_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189066252_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 215.9,
+            "pageHeightMm": 279.4,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "SHIP DATE: 29AUG26\r\nTO\r\n(PL)\r\nTRK#\r\nACTWGT: 0.40 KG\r\nDIMS: CM\r\nREF: RETURN\r\nINV: \r\nPO: RETURN DEPT: \r\n0430\r\nORIGIN\r\n2\r\nA\r\nMC\r\nFR\r\nCAD:\r\nBILL SENDER\r\nWAREHOUSE\r\nWAREHOUSE\r\n29 BUD DOK 1 4\r\nMZ\r\n PM\r\n INTL ECONOMY CLR\r\n ETD CLR\r\n \r\nWAW\r\nID:REPR 30075371423400\r\nLUKAS TOMASZ AALTO\r\n591444348/ZTVC4589\r\nAVENUE KINGSMERE 78b9g32\r\nMODRZEWIOWA\r\nAVEIRO, 51698\r\nKALDIS\r\nLIPOWA\r\n15ZY2/W086/097D\r\nMAPLE RIDGE C8\r\nMALBORK 36021\r\n8519233866500 8O8292H2ND03227236\r\nOJX058644430\r\nJ936679801729tv\r\n8037 2219 9923\r\n4Q RUHC 36021\r\nSLOVAKIA",
+            "textCharCount": 519,
+            "inkBox": {
+              "xMm": 11.94,
+              "yMm": 12.45,
+              "widthMm": 100.84,
+              "heightMm": 151.64,
+              "aspect": 1.504,
+              "coverage": 0.0683
+            },
+            "barcodes": [
+              {
+                "symbology": "PDF417",
+                "value": "[)>␞01␝0205840␝616␝04␝8760372872620430␝FDE␝620960357␝241␝␝1/1␝0.39KG␝N␝Moszna␠Parcela␠29␠bud␠C0␠dok␠1␠4␝BRWINOW␝MZ␝Warehouse␠Moszna␞06␝10ZEII08␝11ZWarehouse␠Moszna␝12Z4402039622362␝15Z255145792␝31Z1072396534381403797600876037287262␝32Z0254␝39ZNCEB␝KRETURN␠VTW189066252␝99ZEI0006␜FR␜305␜USD␜37468123␠Azales␠bodysuit␜␜620960357␝␞09␝FDX␝z␝8␝␜␄%793@␞␄",
+                "xMm": 13.72,
+                "yMm": 65.15,
+                "widthMm": 67.44,
+                "heightMm": 28.57
+              }
+            ],
+            "barcodeDpi": 200,
+            "ocrRegions": [
+              {
+                "key": "11.9,12.4,100.8,151.6",
+                "rect": {
+                  "xMm": 11.94,
+                  "yMm": 12.45,
+                  "widthMm": 100.84,
+                  "heightMm": 151.64
+                },
+                "text": "ORIGINID:REPR\n30075371423400\nSHIPDATE:29AUG26\nLUKASTOMASZAALTO\nACTWGT:0.40KG\nCAD:591444348/ZTVC4589\n2AVENUEKINGSMERE\nDIMS:78b9g32CM\nMODRZEWIOWAA\nAVEIRO,MC51698\nBILL SENDER\nFR\nTOWAREHOUSEKALDIS\nWAREHOUSELIPOWA\n15ZY2/W086/097D\nMAPLE RIDGE\n29 BUD C8DOK 1 4\nMALBORKMZ 36021\n(PL)\n8519233866500\nREF:RETURN8O8292H2ND03227236\nINV:\nPO:RETURNOJX058644430\nDEPT:\nE\nJ936679801729tv\nPM\nTRK#\n8037 2219 9923\nINTL ECONOMY\nCLR\n0430\nETD\nCLR\n36021\n4Q RUHC\nWAW\nSLOVAKIA",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": "fedex-return-label",
+            "confidence": 0.9,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "FEDEX",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "FEDEX_RETURN_LABEL — czwart_anon/OneClickPrint_VTW189066252_anon.pdf p2 (text layer stripped)",
+      "rationale": "page:letter",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189066252_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189066252_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 215.9,
+            "pageHeightMm": 279.4,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 519,
+            "inkBox": {
+              "xMm": 11.94,
+              "yMm": 12.45,
+              "widthMm": 100.84,
+              "heightMm": 151.64,
+              "aspect": 1.504,
+              "coverage": 0.0683
+            },
+            "barcodes": [
+              {
+                "symbology": "PDF417",
+                "value": "[)>␞01␝0205840␝616␝04␝8760372872620430␝FDE␝620960357␝241␝␝1/1␝0.39KG␝N␝Moszna␠Parcela␠29␠bud␠C0␠dok␠1␠4␝BRWINOW␝MZ␝Warehouse␠Moszna␞06␝10ZEII08␝11ZWarehouse␠Moszna␝12Z4402039622362␝15Z255145792␝31Z1072396534381403797600876037287262␝32Z0254␝39ZNCEB␝KRETURN␠VTW189066252␝99ZEI0006␜FR␜305␜USD␜37468123␠Azales␠bodysuit␜␜620960357␝␞09␝FDX␝z␝8␝␜␄%793@␞␄",
+                "xMm": 13.72,
+                "yMm": 65.15,
+                "widthMm": 67.44,
+                "heightMm": 28.57
+              }
+            ],
+            "barcodeDpi": 200,
+            "ocrRegions": [
+              {
+                "key": "11.9,12.4,100.8,151.6",
+                "rect": {
+                  "xMm": 11.94,
+                  "yMm": 12.45,
+                  "widthMm": 100.84,
+                  "heightMm": 151.64
+                },
+                "text": "ORIGINID:REPR\n30075371423400\nSHIPDATE:29AUG26\nLUKASTOMASZAALTO\nACTWGT:0.40KG\nCAD:591444348/ZTVC4589\n2AVENUEKINGSMERE\nDIMS:78b9g32CM\nMODRZEWIOWAA\nAVEIRO,MC51698\nBILL SENDER\nFR\nTOWAREHOUSEKALDIS\nWAREHOUSELIPOWA\n15ZY2/W086/097D\nMAPLE RIDGE\n29 BUD C8DOK 1 4\nMALBORKMZ 36021\n(PL)\n8519233866500\nREF:RETURN8O8292H2ND03227236\nINV:\nPO:RETURNOJX058644430\nDEPT:\nE\nJ936679801729tv\nPM\nTRK#\n8037 2219 9923\nINTL ECONOMY\nCLR\n0430\nETD\nCLR\n36021\n4Q RUHC\nWAW\nSLOVAKIA",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": "fedex-return-label",
+            "confidence": 0.9,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "FEDEX",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "FEDEX_RETURN_LABEL — czwart_anon/OneClickPrint_VTW189066661_anon.pdf p2",
+      "rationale": "page:letter",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189066661_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189066661_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 215.9,
+            "pageHeightMm": 279.4,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "SHIP DATE: 29AUG26\r\nTO\r\n(PL)\r\nTRK#\r\nACTWGT: 0.40 KG\r\nDIMS: CM\r\nREF: RETURN\r\nINV: \r\nPO: RETURN DEPT: \r\n0430\r\nORIGIN\r\n166\r\nIV\r\nEE\r\nCAD:\r\nBILL SENDER\r\nWAREHOUSE\r\nWAREHOUSE\r\n29 BUD DOK 1 4\r\nMZ\r\n PM\r\n INTL ECONOMY CLR\r\n ETD CLR\r\n \r\nWAW\r\nID:ZPVS 62051671990\r\nELENA MICHALSKI\r\n591444348/ZTVC4589\r\nP. BERGMAN 78b9g32\r\n55-895\r\nBRAGA, 77664\r\nKALDIS\r\nKALDIS\r\n15ZY2/W086/097D\r\nMAPLE RIDGE C8\r\nMALBORK 36021\r\n8519233866500 5D5359E5ZU22155756\r\nVRG456730052\r\nJ936679801729tv\r\n3186 1008 6088\r\n4Q RUHC 36021\r\nSLOVAKIA",
+            "textCharCount": 500,
+            "inkBox": {
+              "xMm": 11.94,
+              "yMm": 12.45,
+              "widthMm": 100.84,
+              "heightMm": 151.64,
+              "aspect": 1.504,
+              "coverage": 0.0678
+            },
+            "barcodes": [
+              {
+                "symbology": "PDF417",
+                "value": "[)>␞01␝0205840␝616␝04␝8760382317480430␝FDE␝620960357␝241␝␝1/1␝0.39KG␝N␝Moszna␠Parcela␠29␠bud␠C0␠dok␠1␠4␝BRWINOW␝MZ␝Warehouse␠Moszna␞06␝10ZEII08␝11ZWarehouse␠Moszna␝12Z4402039622362␝15Z255145792␝31Z1072396534391403797600876038231748␝32Z0254␝39ZTLLA␝KRETURN␠VTW189066661␝99ZEI0006␜EE␜737␜USD␜22971769␠cut-out␠jeans␜␜620960357␝␞09␝FDX␝z␝8␝␜␄%793@␞␄",
+                "xMm": 13.72,
+                "yMm": 65.15,
+                "widthMm": 67.44,
+                "heightMm": 28.57
+              }
+            ],
+            "barcodeDpi": 200,
+            "ocrRegions": [
+              {
+                "key": "11.9,12.4,100.8,151.6",
+                "rect": {
+                  "xMm": 11.94,
+                  "yMm": 12.45,
+                  "widthMm": 100.84,
+                  "heightMm": 151.64
+                },
+                "text": "ORIGINID:ZPVS\n62051671990\nSHIPDATE:29AUG26\nELENA MICHALSKI\nACTWGT:0.40KG\nCAD:591444348/ZTVC4589\nP.BERGMAN\nDIMS:78b9g32CM\n55-895166\nBRAGA,IV 77664\nBILLSENDER\nEE\nTOWAREHOUSE KALDIS\nWAREHOUSE KALDIS\n15ZY2/086/097D\nMAPLE RIDGE\n29 BUD C8DOK 1 4\nMALBORKMZ 36021\n(PL)\n8519233866500\nREF:RETURN5D5359E5ZU22155756\nINV:\nPO:RETURNVRG456730052\nDEPT:\nE\nJ936679801729tv\nPM\nTRK#\n3186 1008 6088\nINTL ECONOMY\nCLR\n0430\nETD\nCLR\n36021\n4Q RUHC\nWAW\nSLOVAKIA",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": "fedex-return-label",
+            "confidence": 0.9,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "FEDEX",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "FEDEX_RETURN_LABEL — czwart_anon/OneClickPrint_VTW189066661_anon.pdf p2 (text layer stripped)",
+      "rationale": "page:letter",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189066661_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189066661_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 215.9,
+            "pageHeightMm": 279.4,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 500,
+            "inkBox": {
+              "xMm": 11.94,
+              "yMm": 12.45,
+              "widthMm": 100.84,
+              "heightMm": 151.64,
+              "aspect": 1.504,
+              "coverage": 0.0678
+            },
+            "barcodes": [
+              {
+                "symbology": "PDF417",
+                "value": "[)>␞01␝0205840␝616␝04␝8760382317480430␝FDE␝620960357␝241␝␝1/1␝0.39KG␝N␝Moszna␠Parcela␠29␠bud␠C0␠dok␠1␠4␝BRWINOW␝MZ␝Warehouse␠Moszna␞06␝10ZEII08␝11ZWarehouse␠Moszna␝12Z4402039622362␝15Z255145792␝31Z1072396534391403797600876038231748␝32Z0254␝39ZTLLA␝KRETURN␠VTW189066661␝99ZEI0006␜EE␜737␜USD␜22971769␠cut-out␠jeans␜␜620960357␝␞09␝FDX␝z␝8␝␜␄%793@␞␄",
+                "xMm": 13.72,
+                "yMm": 65.15,
+                "widthMm": 67.44,
+                "heightMm": 28.57
+              }
+            ],
+            "barcodeDpi": 200,
+            "ocrRegions": [
+              {
+                "key": "11.9,12.4,100.8,151.6",
+                "rect": {
+                  "xMm": 11.94,
+                  "yMm": 12.45,
+                  "widthMm": 100.84,
+                  "heightMm": 151.64
+                },
+                "text": "ORIGINID:ZPVS\n62051671990\nSHIPDATE:29AUG26\nELENA MICHALSKI\nACTWGT:0.40KG\nCAD:591444348/ZTVC4589\nP.BERGMAN\nDIMS:78b9g32CM\n55-895166\nBRAGA,IV 77664\nBILLSENDER\nEE\nTOWAREHOUSE KALDIS\nWAREHOUSE KALDIS\n15ZY2/086/097D\nMAPLE RIDGE\n29 BUD C8DOK 1 4\nMALBORKMZ 36021\n(PL)\n8519233866500\nREF:RETURN5D5359E5ZU22155756\nINV:\nPO:RETURNVRG456730052\nDEPT:\nE\nJ936679801729tv\nPM\nTRK#\n3186 1008 6088\nINTL ECONOMY\nCLR\n0430\nETD\nCLR\n36021\n4Q RUHC\nWAW\nSLOVAKIA",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": "fedex-return-label",
+            "confidence": 0.9,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "FEDEX",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "FEDEX_RETURN_LABEL — wtorek_anon/OneClickPrint_VTW189004806_anon.pdf p2",
+      "rationale": "page:letter",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "wtorek_anon/OneClickPrint_VTW189004806_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "wtorek_anon/OneClickPrint_VTW189004806_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 215.9,
+            "pageHeightMm": 279.4,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "SHIP DATE: 27AUG26\r\nTO\r\n(PL)\r\nTRK#\r\nACTWGT: 0.40 KG\r\nDIMS: CM\r\nREF: RETURN\r\nINV: \r\nPO: RETURN DEPT: \r\n0430\r\nORIGIN\r\n2\r\nPAG, \r\nHR\r\nCAD:\r\nBILL SENDER\r\nWAREHOUSE\r\nWAREHOUSE\r\nPARCELA 29 BUD C0 DOK 1 4\r\nMZ\r\n PM\r\n INTL ECONOMY CLR\r\n ETD CLR\r\n \r\nWAW\r\nID:JSRG 74010337832\r\nANDRZEJ VANDENBERG\r\n928403220/WWKV2400\r\nTORFOWA 15q2m30\r\n51825\r\nLESNA\r\nLESNA\r\n84BD2/P908/397S\r\nLESNA\r\nAVEIRO 22239\r\n0893890469862 4P0052O8OY96630866\r\nUKM060034024\r\nO411788428306sk\r\n9520 7972 1329\r\n3W SHAD 22239\r\nAUSTRIA",
+            "textCharCount": 484,
+            "inkBox": {
+              "xMm": 11.94,
+              "yMm": 12.45,
+              "widthMm": 100.84,
+              "heightMm": 151.64,
+              "aspect": 1.504,
+              "coverage": 0.0679
+            },
+            "barcodes": [
+              {
+                "symbology": "PDF417",
+                "value": "[)>␞01␝0205840␝616␝04␝8759228553500430␝FDE␝620960357␝239␝␝1/1␝0.39KG␝N␝Moszna␠Parcela␠29␠bud␠C0␠dok␠1␠4␝BRWINOW␝MZ␝Warehouse␠Moszna␞06␝10ZEII08␝11ZWarehouse␠Moszna␝12Z4402039622362␝15Z255145792␝31Z1072396534091403797600875922855350␝32Z0254␝39ZZAGA␝KRETURN␠VTW189004806␝99ZEI0006␜HR␜475␜USD␜22301982␠calfskin␠Portofino␠sneakers␜␜620960357␝␞09␝FDX␝z␝8␝␜␄%793@␞␄",
+                "xMm": 13.72,
+                "yMm": 65.15,
+                "widthMm": 67.44,
+                "heightMm": 29.59
+              }
+            ],
+            "barcodeDpi": 200,
+            "ocrRegions": [
+              {
+                "key": "11.9,12.4,100.8,151.6",
+                "rect": {
+                  "xMm": 11.94,
+                  "yMm": 12.45,
+                  "widthMm": 100.84,
+                  "heightMm": 151.64
+                },
+                "text": "ORIGINID:JSRG\n74010337832\nSHIPDATE:27AUG26\nANDRZEJVANDENBERG\nACTWGT:0.40KG\nCAD:928403220/VVWKV2400\nTORFOWA2\nDIMS: 15q2m30CM\nPAG, 51825\nBILL SENDER\nHR\nTOWAREHOUSELESNA\nWAREHOUSELESNA\n84BD2/P908/397S\nLESNA PARCELA 29 BUD C0 DOK 1 4\nAVEIRO\nMZ 22239\n(PL)\n0893890469862\nREF:RETURN4P0052O8OY96630866\nINV:\nPO:RETURNUKM060034024\nDEPT:\nE\n0411788428306sk\nPM\nTRK#\n9520 7972 1329\nINTL ECONOMY\nCLR\n0430\nETD\nCLR\n22239\n3W\nSHAD\nWAW\nAUSTRIA",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": "fedex-return-label",
+            "confidence": 0.9,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "FEDEX",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "FEDEX_RETURN_LABEL — wtorek_anon/OneClickPrint_VTW189004806_anon.pdf p2 (text layer stripped)",
+      "rationale": "page:letter",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "wtorek_anon/OneClickPrint_VTW189004806_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "wtorek_anon/OneClickPrint_VTW189004806_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 215.9,
+            "pageHeightMm": 279.4,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 484,
+            "inkBox": {
+              "xMm": 11.94,
+              "yMm": 12.45,
+              "widthMm": 100.84,
+              "heightMm": 151.64,
+              "aspect": 1.504,
+              "coverage": 0.0679
+            },
+            "barcodes": [
+              {
+                "symbology": "PDF417",
+                "value": "[)>␞01␝0205840␝616␝04␝8759228553500430␝FDE␝620960357␝239␝␝1/1␝0.39KG␝N␝Moszna␠Parcela␠29␠bud␠C0␠dok␠1␠4␝BRWINOW␝MZ␝Warehouse␠Moszna␞06␝10ZEII08␝11ZWarehouse␠Moszna␝12Z4402039622362␝15Z255145792␝31Z1072396534091403797600875922855350␝32Z0254␝39ZZAGA␝KRETURN␠VTW189004806␝99ZEI0006␜HR␜475␜USD␜22301982␠calfskin␠Portofino␠sneakers␜␜620960357␝␞09␝FDX␝z␝8␝␜␄%793@␞␄",
+                "xMm": 13.72,
+                "yMm": 65.15,
+                "widthMm": 67.44,
+                "heightMm": 29.59
+              }
+            ],
+            "barcodeDpi": 200,
+            "ocrRegions": [
+              {
+                "key": "11.9,12.4,100.8,151.6",
+                "rect": {
+                  "xMm": 11.94,
+                  "yMm": 12.45,
+                  "widthMm": 100.84,
+                  "heightMm": 151.64
+                },
+                "text": "ORIGINID:JSRG\n74010337832\nSHIPDATE:27AUG26\nANDRZEJVANDENBERG\nACTWGT:0.40KG\nCAD:928403220/VVWKV2400\nTORFOWA2\nDIMS: 15q2m30CM\nPAG, 51825\nBILL SENDER\nHR\nTOWAREHOUSELESNA\nWAREHOUSELESNA\n84BD2/P908/397S\nLESNA PARCELA 29 BUD C0 DOK 1 4\nAVEIRO\nMZ 22239\n(PL)\n0893890469862\nREF:RETURN4P0052O8OY96630866\nINV:\nPO:RETURNUKM060034024\nDEPT:\nE\n0411788428306sk\nPM\nTRK#\n9520 7972 1329\nINTL ECONOMY\nCLR\n0430\nETD\nCLR\n22239\n3W\nSHAD\nWAW\nAUSTRIA",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": "fedex-return-label",
+            "confidence": 0.9,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "FEDEX",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "INVOICE — czwart_anon/OneClickPrint_VKI189056401_anon.pdf p1",
+      "rationale": "marker:sales-invoice",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VKI189056401_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VKI189056401_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": " \r\nDDP\r\nSales Invoice\r\nInvoice From\r\nVAT Number:\r\nInvoice Date: 19/08/2026\r\nInvoice Number:\r\nEORI Number:\r\nShipping From\r\nWarehouse\r\n29 1 4\r\nOrder Number:\r\nReason for export: Personal use, not for resale.\r\nInvoice To\r\nAl\r\nCustomer Tax Id:\r\nShipping To\r\nAl\r\nDescription Qty Unit Price\r\nExcl. VAT\r\n(SAR)\r\nVAT\r\nRate\r\nVAT\r\nAmount\r\n(SAR)\r\nTotal Incl.\r\nVAT\r\n(SAR)\r\nComposition Country of\r\nOrigin\r\nHS Code\r\nBIRKENSTOCK boston\r\nbuckle-strap clogs\r\n1 684.35 0% 0.00 684.35 OUTER: Calf Suede\r\n100 %\r\nLINING: Calf Leather\r\n100 %\r\nSOLE: Acetate 100 %\r\n00\r\nShipping Charges 1 56.52 0% 0.00 56.52\r\nSubtotal 740.87 0.00 740.87\r\nEstimated Import Duties & Taxes 111.13\r\nTOTAL 852.00\r\nVat Summary\r\nVat Rate Taxable Amount\r\n(SAR)\r\nVat Amount\r\n(SAR)\r\nGrand Total\r\n(SAR)\r\n0% 852.00 0.00 852.00\r\nTOTAL 852.00 0.00 852.00\r\nOut of scope of VAT\r\nThe amount indicated on this document is the customs value of your purchase. The total amount you paid during your order includes all applicable\r\nduties and taxes, based on our estimation (see \"estimated import duties & taxes\"). There should be no additional charges on delivery. We will pay\r\nthe actual import charges (on your behalf) which will be determined by the arrival customs authorities upon import of your order.\r\nY900: The goods are not included in the list of products as per Council Regulation (EC) No. 338/97 and its following amendments on the protection\r\nof endangered flora and fauna species through trade control.\r\nY922: The goods are not cat and dog fur and/or products that contain them, as per Council Regulation (EC) No. 1523/07 and its amendments that\r\nforbid trading, imports, and exports of cat and dog fur.\r\nY901: The goods are not included in the list of products as per Council Regulation (EU) No. 821/2021 and its following amendments, instituting a\r\ncontrol system on exported products and technologies with dual use, therefore the goods are only for civil use.\r\nY903: The goods are not included in the list of products as per Council Regulation (EC) No. 116/09, and its amendments ruling export of cultural\r\ngoods.\r\nMarendo Systems Partners B.V. Lipowa\r\nLindenallee 922 Maple Ridge Wodna C3 Lesna\r\nKwiatowa 0520OL MALBORK 60-865\r\nSlovakia Romania\r\nPL6626639686 3VAI8M/JQX870201981\r\nLAFC74107425338140\r\nNL293838259\r\nANNA MOREAU ANNA MOREAU\r\nRzemieslnicza 0799 HGDT1643 Rzemieslnicza 0799 HGDT1643\r\nNowogard Nowogard\r\nBoczna Portugal Boczna Portugal\r\n0369589794503 0369589794503\r\n20794522 Slovakia 9688281828\r\n15820120",
+            "textCharCount": 2468,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 16,
+              "widthMm": 190.25,
+              "heightMm": 234.19,
+              "aspect": 1.231,
+              "coverage": 0.0678
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "INVOICE — czwart_anon/OneClickPrint_VKI189056401_anon.pdf p1 (text layer stripped)",
+      "rationale": "marker:sales-invoice",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VKI189056401_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VKI189056401_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 2468,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 16,
+              "widthMm": 190.25,
+              "heightMm": 234.19,
+              "aspect": 1.231,
+              "coverage": 0.0678
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "INVOICE — sroda_anon/OneClickPrint_VTW189022187_anon.pdf p1",
+      "rationale": "marker:sales-invoice",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "sroda_anon/OneClickPrint_VTW189022187_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "sroda_anon/OneClickPrint_VTW189022187_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": " \r\nDDP\r\nSales Invoice\r\nInvoice From\r\nVAT Number:\r\nInvoice Date: 18/08/2026\r\nInvoice Number:\r\nEORI Number:\r\nShipping From\r\nWarehouse\r\n29 1 4\r\nOrder Number:\r\nReason for export: Personal use, not for resale.\r\nInvoice To\r\nNumber: number: Name: the\r\nName: the of the\r\nCustomer Tax Id:\r\nShipping To\r\nNumber: number: Name: the\r\nName: the of the\r\nDescription Qty Unit Price\r\nExcl. VAT\r\n(QAR)\r\nVAT\r\nRate\r\nVAT\r\nAmount\r\n(QAR)\r\nTotal Incl.\r\nVAT\r\n(QAR)\r\nComposition Country of\r\nOrigin\r\nHS Code\r\nCeleste buckle-embellished ballet\r\nflats\r\n1 1,528.57 0% 0.00 1,528.57 Calf Leather 100 %\r\n00\r\nShipping Charges 1 0.00 0% 0.00 0.00\r\nSubtotal 1,528.57 0.00 1,528.57\r\nEstimated Import Duties & Taxes 76.43\r\nTOTAL 1,605.00\r\nVat Summary\r\nVat Rate Taxable Amount\r\n(QAR)\r\nVat Amount\r\n(QAR)\r\nGrand Total\r\n(QAR)\r\n0% 1,605.00 0.00 1,605.00\r\nTOTAL 1,605.00 0.00 1,605.00\r\nOut of scope of VAT\r\nThe amount indicated on this document is the customs value of your purchase. The total amount you paid during your order includes all applicable\r\nduties and taxes, based on our estimation (see \"estimated import duties & taxes\"). There should be no additional charges on delivery. We will pay\r\nthe actual import charges (on your behalf) which will be determined by the arrival customs authorities upon import of your order.\r\nY900: The goods are not included in the list of products as per Council Regulation (EC) No. 338/97 and its following amendments on the protection\r\nof endangered flora and fauna species through trade control.\r\nY922: The goods are not cat and dog fur and/or products that contain them, as per Council Regulation (EC) No. 1523/07 and its amendments that\r\nforbid trading, imports, and exports of cat and dog fur.\r\nY901: The goods are not included in the list of products as per Council Regulation (EU) No. 821/2021 and its following amendments, instituting a\r\ncontrol system on exported products and technologies with dual use, therefore the goods are only for civil use.\r\nY903: The goods are not included in the list of products as per Council Regulation (EC) No. 116/09, and its amendments ruling export of cultural\r\ngoods.\r\nZenitor Systems Logistics B.V. Parkowa\r\nWiklinowa 169 Modrzewiowa Polna C4 Lesna\r\nBratkowa 2555SJ GRODZISK84-060\r\nDenmark Austria\r\nPL2844512734 56JIOE/BIQ009936527\r\nSEFH78048730458588\r\nNL405451415\r\nKrzysztof Nowicki Krzysztof Nowicki\r\nKrotka 641, Street 751 Solankowa ostra Krotka 641, Street 751 Solankowa ostra\r\n(49), Nowa Lesna (58) Kingsmere Rzemieslnicza (49), Nowa Lesna (58) Kingsmere Rzemieslnicza\r\nostra ostra\r\nNamur Namur\r\nHungary Hungary\r\n73091831220 73091831220\r\n21688318 TESSERA SYSTEMS Slovakia 2733364236\r\nTNGXRCYPVCQUBJIEL358",
+            "textCharCount": 2652,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 16,
+              "widthMm": 190.25,
+              "heightMm": 234.19,
+              "aspect": 1.231,
+              "coverage": 0.0706
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "INVOICE — sroda_anon/OneClickPrint_VTW189022187_anon.pdf p1 (text layer stripped)",
+      "rationale": "marker:sales-invoice",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "sroda_anon/OneClickPrint_VTW189022187_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "sroda_anon/OneClickPrint_VTW189022187_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 2652,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 16,
+              "widthMm": 190.25,
+              "heightMm": 234.19,
+              "aspect": 1.231,
+              "coverage": 0.0706
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "INVOICE — wtorek_anon/OneClickPrint_VTW188935973_anon.pdf p1",
+      "rationale": "marker:sales-invoice",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "wtorek_anon/OneClickPrint_VTW188935973_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "wtorek_anon/OneClickPrint_VTW188935973_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": " \r\nDDP\r\nSales Invoice\r\nInvoice From\r\nVAT Number:\r\nInvoice Date: 15/08/2026\r\nInvoice Number:\r\nEORI Number:\r\nShipping From\r\nWarehouse\r\n29 1 4\r\nOrder Number:\r\nReason for export: Personal use, not for resale.\r\nDelivery Place\r\n46, 295\r\nof KR\r\nShipping To\r\nLG\r\nOf\r\nCustomer Tax Id:\r\nPersonal Customs Clearance Code\r\nDescription Qty Unit Price\r\nExcl. VAT\r\n(KRW)\r\nDiscount\r\nExcl. VAT\r\n(KRW)\r\nVAT\r\nRate\r\nVAT\r\nAmount\r\n(KRW)\r\nTotal Incl.\r\nVAT\r\n(KRW)\r\nComposition Country of\r\nOrigin\r\nHS Code\r\n33395000 logo-pattern\r\nwash bag\r\n1 196,000 0 0% 0 196,000 OUTER: Recycled\r\nPolyester 100 %\r\nShipping Charges 1 44,000 44,000 0% 0 0\r\nSubtotal 240,000 44,000 0 196,000\r\nEstimated Import Duties & Taxes 0\r\nTOTAL 196,000\r\nVat Summary\r\nVat Rate Taxable Amount\r\n(KRW)\r\nVat Amount\r\n(KRW)\r\nGrand Total\r\n(KRW)\r\n0% 196,000 0 196,000\r\nTOTAL 196,000 0 196,000\r\nOut of scope of VAT\r\nThe amount indicated on this document is the customs value of your purchase. The total amount you paid during your order includes all applicable\r\nduties and taxes, based on our estimation (see \"estimated import duties & taxes\"). There should be no additional charges on delivery. We will pay\r\nthe actual import charges (on your behalf) which will be determined by the arrival customs authorities upon import of your order.\r\nY900: The goods are not included in the list of products as per Council Regulation (EC) No. 338/97 and its following amendments on the protection\r\nof endangered flora and fauna species through trade control.\r\nY922: The goods are not cat and dog fur and/or products that contain them, as per Council Regulation (EC) No. 1523/07 and its amendments that\r\nforbid trading, imports, and exports of cat and dog fur.\r\nY901: The goods are not included in the list of products as per Council Regulation (EU) No. 821/2021 and its following amendments, instituting a\r\ncontrol system on exported products and technologies with dual use, therefore the goods are only for civil use.\r\nY903: The goods are not included in the list of products as per Council Regulation (EC) No. 116/09, and its amendments ruling export of cultural\r\ngoods.\r\nOakmill Logistics Trade B.V. Kaldis\r\nModrzewiowa 754 Vestergade Ostra C9 Nowa\r\nJaworowa 7323PG AVEIRO 06-837\r\nIreland Denmark\r\nPL6758882840 JGZ-FOMXH1/ERA019840156\r\nLRXM26506845408249\r\nNL609078710\r\nAndrzej\r\nKingsmere, Rembertowska Kingsmere Kestrel Systems Group 4, 191-9, Ahornweg\r\nTrencin 12261 Maple Ridge, Sierakowo\r\nSierakowo 88149\r\n+821229834883 Norway\r\nNorway 83021573416\r\nW199299052957\r\nInes Moreau Czechia 5443759614\r\nY0N6756JQQSYM",
+            "textCharCount": 2538,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 16,
+              "widthMm": 190.25,
+              "heightMm": 230.38,
+              "aspect": 1.211,
+              "coverage": 0.0678
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "INVOICE — wtorek_anon/OneClickPrint_VTW188935973_anon.pdf p1 (text layer stripped)",
+      "rationale": "marker:sales-invoice",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "wtorek_anon/OneClickPrint_VTW188935973_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "wtorek_anon/OneClickPrint_VTW188935973_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 2538,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 16,
+              "widthMm": 190.25,
+              "heightMm": 230.38,
+              "aspect": 1.211,
+              "coverage": 0.0678
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "RETURN_NOTE — czwart_anon/OneClickPrint_VKI189056401_anon.pdf p4",
+      "rationale": "marker:return-note",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VKI189056401_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VKI189056401_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": " \r\nReturn Note #\r\nDDP\r\nConsignee Details\r\nVAT Number:\r\nEORI Number:\r\nDetails\r\nWarehouse\r\n29 1\r\n4\r\nShipping To\r\nWarehouse (for 9462)\r\n29 1 4\r\nCustomer Details\r\n8533 \r\nAl\r\nOriginal Awb Number:\r\nOriginal Order Courier: DHL\r\nOriginal Invoice Date: 19/08/2026\r\nOriginal Invoice Number:\r\nOriginal Order Number:\r\nRet\r\nurn\r\nQty\r\nDescription Qty Unit Price\r\nExcl. VAT\r\n(SAR)\r\nVAT\r\nRate\r\nVAT\r\nAmount\r\n(SAR)\r\nTotal Incl.\r\nVAT\r\n(SAR)\r\nComposition Country of\r\nOrigin\r\nHS Code\r\n⃞\r\nBIRKENSTOCK\r\nboston buckle-strap clogs\r\n1 684.35 0% 0.00 684.35 OUTER: Calf Suede\r\n100 %\r\nLINING: Calf Leather\r\n100 %\r\nSOLE: Acetate 100 %\r\n0\r\nShipping Charges 1 56.52 0% 0.00 56.52\r\nSubtotal 740.87 0.00 740.87\r\nEstimated Import Duties &\r\nTaxes\r\n111.13\r\nTOTAL 852.00\r\nVat Summary\r\nVat Rate Taxable Amount\r\n(SAR)\r\nVat Amount\r\n(SAR)\r\nGrand Total\r\n(SAR)\r\n0% 852.00 0.00 852.00\r\nTOTAL 852.00 0.00 852.00\r\nPlease complete the return quantity column, sign and attach to the outside of your return package along with the return shipping label.\r\nREASON TO EXPORT: Goods being returned back to seller for not met conditions of the order\r\nY900: The goods are not included in the list of products as per Council Regulation (EC) No. 338/97 and its following amendments on the protection\r\nof endangered flora and fauna species through trade control.\r\nY922: The goods are not cat and dog fur and/or products that contain them, as per Council Regulation (EC) No. 1523/07 and its amendments that\r\nforbid trading, imports, and exports of cat and dog fur.\r\nY901: The goods are not included in the list of products as per Council Regulation (EU) No. 821/2021 and its following amendments, instituting a\r\ncontrol system on exported products and technologies with dual use, therefore the goods are only for civil use.\r\nY903: The goods are not included in the list of products as per Council Regulation (EC) No. 116/09, and its amendments ruling export of cultural\r\ngoods.\r\nSigned: Date:\r\n3VAI8M/JQX870201981\r\nLumaris\r\nMarendo Systems Partners B.V. Lipowa Lipowa\r\nLindenallee 922 Maple Ridge Wodna C3 Lesna\r\nKwiatowa 0520OL Maple Ridge Wodna C3 Lesna\r\nSlovakia MALBORK 60-865 MALBORK 60-865\r\nPL6626639686 Romania Romania\r\nNL293838259 +44(1)3720503436\r\n92501O560563302S760\r\n7466039468\r\nANNA MOREAU\r\nRzemieslnicza QTFM6069 LAFC74107425338140 Nowogard 3VAI8M/JQX870201981 Boczna Portugal\r\n0369589794503\r\n41470794 Slovakia 388364668\r\n63611809",
+            "textCharCount": 2383,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 14.99,
+              "widthMm": 190.25,
+              "heightMm": 253.75,
+              "aspect": 1.334,
+              "coverage": 0.074
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "DHL",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "RETURN_NOTE — czwart_anon/OneClickPrint_VKI189056401_anon.pdf p4 (text layer stripped)",
+      "rationale": "marker:return-note",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VKI189056401_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VKI189056401_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 2383,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 14.99,
+              "widthMm": 190.25,
+              "heightMm": 253.75,
+              "aspect": 1.334,
+              "coverage": 0.074
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "RETURN_NOTE — sroda_anon/OneClickPrint_VTW189009532_anon.pdf p4",
+      "rationale": "marker:return-note",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "sroda_anon/OneClickPrint_VTW189009532_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "sroda_anon/OneClickPrint_VTW189009532_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": " \r\nReturn Note #\r\nDDP\r\nConsignee Details\r\nVAT Number:\r\nEORI Number:\r\nDetails\r\nWarehouse\r\n29 1\r\n4\r\nShipping To\r\nWarehouse (for\r\n29 1 4\r\nCustomer Details Original Awb Number:\r\nOriginal Order Courier: Fedex\r\nOriginal Invoice Date: 17/08/2026\r\nOriginal Invoice Number:\r\nOriginal Order Number:\r\nRet\r\nurn\r\nQty\r\nDescription Qty Unit Price\r\nExcl. VAT\r\n(BRL)\r\nDiscount\r\nExcl. VAT\r\n(BRL)\r\nVAT\r\nRate\r\nVAT\r\nAmount\r\n(BRL)\r\nTotal Incl.\r\nVAT\r\n(BRL)\r\nComposition Country of\r\nOrigin\r\nHS Code\r\n⃞\r\nFURLA mini Iride\r\nlogo-detail tote bag\r\n1 1.219,79 0,00 0% 0,00 1.219,79 OUTER: Grained Calf\r\nLeather 100 % 0\r\nShipping Charges 1 25,52 0,00 0% 0,00 25,52\r\nSubtotal 1.245,31 0,00 0,00 1.245,31\r\nEstimated Import Duties 1.170,19\r\nTOTAL 2.415,50\r\nVat Summary\r\nVat Rate Taxable Amount\r\n(BRL)\r\nVat Amount\r\n(BRL)\r\nGrand Total\r\n(BRL)\r\n0% 2.415,50 0,00 2.415,50\r\nTOTAL 2.415,50 0,00 2.415,50\r\nPlease complete the return quantity column, sign and attach to the outside of your return package along with the return shipping label.\r\nREASON TO EXPORT: Goods being returned back to seller for not met conditions of the order\r\nY900: The goods are not included in the list of products as per Council Regulation (EC) No. 338/97 and its following amendments on the protection\r\nof endangered flora and fauna species through trade control.\r\nY922: The goods are not cat and dog fur and/or products that contain them, as per Council Regulation (EC) No. 1523/07 and its amendments that\r\nforbid trading, imports, and exports of cat and dog fur.\r\nY901: The goods are not included in the list of products as per Council Regulation (EU) No. 821/2021 and its following amendments, instituting a\r\ncontrol system on exported products and technologies with dual use, therefore the goods are only for civil use.\r\nY903: The goods are not included in the list of products as per Council Regulation (EC) No. 116/09, and its amendments ruling export of cultural\r\ngoods.\r\nSigned: Date:\r\nH6X1ZG/RZR155491340\r\nBellamont\r\nZenitor Systems Logistics B.V. Parkowa Parkowa 1594)\r\nWiklinowa 169 Modrzewiowa Polna C4 Lesna\r\nBratkowa 2555SJ Modrzewiowa Polna C4 Lesna\r\nDenmark GRODZISK84-060 GRODZISK84-060\r\nPL2844512734 Austria Austria\r\nNL405451415 +44(3)1465417675\r\n54402O730625864R674\r\n641811683278\r\nGrzegorz Michal Nowicki\r\nRua Cedrowa Denmark8223 PSLU36828908514791 Debrecen 86241-968 H6X1ZG/RZR155491340 Wielun Ireland\r\n9966280158149\r\n805.740.338-26\r\n71849783 Austria 589722315\r\nWE66288PUH4483829",
+            "textCharCount": 2435,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 14.99,
+              "widthMm": 190.5,
+              "heightMm": 242.82,
+              "aspect": 1.275,
+              "coverage": 0.075
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "FEDEX",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "RETURN_NOTE — sroda_anon/OneClickPrint_VTW189009532_anon.pdf p4 (text layer stripped)",
+      "rationale": "marker:return-note",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "sroda_anon/OneClickPrint_VTW189009532_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "sroda_anon/OneClickPrint_VTW189009532_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 2435,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 14.99,
+              "widthMm": 190.5,
+              "heightMm": 242.82,
+              "aspect": 1.275,
+              "coverage": 0.075
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "RETURN_NOTE — wtorek_anon/OneClickPrint_VTW188931713_anon.pdf p3",
+      "rationale": "marker:return-note",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "wtorek_anon/OneClickPrint_VTW188931713_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "wtorek_anon/OneClickPrint_VTW188931713_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": " \r\nReturn Note #\r\nDDP\r\nConsignee Details\r\nVAT Number:\r\nEORI Number:\r\nNumber:\r\nDetails\r\nWarehouse\r\n29 1\r\n4\r\nShipping To\r\nWarehouse (for\r\n29 1 4\r\nCustomer Details\r\npo box 727\r\nthe\r\nthe\r\nOriginal Awb Number:\r\nOriginal Order Courier: Fedex\r\nOriginal Invoice Date: 14/08/2026\r\nOriginal Invoice Number:\r\nOriginal Order Number:\r\nRet\r\nurn\r\nQty\r\nDescription Qty Unit Price\r\nExcl. VAT\r\n(CAD)\r\nDiscount\r\nExcl. VAT\r\n(CAD)\r\nVAT\r\nRate\r\nVAT\r\nAmount\r\n(CAD)\r\nTotal Incl.\r\nVAT\r\n(CAD)\r\nComposition Country of\r\nOrigin\r\nHS Code\r\n⃞\r\n36605325 DIESEL logo-tape\r\ncropped hoodie A227760IKBJ\r\n1 143.22 0.00 0% 0.00 143.22 Cotton 57 %\r\nPolyester 38 %\r\nSpandex/Elastane 5\r\n%\r\nBanglades\r\nh 0\r\nShipping Charges 1 27.00 27.00 0% 0.00 0.00\r\nSubtotal 170.22 27.00 0.00 143.22\r\nEstimated Import Duties 25.78\r\nGST/HST due (5%) 8.45\r\nTOTAL 177.45\r\nVat Summary\r\nVat Rate Taxable Amount\r\n(CAD)\r\nVat Amount\r\n(CAD)\r\nGrand Total\r\n(CAD)\r\n0% 177.45 0.00 177.45\r\nTOTAL 177.45 0.00 177.45\r\nPlease complete the return quantity column, sign and attach to the outside of your return package along with the return shipping label.\r\nREASON TO EXPORT: Goods being returned back to seller for not met conditions of the order\r\nY900: The goods are not included in the list of products as per Council Regulation (EC) No. 338/97 and its following amendments on the protection\r\nof endangered flora and fauna species through trade control.\r\nY922: The goods are not cat and dog fur and/or products that contain them, as per Council Regulation (EC) No. 1523/07 and its amendments that\r\nforbid trading, imports, and exports of cat and dog fur.\r\nY901: The goods are not included in the list of products as per Council Regulation (EU) No. 821/2021 and its following amendments, instituting a\r\ncontrol system on exported products and technologies with dual use, therefore the goods are only for civil use.\r\nY903: The goods are not included in the list of products as per Council Regulation (EC) No. 116/09, and its amendments ruling export of cultural\r\ngoods.\r\nSigned: Date:\r\nR0XQ77/FLC492352770\r\nMagdalena\r\nOakmill Logistics Trade B.V. Kaldis Kaldis 0734)\r\nModrzewiowa 754 Vestergade Ostra C9 Nowa\r\nJaworowa 7323PG Vestergade Ostra C9 Nowa\r\nIreland AVEIRO 06-837 AVEIRO 06-837\r\nPL6758882840 Denmark Denmark\r\nNL609078710 +44(8)9227797870\r\nBERGAMOBystrzyca 1183 00764 2028\r\n21436J713483676H218\r\n639412904582\r\njulia mazur\r\nDworska road ESRH78623122172742\r\nbergamoCR-2126 R0XQ77/FLC492352770 Ireland\r\n61112111561\r\n495008631",
+            "textCharCount": 2454,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 14.99,
+              "widthMm": 190.25,
+              "heightMm": 250.95,
+              "aspect": 1.319,
+              "coverage": 0.0751
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": "FEDEX",
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "RETURN_NOTE — wtorek_anon/OneClickPrint_VTW188931713_anon.pdf p3 (text layer stripped)",
+      "rationale": "marker:return-note",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "wtorek_anon/OneClickPrint_VTW188931713_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "wtorek_anon/OneClickPrint_VTW188931713_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 2454,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 14.99,
+              "widthMm": 190.25,
+              "heightMm": 250.95,
+              "aspect": 1.319,
+              "coverage": 0.0751
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "SIGNATURE_PAGE — czwart_anon/OneClickPrint_VTW189044387_anon.pdf p2",
+      "rationale": "geometry:sparse-portrait-page",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189044387_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189044387_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "Damian Szymanski,Chief Financial Officer",
+            "textCharCount": 40,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 16.26,
+              "widthMm": 65.02,
+              "heightMm": 38.35,
+              "aspect": 0.59,
+              "coverage": 0.0115
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "SIGNATURE_PAGE — czwart_anon/OneClickPrint_VTW189044387_anon.pdf p2 (text layer stripped)",
+      "rationale": "geometry:sparse-portrait-page",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189044387_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189044387_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 40,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 16.26,
+              "widthMm": 65.02,
+              "heightMm": 38.35,
+              "aspect": 0.59,
+              "coverage": 0.0115
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "SIGNATURE_PAGE — wtorek_anon/OneClickPrint_VKI188977970_anon.pdf p2",
+      "rationale": "geometry:sparse-portrait-page",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "wtorek_anon/OneClickPrint_VKI188977970_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "wtorek_anon/OneClickPrint_VKI188977970_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "Clara Kowalczyk, Chief Financial Officer",
+            "textCharCount": 40,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 9.91,
+              "widthMm": 65.02,
+              "heightMm": 38.35,
+              "aspect": 0.59,
+              "coverage": 0.0115
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "SIGNATURE_PAGE — wtorek_anon/OneClickPrint_VKI188977970_anon.pdf p2 (text layer stripped)",
+      "rationale": "geometry:sparse-portrait-page",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "wtorek_anon/OneClickPrint_VKI188977970_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "wtorek_anon/OneClickPrint_VKI188977970_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 40,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 9.91,
+              "widthMm": 65.02,
+              "heightMm": 38.35,
+              "aspect": 0.59,
+              "coverage": 0.0115
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "SIGNATURE_PAGE — wtorek_anon/OneClickPrint_VTW189005163_anon.pdf p2",
+      "rationale": "geometry:sparse-portrait-page",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "wtorek_anon/OneClickPrint_VTW189005163_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "wtorek_anon/OneClickPrint_VTW189005163_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "Clara Kowalczyk, Chief Financial Officer",
+            "textCharCount": 40,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 9.91,
+              "widthMm": 65.02,
+              "heightMm": 38.35,
+              "aspect": 0.59,
+              "coverage": 0.0115
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "SIGNATURE_PAGE — wtorek_anon/OneClickPrint_VTW189005163_anon.pdf p2 (text layer stripped)",
+      "rationale": "geometry:sparse-portrait-page",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "wtorek_anon/OneClickPrint_VTW189005163_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "wtorek_anon/OneClickPrint_VTW189005163_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.01,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 40,
+            "inkBox": {
+              "xMm": 9.91,
+              "yMm": 9.91,
+              "widthMm": 65.02,
+              "heightMm": 38.35,
+              "aspect": 0.59,
+              "coverage": 0.0115
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": []
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": null,
+            "confidence": 0.6,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "UPS_LABEL — czwart_anon/OneClickPrint_VTW189053736_anon.pdf p3",
+      "rationale": "page:ups-carrier-sheet",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189053736_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189053736_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 231.07,
+            "pageHeightMm": 318.21,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "NADBRZEZNA\r\npo\r\nKALDIS\r\n8519233866500\r\nKALDIS\r\n88362BRWINOW\r\nDenmark\r\nOrlicz aaltoferrata solutions,\r\nsp\r\n5Z 727 3X6 01 5521 0490\r\nLO12Y8",
+            "textCharCount": 137,
+            "inkBox": {
+              "xMm": 10.41,
+              "yMm": 10.41,
+              "widthMm": 99.06,
+              "heightMm": 169.93,
+              "aspect": 1.715,
+              "coverage": 0.058
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "10.4,10.4,99.1,169.9",
+                "rect": {
+                  "xMm": 10.41,
+                  "yMm": 10.41,
+                  "widthMm": 99.06,
+                  "heightMm": 169.93
+                },
+                "text": "KLAUSDRUDE\n1 KG\n10F1\n4915121794202\nSHP#:1447W8TV3B8\nNADBRZEZNA39\nSHP WT: 0.5 KG\nLAUF\nDATE:20AUG2026\npo\nANY\nDWT:36,28,2\nSHIP TO:\nWAREHOUSE KALDIS\n8519233866500\nWAREHOUSE KALDIS\nD C0 D0K 14\n88362BRWINOW\nPOLAND\nOrliczaalferrata\nUPSSTANDARD\nTRACKING #:5Z7273X6 015521 0490\nBILLING: P/P TPSG012V4 GB\nRS\nDESC:Return shipment\nRETURNSERVICE-PAYMENTGUARANTEED\n米\nReferenceNo.1:Return1900847336\nReferenceNo.2:ReturnVTW189053736\nTM\nXOL26.05.01\nNV4534.0A08/2026*",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "ups-label-embedded",
+            "confidence": 0.95,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "UPS_LABEL — czwart_anon/OneClickPrint_VTW189053736_anon.pdf p3 (text layer stripped)",
+      "rationale": "page:ups-carrier-sheet",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189053736_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189053736_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 231.07,
+            "pageHeightMm": 318.21,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 137,
+            "inkBox": {
+              "xMm": 10.41,
+              "yMm": 10.41,
+              "widthMm": 99.06,
+              "heightMm": 169.93,
+              "aspect": 1.715,
+              "coverage": 0.058
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "10.4,10.4,99.1,169.9",
+                "rect": {
+                  "xMm": 10.41,
+                  "yMm": 10.41,
+                  "widthMm": 99.06,
+                  "heightMm": 169.93
+                },
+                "text": "KLAUSDRUDE\n1 KG\n10F1\n4915121794202\nSHP#:1447W8TV3B8\nNADBRZEZNA39\nSHP WT: 0.5 KG\nLAUF\nDATE:20AUG2026\npo\nANY\nDWT:36,28,2\nSHIP TO:\nWAREHOUSE KALDIS\n8519233866500\nWAREHOUSE KALDIS\nD C0 D0K 14\n88362BRWINOW\nPOLAND\nOrliczaalferrata\nUPSSTANDARD\nTRACKING #:5Z7273X6 015521 0490\nBILLING: P/P TPSG012V4 GB\nRS\nDESC:Return shipment\nRETURNSERVICE-PAYMENTGUARANTEED\n米\nReferenceNo.1:Return1900847336\nReferenceNo.2:ReturnVTW189053736\nTM\nXOL26.05.01\nNV4534.0A08/2026*",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "ups-label-embedded",
+            "confidence": 0.95,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "UPS_LABEL — czwart_anon/OneClickPrint_VTW189065262_anon.pdf p2",
+      "rationale": "page:ups-carrier-sheet",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189065262_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189065262_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 231.07,
+            "pageHeightMm": 318.21,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "KALDIS\r\n8519233866500\r\nKALDIS\r\n88362BRWINOW\r\n4F 905 2E4 51 3054 9828\r\nZ964Z4",
+            "textCharCount": 76,
+            "inkBox": {
+              "xMm": 10.41,
+              "yMm": 10.41,
+              "widthMm": 99.06,
+              "heightMm": 169.93,
+              "aspect": 1.715,
+              "coverage": 0.0587
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "10.4,10.4,99.1,169.9",
+                "rect": {
+                  "xMm": 10.41,
+                  "yMm": 10.41,
+                  "widthMm": 99.06,
+                  "heightMm": 169.93
+                },
+                "text": "ENRIQUEGONZALO\n1 KG\n10F1\n34618875497\nENRIQUEGONZALO\nSHP#:1447W8VKYX3\nGARONEBIDEA1IZQ\nSHP WT: 0.5KG\n48180LOIU\nDATE:20AUG 2026\nSPAIN\nDWT:36,28,2\nSHIP TO:\nWAREHOUSE KALDIS\n8519233866500\nWAREHOUSE KALDIS\nD C0 D0K 1 4\n88362BRWINOW\nPOLAND\nPOL 036 9-05\nUPSSTANDARD\nTRACKING #: 4F 905 2E4513054 9828\nBILLING:P/PTPSG964ZW4GB\nRS\nDESC:Return shipment\nRETURNSERVICE-PAYMENTGUARANTEED\n米\nReferenceNo.1:Return1Z1447W8DK94375578\nReferenceNo.2:ReturnVTW189065262\nTM\nXOL26.05.01\nNV4534.0A08/2026*",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "ups-label-embedded",
+            "confidence": 0.95,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "UPS_LABEL — czwart_anon/OneClickPrint_VTW189065262_anon.pdf p2 (text layer stripped)",
+      "rationale": "page:ups-carrier-sheet",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "czwart_anon/OneClickPrint_VTW189065262_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "czwart_anon/OneClickPrint_VTW189065262_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 231.07,
+            "pageHeightMm": 318.21,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 76,
+            "inkBox": {
+              "xMm": 10.41,
+              "yMm": 10.41,
+              "widthMm": 99.06,
+              "heightMm": 169.93,
+              "aspect": 1.715,
+              "coverage": 0.0587
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "10.4,10.4,99.1,169.9",
+                "rect": {
+                  "xMm": 10.41,
+                  "yMm": 10.41,
+                  "widthMm": 99.06,
+                  "heightMm": 169.93
+                },
+                "text": "ENRIQUEGONZALO\n1 KG\n10F1\n34618875497\nENRIQUEGONZALO\nSHP#:1447W8VKYX3\nGARONEBIDEA1IZQ\nSHP WT: 0.5KG\n48180LOIU\nDATE:20AUG 2026\nSPAIN\nDWT:36,28,2\nSHIP TO:\nWAREHOUSE KALDIS\n8519233866500\nWAREHOUSE KALDIS\nD C0 D0K 1 4\n88362BRWINOW\nPOLAND\nPOL 036 9-05\nUPSSTANDARD\nTRACKING #: 4F 905 2E4513054 9828\nBILLING:P/PTPSG964ZW4GB\nRS\nDESC:Return shipment\nRETURNSERVICE-PAYMENTGUARANTEED\n米\nReferenceNo.1:Return1Z1447W8DK94375578\nReferenceNo.2:ReturnVTW189065262\nTM\nXOL26.05.01\nNV4534.0A08/2026*",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "ups-label-embedded",
+            "confidence": 0.95,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "UPS_LABEL — wtorek_anon/OneClickPrint_VTF188979818_anon.pdf p3",
+      "rationale": "page:ups-carrier-sheet",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "wtorek_anon/OneClickPrint_VTF188979818_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "wtorek_anon/OneClickPrint_VTF188979818_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 231.07,
+            "pageHeightMm": 318.21,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": "anna\r\nkaldis distribution\r\nSLOVAKIA\r\nKALDIS\r\n6826066718902\r\nKALDIS\r\n58601BRWINOW\r\n“po\r\n0L 058 7K0 62 2606 7320\r\nFL68I0",
+            "textCharCount": 118,
+            "inkBox": {
+              "xMm": 10.41,
+              "yMm": 10.41,
+              "widthMm": 99.06,
+              "heightMm": 169.93,
+              "aspect": 1.715,
+              "coverage": 0.0634
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "10.4,10.4,99.1,169.9",
+                "rect": {
+                  "xMm": 10.41,
+                  "yMm": 10.41,
+                  "widthMm": 99.06,
+                  "heightMm": 169.93
+                },
+                "text": "MIRIASCHMALLENBACH\n1 KG\n10F1\n4901785543003\n.ENBACH\nSHP#:1447W8VMFKS\nanna\nSHP WT: 0.5 KG\nkaldis distribution\nDATE:18AUG2026\nSLOVAKIA\nDWT:36,28,2\nSHIP TO:\nWAREHOUSE KALDIS\n6826066718902\nWAREHOUSE KALDIS\nD C0 D0K 14\n58601BRWINOW\nPOLAND\nPOL 036 9-05\nDARD\n7K0 62 26067320\n0V4GB\nRS\nnt\nYMENTGUARANTEED\n米\nReferenceNo.1:Return1Z1447W8DK93688045\nReferenceNo.2:ReturnVTF188979818\nTM\nXOL26.05.01\nNV4534.0A08/2026*",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "ups-label-embedded",
+            "confidence": 0.95,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "UPS_LABEL — wtorek_anon/OneClickPrint_VTF188979818_anon.pdf p3 (text layer stripped)",
+      "rationale": "page:ups-carrier-sheet",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "wtorek_anon/OneClickPrint_VTF188979818_anon.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "doc": "wtorek_anon/OneClickPrint_VTF188979818_anon.pdf",
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 231.07,
+            "pageHeightMm": 318.21,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "textCharCount": 118,
+            "inkBox": {
+              "xMm": 10.41,
+              "yMm": 10.41,
+              "widthMm": 99.06,
+              "heightMm": 169.93,
+              "aspect": 1.715,
+              "coverage": 0.0634
+            },
+            "barcodes": [],
+            "barcodeDpi": null,
+            "ocrRegions": [
+              {
+                "key": "10.4,10.4,99.1,169.9",
+                "rect": {
+                  "xMm": 10.41,
+                  "yMm": 10.41,
+                  "widthMm": 99.06,
+                  "heightMm": 169.93
+                },
+                "text": "MIRIASCHMALLENBACH\n1 KG\n10F1\n4901785543003\n.ENBACH\nSHP#:1447W8VMFKS\nanna\nSHP WT: 0.5 KG\nkaldis distribution\nDATE:18AUG2026\nSLOVAKIA\nDWT:36,28,2\nSHIP TO:\nWAREHOUSE KALDIS\n6826066718902\nWAREHOUSE KALDIS\nD C0 D0K 14\n58601BRWINOW\nPOLAND\nPOL 036 9-05\nDARD\n7K0 62 26067320\n0V4GB\nRS\nnt\nYMENTGUARANTEED\n米\nReferenceNo.1:Return1Z1447W8DK93688045\nReferenceNo.2:ReturnVTF188979818\nTM\nXOL26.05.01\nNV4534.0A08/2026*",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "ups-label-embedded",
+            "confidence": 0.95,
+            "hold": false,
+            "fallbackReason": null,
+            "carrier": null,
+            "ocrRectsUsed": []
+          }
+        ]
+      }
+    }
+  ]
+}

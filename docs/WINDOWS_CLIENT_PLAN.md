@@ -1,7 +1,10 @@
 # Windows Client + Routing Engine — Understanding & Delivery Plan
 
-Status: `DRAFT — awaiting review`
-Last updated: 2026-09-04
+Status: `APPROVED — in delivery`
+Last updated: 2026-09-05
+
+**Progress:** M1 blocked on one elevated step (section 5.0). M2 core complete — both engines,
+golden corpus green in both text-layer modes, conformance suite green. See section 10.
 
 This document is the proposal for the next phase of `printo`: a Windows agent that replaces
 Print&Share on the workstation, plus the server-side work needed to make routing genuinely
@@ -15,6 +18,10 @@ Analysed the full corpus in `C:\Users\olek\Documents\code\si\printo-materials`:
 **258 PDFs / 1266 pages** across `wtorek_anon` (124), `czwart_anon` (82), `sroda_anon` (52).
 
 ### 1.1 Page-type census
+
+> Superseded in part by **section 1.5**, which corrects this table from the full feature
+> extraction: 12 of the 435 "FedEx" pages are a second DHL template variant, making the true
+> split 423 FedEx / 145 DHL labels / 145 DHL courier sheets.
 
 | Pages | Page type | Page size | Text layer | Route |
 |---|---|---|---|---|
@@ -75,6 +82,46 @@ The FedEx and UPS labels in the anonymised set carry a text layer that the anony
 corpus twice: as-is, and in a **`--strip-text-layer` mode** that forces the barcode + OCR
 path. A rule set that only passes with the synthetic text layer is considered failing.
 
+### 1.5 Corrections from the M2 feature extraction
+
+The census in 1.1 was produced by a text-keyword pass. Extracting the full feature set
+(`tools/corpus/extract_features.py` → `tests/corpus/features.jsonl.gz`) corrected three
+things. All three are load-bearing, so they are recorded rather than quietly fixed.
+
+**a) The anonymiser destroyed the barcodes.** Only **4 of 1266 pages** carry a barcode that
+`zxing-cpp` can decode, at any resolution up to 400 dpi (3 PDF417, 1 UPC-E). The rest were
+replaced with same-sized noise. Consequences:
+
+- The two barcode-keyed rules sketched in 6.2 (`^JD\d{18,20}$`, `minCount: 2`) **cannot be
+  validated against this corpus**. Barcode predicates are implemented in both engines and
+  covered by hand-written conformance fixtures, but their real-world behaviour is unproven.
+- To close that gap we need either a handful of **non-anonymised** production PDFs, or an
+  anonymiser change that re-encodes each barcode with fake-but-valid data of the same
+  symbology. The second is the better fix and is a small change to
+  `printo-materials/anonymize_invoices.py`. **Open with the customer.**
+
+**b) 12 A4-landscape pages were mis-attributed to FedEx.** They are a second DHL template
+variant — 6 parcel labels (ink 96.8x190.2 mm, coverage 6.5%) and 6 courier sheets
+(96.8x192.5 mm, coverage 2.9%). The corrected totals are **423 FedEx labels, 145 DHL labels,
+145 DHL courier sheets**.
+
+**c) OCR is on the critical path, not an optimisation.** On that variant the anonymiser
+flattened the static template chrome into an image: `*WAYBILL DOC*` and *"Not to be attached
+to package"* are plainly visible on the page but **absent from the text layer**, which
+contains only the anonymised field values. Geometry cannot separate those 12 pages
+(the label and the sheet differ by 2.3 mm of ink height), so the only signal left is OCR.
+
+This is why the shipped rule set ends with an OCR gate rather than treating OCR as a
+last-resort nicety. Ink coverage *does* separate the two variants (2.9% vs 6.5%) and was
+considered as a geometry-only discriminator; it was rejected because it is a property of how
+much data a particular shipment happens to print, not of what the page *is* — exactly the
+kind of correlation that holds on a sample and fails in production.
+
+**Measured OCR cost.** With the rule order in `packages/routing-engine/src/profiles.ts`, the
+corpus needs **12 OCR calls in normal mode** (the variant pages) and 218 with the text layer
+stripped — against 736 pages that are label-shaped enough to be candidates. That ratio is the
+whole point of the short-circuiting `all`/`any` described in 6.1.
+
 ---
 
 ## 2. Where the current system stands
@@ -92,8 +139,12 @@ networked, invisible to the server.
 Two concrete debts the corpus exposes in the existing engine:
 
 - `apps/worker/src/classify/heuristic-classifier.ts` matches `/\bgls\b/i`, and every DHL label
-  in the corpus contains the literal string `*GLS certified label*` — so **278 pages are
-  mis-attributed to GLS**. Keyword-soup scoring is not good enough.
+  in the corpus contains the literal string `*GLS certified label*`. **Measured:** 278 pages
+  carry the footer but only **4** were actually mis-attributed, because DHL is tested first
+  and its patterns match the other 274 anyway. The 4 are DHL *DOMESTIC EXPRESS* labels, which
+  matched none of the old DHL patterns — `\bdhl\b` does not match `MyDHL`. So the defect is
+  real but was latent, kept in check by rule ordering rather than by anything principled;
+  keyword-soup scoring is still not good enough. **Fixed** — see section 10.1.
 - There is no crop/transform concept at all — a page is routed whole.
 
 ---
@@ -180,6 +231,31 @@ hand us `application/pdf`, and will the Print-to-PDF driver bind to a non-`PORTP
 Milestone M1 answers both on real hardware before any production code depends on the answer.
 If Tier 1 returns PWG Raster we still ship it — the engine consumes rasters natively — but we
 lose the text layer and lean harder on barcode + OCR.
+
+### 5.0 M1 spike status — **INCOMPLETE, blocked on one elevated step**
+
+Both spikes are written, build clean and self-test. Neither has yet been bound to a real
+Windows print queue, so **the two questions above remain unanswered** and no production code
+may assume either answer.
+
+| Component | State |
+|---|---|
+| `clients/windows/spike/Printo.Spike.Ipp` | Minimal IPP/1.1 printer on `127.0.0.1:39631`. Implements Get-Printer-Attributes, Validate-Job, Print-Job, Create-Job, Send-Document, Get-Job(s)-Attributes, Cancel-Job, Close-Job, Identify-Printer, with an IPP Everywhere (PWG 5100.14) attribute table including `media-col-database` and a `printer-device-id`. Advertises PDF-only, raster-only or both (`--formats`), so the format question can be answered by experiment rather than by argument. Logs every operation and attribute to JSONL and sniffs the delivered PDL by magic bytes. Verified end to end against a Python IPP client: attribute encoding, nested collections, job flow and PDF capture all correct. |
+| `clients/windows/spike/Printo.Spike.PipePort` | Hosts a named pipe with an ACL granting LocalSystem (the spooler's identity), for use as a Local Port target. Builds and runs. |
+| `clients/windows/spike/scripts/Invoke-SpikePrinters.ps1` | Creates and removes exactly three `Printo-Spike-*` queues and their ports; idempotent, and `-Action Remove` restores the machine. |
+
+**What is blocking.** `Add-Printer` and `Add-PrinterPort` require elevation; the attempt from a
+standard-user session returns `Access was denied to the specified resource` **before any IPP
+traffic reaches the endpoint**, so nothing about the format question can be inferred from it.
+Running the script elevated is the whole of the remaining work:
+
+```powershell
+Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass',
+  '-File','clients\windows\spike\scripts\Invoke-SpikePrinters.ps1','-Action','Add'
+```
+
+Then start `printo-spike-ipp.exe`, print to the `Printo-Spike-IPP` queue from Chrome, and read
+`capture/ipp-session.jsonl`. Record the answers here and remove the queues with `-Action Remove`.
 
 ### 5.1 Hot-folder mode (robustness rules)
 
@@ -562,6 +638,21 @@ Nothing ships on "it looked right".
 | **M6** | Admin UI | Rule editor, agents, review queue, fallback analytics, accounting views. | A new carrier template can be created end to end from a sample PDF, no code changes. A logged fallback converts to a rule in one click. |
 | **M7** | Packaging + delivery | WiX MSI signed by ADCS cert, GPO deployment, ADMX templates, AV exclusion doc, unattended enrollment. Server: production Dockerfiles, compose, Traefik file-provider config, `.env` policy. | Clean GPO install + upgrade + uninstall on Win10 22H2 and Win11, no residue. `docker compose up -d` brings the stack up behind Traefik from a clean checkout. |
 | **M8** | Hardening | Full test matrix, docs, migration guide from Print&Share, CI green. | Definition of done in section 12 met. |
+
+### 10.1 Status
+
+| # | State | Evidence |
+|---|---|---|
+| **M1** | **Blocked** | Both spikes build and self-test; binding a real queue needs one elevated `Add-Printer`. Neither capture question is answered yet — section 5.0. |
+| **M2** | **Core complete** | 1266/1266 corpus pages routed correctly in **both** text-layer modes; 67 conformance fixtures pass on the TypeScript **and** C# engines; 0 pages attributed to GLS. Remaining: template/picture matching is specified and wired but has no extractor yet, and barcode predicates are unvalidated against real barcodes (section 1.5a). |
+| **M3**-**M8** | Not started | — |
+
+The GLS defect in M2's exit criteria turned out to be smaller and differently caused than the
+plan assumed: 278 pages carry the `*GLS certified label*` footer, but only **4** were actually
+mis-attributed, because DHL is tested first and wins on the other 274. The 4 are DHL
+*DOMESTIC EXPRESS* labels, which matched none of the old DHL patterns (`dhl` does not
+match `MyDHL`). Both the worker heuristic and the new engine now register the footer as the
+DHL artifact it is and guard the GLS keyword against it.
 
 Each milestone is committed and pushed to `github.com/awsosi/printo` as it completes.
 

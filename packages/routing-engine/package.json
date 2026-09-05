@@ -9,7 +9,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "profiles:export": "tsx scripts/export-profiles.ts"
+    "profiles:export": "tsx scripts/export-profiles.ts",
+    "fixtures:corpus": "tsx scripts/export-corpus-fixtures.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/spike/">
+    <Project Path="spike/Printo.Spike.Ipp/Printo.Spike.Ipp.csproj" />
+    <Project Path="spike/Printo.Spike.PipePort/Printo.Spike.PipePort.csproj" />
+  </Folder>
+  <Project Path="Printo.Agent.Core/Printo.Agent.Core.csproj" />
+  <Project Path="Printo.Agent.Tests/Printo.Agent.Tests.csproj" />
+</Solution>
