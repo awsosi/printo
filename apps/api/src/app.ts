@@ -4,6 +4,8 @@ import { AuthService } from './auth/service.js';
 import { discoverDirectorySnapshot } from './ad/directory-sync-adapter.js';
 import type { AuthStore } from './store/auth-store.js';
 import { requireAuth, requireRole } from './middleware/auth.js';
+import { createAgentRouter } from './agents/router.js';
+import type { AgentStore } from './agents/store.js';
 import { hashPassword } from './auth/password.js';
 import type {
   AdDiscoverySnapshot,
@@ -182,11 +184,17 @@ function parseRoles(input: unknown): Role[] | null {
   return [ROLES.USER];
 }
 
-export function createApiApp(store: AuthStore) {
+export function createApiApp(store: AuthStore, agentStore?: AgentStore) {
   const app = express();
   const authService = new AuthService(store);
 
   app.use(express.json({ limit: '15mb' }));
+
+  // The Windows agent fleet. Optional so the existing tests and the SMB-only deployments that
+  // never enrol an agent keep working unchanged.
+  if (agentStore) {
+    app.use(createAgentRouter(agentStore));
+  }
 
   app.get('/health', (_req, res) => {
     res.json({ service: 'api', status: 'ok' });
