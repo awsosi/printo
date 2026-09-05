@@ -110,7 +110,12 @@ def decode_barcodes(page, dpi: float) -> list[dict]:
         ys = [position.top_left.y, position.top_right.y,
               position.bottom_left.y, position.bottom_right.y]
         barcodes.append({
-            "symbology": str(result.format).replace("BarcodeFormat.", ""),
+            # `.name` is the canonical zxing-cpp enum name (`Code128`, `UPCE`, `DataMatrix`).
+            # `str()` would give the display form with spaces and hyphens ("Code 128",
+            # "UPC-E"), which the .NET binding also produces but which no rule is written
+            # against - a `symbology: ["Code128"]` rule has to mean the same thing in both
+            # engines. Printo.Agent.Render/BarcodeDecoder.cs maps the .NET side to match.
+            "symbology": result.format.name,
             "value": result.text,
             "xMm": round(min(xs) * scale, 2),
             "yMm": round(min(ys) * scale, 2),

@@ -171,6 +171,79 @@ public sealed class FeatureParityTests
             string.Join("\n", routingProblems.Take(15)));
     }
 
+    [Fact]
+    public void AgentBarcodeDecodingMatchesTheCalibratedExtractor()
+    {
+        var featuresPath = RepositoryPaths.CorpusFeatures;
+        var pdfRoot = RepositoryPaths.CorpusPdfs;
+        if (featuresPath is null || pdfRoot is null)
+        {
+            return;
+        }
+
+        // Only a handful of corpus pages carry a decodable barcode - the anonymiser replaced
+        // the rest with noise - so every one of them is checked rather than a sample.
+        var withBarcodes = LoadCorpusFeatures(featuresPath)
+            .Where(page => page.Barcodes.Count > 0)
+            .ToList();
+
+        if (withBarcodes.Count == 0)
+        {
+            return;
+        }
+
+        var decoder = new ZxingBarcodeDecoder();
+        var problems = new List<string>();
+
+        foreach (var expected in withBarcodes)
+        {
+            var path = Path.Combine(pdfRoot, expected.Doc.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(path))
+            {
+                continue;
+            }
+
+            using var document = PdfDocument.Load(File.ReadAllBytes(path));
+            using var page = document.OpenPage(expected.PageNumber - 1);
+            var actual = decoder.Decode(page);
+
+            var where = $"{expected.Doc} p{expected.PageNumber}";
+
+            foreach (var want in expected.Barcodes)
+            {
+                var match = actual.FirstOrDefault(entry =>
+                    entry.Symbology == want.Symbology && entry.Value == want.Value);
+                if (match is null)
+                {
+                    problems.Add(
+                        $"{where}: expected {want.Symbology} '{Shorten(want.Value)}', agent found " +
+                        (actual.Count == 0
+                            ? "nothing"
+                            : string.Join(", ", actual.Select(entry => $"{entry.Symbology} '{Shorten(entry.Value)}'"))));
+                    continue;
+                }
+
+                // Position is compared loosely: the two decoders agree on the symbol, and the
+                // quiet-zone boundary they report can differ by a module width.
+                if (Math.Abs(match.XMm - want.XMm) > 3 || Math.Abs(match.YMm - want.YMm) > 3)
+                {
+                    problems.Add(
+                        $"{where}: {want.Symbology} at ({want.XMm:F1},{want.YMm:F1}) vs " +
+                        $"({match.XMm:F1},{match.YMm:F1})");
+                }
+            }
+        }
+
+        Assert.True(
+            problems.Count == 0,
+            $"{problems.Count} barcode mismatches over {withBarcodes.Count} pages:" +
+            Environment.NewLine +
+            string.Join(Environment.NewLine, problems.Take(10)));
+    }
+
+    private static string Shorten(string value) =>
+        value.Length <= 24 ? value : value[..24] + "...";
+
     private static void CompareGeometry(
         string document, CorpusPage expected, PageFeatures actual, List<string> problems)
     {

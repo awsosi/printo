@@ -20,6 +20,12 @@
   -->
   <ItemGroup>
     <PackageReference Include="bblanchon.PDFium.Win32" Version="154.0.8035" />
+
+    <!--
+      The .NET binding to the same zxing-cpp the corpus extractor uses through its Python
+      bindings, so symbology names and decoded values match between workstation and server.
+    -->
+    <PackageReference Include="ZXingCpp" Version="0.5.3" />
   </ItemGroup>
 
 </Project>
