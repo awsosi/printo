@@ -257,12 +257,8 @@ public sealed class JobProcessorTests : IDisposable
 
         var job = Enqueue(pdf);
 
-        var processor = new JobProcessor(spool, Catalog())
-        {
-            UserSelectedThermalPages = new HashSet<int> { 2 },
-        };
-
-        var result = processor.Process(job);
+        var processor = new JobProcessor(spool, Catalog());
+        var result = processor.Process(job, new HashSet<int> { 2 });
 
         Assert.Equal(JobOutcome.Printed, result.Outcome);
         Assert.Equal([2], thermal.Pages.Select(page => page.PageNumber));
@@ -320,6 +316,37 @@ public sealed class JobProcessorTests : IDisposable
 
         Assert.Equal(JobOutcome.Failed, result.Outcome);
         Assert.Contains("unreadable", result.Error!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CapsTheComposeResolutionSoAnA4PageDoesNotCostAHundredMegabytes()
+    {
+        var pdf = TestPdf.Build(TestPdf.A4Document());
+        var job = Enqueue(pdf);
+
+        // The recording A4 device reports a laser's native 600 dpi. Composing the whole sheet
+        // at that resolution is 4960x7016 pixels - about 139 MB for one page - and buys nothing
+        // visible on an invoice.
+        Assert.Equal(600, a4.Capabilities.DpiX);
+
+        new JobProcessor(spool, Catalog()).Process(job);
+
+        var printed = Assert.Single(a4.Pages);
+        Assert.Equal(300, printed.Composed.Dpi);
+        Assert.Equal((int)Math.Round(210 * 300 / 25.4), printed.Composed.Raster.Width);
+    }
+
+    [Fact]
+    public void ComposesThermalPagesAtTheirNativeResolution()
+    {
+        var pdf = TestPdf.Build(TestPdf.FedExStyleLabelOnA4Landscape());
+        var job = Enqueue(pdf);
+
+        new JobProcessor(spool, Catalog()).Process(job);
+
+        // A 203 dpi head is already below the cap, so barcode bars keep their 1:1 dot mapping.
+        var printed = Assert.Single(thermal.Pages);
+        Assert.Equal(203, printed.Composed.Dpi);
     }
 
     [Fact]

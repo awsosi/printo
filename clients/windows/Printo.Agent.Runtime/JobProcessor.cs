@@ -100,18 +100,15 @@ public sealed class JobProcessor
     /// <summary>Routing profiles to match against, in order. Defaults to the built-in set.</summary>
     public IReadOnlyList<RoutingProfileRules> Profiles { get; init; } = BuiltinProfiles.All;
 
-    /// <summary>
-    /// Pages the user has already chosen as labels, when re-running a job after the picker.
-    /// </summary>
-    /// <remarks>
-    /// An explicit override rather than a rewritten rule set: the user's answer applies to this
-    /// document only, and the rules stay exactly what the admin published. The choice is
-    /// reported to the server as training data for a proposed rule.
-    /// </remarks>
-    public IReadOnlySet<int>? UserSelectedThermalPages { get; init; }
-
     /// <summary>Processes a claimed job.</summary>
-    public JobProcessingResult Process(SpoolJob job)
+    /// <param name="job">The claimed job.</param>
+    /// <param name="userSelectedThermalPages">
+    /// Pages the user chose as labels, when re-running after the picker. An explicit override
+    /// rather than a rewritten rule set: the answer applies to this document only, the rules
+    /// stay exactly what the admin published, and the choice is reported to the server as
+    /// training data for a proposed rule.
+    /// </param>
+    public JobProcessingResult Process(SpoolJob job, IReadOnlySet<int>? userSelectedThermalPages = null)
     {
         ArgumentNullException.ThrowIfNull(job);
 
@@ -145,6 +142,21 @@ public sealed class JobProcessor
             return Fail(job, "the rule set asked for OCR twice; the second pass must be decidable");
         }
 
+        if (evaluation is null && userSelectedThermalPages is not null)
+        {
+            // The engine could not decide, but a person already has. Their answer is the whole
+            // decision: unselected pages take the profile default and selected ones become
+            // labels. Without this the OCR check short-circuits ahead of the override and the
+            // picker's answer is silently discarded - the job comes straight back to the user.
+            var chosen = ApplyUserSelection(DefaultDecision(profile, features), userSelectedThermalPages);
+            spool.Log(
+                job.Id,
+                "info",
+                "user-selection",
+                $"thermal pages: {string.Join(",", userSelectedThermalPages.OrderBy(page => page))} (engine undecided)");
+            return Print(job, document, chosen);
+        }
+
         if (evaluation is null)
         {
             // A rule needed OCR and this machine cannot do it. Asking a person is the right
@@ -173,14 +185,14 @@ public sealed class JobProcessor
         var decision = evaluation;
 
         // The user's answer from the picker replaces the engine's page-level verdicts.
-        if (UserSelectedThermalPages is not null)
+        if (userSelectedThermalPages is not null)
         {
-            decision = ApplyUserSelection(decision, UserSelectedThermalPages);
+            decision = ApplyUserSelection(decision, userSelectedThermalPages);
             spool.Log(
                 job.Id,
                 "info",
                 "user-selection",
-                $"thermal pages: {string.Join(",", UserSelectedThermalPages.OrderBy(page => page))}");
+                $"thermal pages: {string.Join(",", userSelectedThermalPages.OrderBy(page => page))}");
         }
         else if (BuildPrompt(decision, features) is { } prompt)
         {
@@ -283,6 +295,49 @@ public sealed class JobProcessor
             TraceJson = JsonSerializer.Serialize(decision, TraceJson),
         };
     }
+
+    /// <summary>
+    /// Every page on the profile's default route, for when the engine reached no verdict.
+    /// </summary>
+    /// <remarks>
+    /// Only used as the base a user's picker answer is applied to. It is never printed on its
+    /// own: a document the engine could not decide is held for a person, and this exists so
+    /// that once they have decided there is something concrete to override.
+    /// </remarks>
+    private static DocumentDecision DefaultDecision(RoutingProfileRules profile, DocumentFeatures features) =>
+        new()
+        {
+            Profile = profile.Profile,
+            Pages = features.Pages.Select(page => new PageDecision
+            {
+                PageNumber = page.PageNumber,
+                Route = profile.Fallback.Route,
+                Copies = 1,
+                Confidence = 0,
+                RuleId = null,
+                RuleName = null,
+                Hold = false,
+                Trace = new PageDecisionTrace
+                {
+                    PageNumber = page.PageNumber,
+                    Geometry = new GeometryTrace
+                    {
+                        PageWidthMm = page.PageWidthMm,
+                        PageHeightMm = page.PageHeightMm,
+                        Orientation = page.Orientation == PageOrientation.Portrait ? "portrait" : "landscape",
+                        InkBox = page.InkBox is null ? null : new RectMm
+                        {
+                            XMm = page.InkBox.XMm,
+                            YMm = page.InkBox.YMm,
+                            WidthMm = page.InkBox.WidthMm,
+                            HeightMm = page.InkBox.HeightMm,
+                        },
+                        InkAspect = page.InkBox?.Aspect,
+                        InkCoverage = page.InkBox?.Coverage,
+                    },
+                },
+            }).ToList(),
+        };
 
     /// <summary>Replaces the engine's routes with the pages the user picked.</summary>
     private static DocumentDecision ApplyUserSelection(DocumentDecision decision, IReadOnlySet<int> thermalPages)
@@ -393,7 +448,7 @@ public sealed class JobProcessor
                         transform,
                         device.Capabilities.PhysicalMedia,
                         area,
-                        profile.Dpi ?? device.Capabilities.DpiX,
+                        Math.Min(profile.Dpi ?? device.Capabilities.DpiX, profile.MaxComposeDpi),
                         region);
 
                     device.PrintPage(new PrintedPage

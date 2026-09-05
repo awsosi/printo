@@ -57,6 +57,22 @@ public sealed class PrinterProfile
     /// <summary>Device resolution to render at. Null means "ask the driver".</summary>
     public double? Dpi { get; init; }
 
+    /// <summary>
+    /// Upper bound on the resolution a page is composed at.
+    /// </summary>
+    /// <remarks>
+    /// Composition builds the whole sheet as a 32bpp raster, so cost grows with the square of
+    /// the resolution: an A4 page at a laser's native 600 dpi is 4960x7016 pixels — about
+    /// 139 MB — and takes seconds, for no visible gain on invoices and shipping labels. At
+    /// 300 dpi the same page is 35 MB and indistinguishable in print, and `StretchDIBits`
+    /// interpolates up to the device's real resolution.
+    ///
+    /// Thermal printers are unaffected: 203 and 300 dpi heads already sit at or below the cap,
+    /// so barcode bars keep their 1:1 dot mapping. Raise it per printer if a site genuinely
+    /// needs more.
+    /// </remarks>
+    public double MaxComposeDpi { get; init; } = 300;
+
     /// <summary>Calibration offset applied to every page, in millimetres.</summary>
     public double OffsetXMm { get; init; }
 
