@@ -55,6 +55,31 @@ Deliver a docker-compose, TypeScript + PostgreSQL E2E application for PDF intake
 - [x] Compose smoke script hardened (isolated project name, custom high ports, retry-safe API calls)
 - [x] README + architecture + subagent docs synchronized
 
+### Phase 6 — Windows agent + shared routing engine (in progress)
+
+Tracked in `docs/WINDOWS_CLIENT_PLAN.md`; summarised here so this file stays the single view
+of delivery state.
+
+- [x] Shared routing rule schema, two implementations (`packages/routing-engine` in TypeScript,
+      `clients/windows/Printo.Agent.Core` in C#), held together by shared conformance fixtures
+      in `tests/conformance/` that both engines execute
+- [x] Corpus feature extraction and golden corpus: 1266 pages routed correctly in both
+      text-layer modes (`tools/corpus/`, `tests/corpus/`)
+- [x] Carrier resolution reworked; the `*GLS certified label*` false positive is fixed in the
+      worker heuristic and cannot recur in the new engine
+- [x] Agent-side feature extraction (PDFium geometry, ink box, text, zxing-cpp barcodes, inbox
+      Windows OCR) with a parity test against the calibrated extractor
+- [x] Print output: region crop, transform maths, whole-sheet composition against the printable
+      area, GDI device, raw ZPL, printer profiles, discovery, render-diff suite
+- [ ] Capture spike (M1) — blocked on one elevated `Add-Printer`
+- [ ] Agent runtime: service, tray, spool, hot folders, fallback picker (M4)
+- [ ] Server integration: agent APIs, bundle sync, decision modes, review queue (M5)
+- [ ] Admin UI: rule editor, agents, fallback analytics (M6)
+- [ ] Packaging, signing, GPO deployment (M7); hardening (M8)
+
+Hardware verification on real A4 and thermal printers is postponed to a joint session with
+the customer and is **not** claimed by any test.
+
 ## Definition of Done
 - [x] Docker-compose stack runs locally
 - [x] Admin UI can configure users, SMB sources, masks, printers, user printer assignments, OCR, routing

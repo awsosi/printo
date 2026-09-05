@@ -153,6 +153,51 @@ FedEx label); `apps/worker/tests/e2e-mixed-routing.test.ts` runs it through the 
 Worker metrics: `GET :5000/metrics` (Prometheus text) — job outcomes, page-class distribution,
 classification confidence histogram, routing decisions, dispatch success/failure.
 
+## Routing engine and Windows agent
+
+The routing rules live in one place and are executed by two implementations, so a workstation
+and the server route a page identically.
+
+- `packages/routing-engine` — TypeScript: rule schema, feature model, evaluation engine,
+  placement maths. Built-in profiles are exported to `profiles/*.json`.
+- `clients/windows/` — the Windows agent (.NET 10):
+  - `Printo.Agent.Core` — the C# port of the engine; embeds `profiles/*.json`
+  - `Printo.Agent.Render` — PDFium rendering, region crop, rasters, PNG, feature extraction,
+    zxing-cpp barcodes
+  - `Printo.Agent.Printing` — GDI output, raw ZPL, printer profiles and discovery
+  - `Printo.Agent.Ocr` — the inbox Windows recogniser
+  - `Printo.Agent.Tests` — unit, conformance, render-diff and corpus-parity tests
+- `tests/conformance/` — shared fixtures both engines execute; a divergence fails the build
+- `tests/corpus/` — extracted features and reviewed ground truth for the 1266-page sample set
+- `tests/render/` — reference images for the render-diff suite
+
+```bash
+# TypeScript engine, including the golden corpus
+npx vitest run --root packages/routing-engine
+
+# Windows agent
+dotnet test clients/windows/Printo.Agent.Tests
+
+# after editing packages/routing-engine/src/profiles.ts
+npx tsx packages/routing-engine/scripts/export-profiles.ts
+
+# accept new render-diff output, after reviewing the images
+PRINTO_UPDATE_REFERENCES=1 dotnet test clients/windows/Printo.Agent.Tests
+```
+
+The sample PDFs are customer data and live outside the repository; corpus tests skip when they
+are absent. Point `PRINTO_CORPUS_DIR` at them or keep them beside the checkout.
+
+Regenerate the extracted corpus (needs `pypdfium2`, `numpy`, `zxing-cpp`, `rapidocr-onnxruntime`):
+
+```bash
+python tools/corpus/extract_features.py <corpus-dir> --out tests/corpus/features.jsonl.gz
+python tools/corpus/label_corpus.py tests/corpus/features.jsonl.gz --out tests/corpus/expected.json
+```
+
+Printing on physical A4 and thermal hardware has not been verified yet; that pass is scheduled
+with the customer and no test claims it.
+
 ## Smoke test
 
 ```bash

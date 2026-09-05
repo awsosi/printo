@@ -54,7 +54,7 @@ python tools/corpus/analyze_corpus.py "C:\Users\olek\Documents\code\si\printo-ma
 The three findings that drive the whole design — details and measurements in
 `docs/WINDOWS_CLIENT_PLAN.md` section 1:
 
-1. **Only 72 of 159 outgoing labels sit on label-sized pages.** The rest are a 4x6-ish label
+1. **Only 72 of 588 outgoing-label pages sit on label-sized pages.** The rest are a 4x6-ish label
    *region* embedded in an A4-landscape, Letter or custom page. The system must **crop, rotate
    and scale onto the thermal media** — routing a whole page is not enough. Page order varies
    across 25+ shapes, so page index is never a valid routing key.
@@ -115,9 +115,9 @@ defect.
 
 - [x] Corpus analysis and plan — approved (`docs/WINDOWS_CLIENT_PLAN.md`, `tools/corpus/`)
 - [ ] **M1 — Capture spike — code written, BLOCKED on one elevated command (see below)**
-- [x] M2 — Corpus + engine core (core complete; two gaps listed below)
-- [ ] M3 — Print output ← **next**
-- [ ] M4 — Agent runtime + fallback picker
+- [x] M2 — Corpus + engine core (complete; two gaps listed below)
+- [x] M3 — Print output (complete except the hardware pass, postponed by the user)
+- [ ] M4 — Agent runtime + fallback picker ← **next**
 - [ ] M5 — Server integration
 - [ ] M6 — Admin UI
 - [ ] M7 — Packaging + delivery
@@ -166,6 +166,36 @@ Two honest gaps, both recorded in plan section 1.5:
    Needs either a few non-anonymised PDFs or an anonymiser that re-encodes valid barcodes.
 2. **Template/picture matching has no extractor.** The `image` predicate is specified, wired
    and traced, but nothing populates `templateMatches` yet. Needed for Print&Share parity (M6).
+
+### M3 — what landed, and what is deliberately not claimed
+
+`clients/windows/` now has five projects: `Printo.Agent.Core` (routing engine),
+`.Render` (PDFium, rasters, PNG, feature extraction, barcodes), `.Printing` (GDI, raw ZPL,
+profiles, discovery), `.Ocr` (inbox Windows recogniser), `.Tests` (81 tests).
+
+Proven automatically: region cropping by render origin (asserted pixel-identical to the same
+window of a full render), placement against the *printable* area, six render-diff cases with
+checked-in references, ZPL encoding, the media precedence chain, printer discovery, and real
+printable geometry read from an installed driver.
+
+**Not claimed:** that any physical printer marks the stock where those numbers say. That is
+the hardware matrix in plan section 10.2 and needs the joint session — CITIZEN, 4BARCODE and
+ZEBRA at 100x150 and 100x200, plus the A4 lasers, printing each render-diff case, measuring,
+and recording any per-printer offset in its `PrinterProfile`.
+
+### Verification commands
+
+```bash
+npm run lint && npm run typecheck                      # repo-wide, must stay green
+npx vitest run --root packages/routing-engine          # 115 tests incl. golden corpus
+dotnet test clients/windows/Printo.Agent.Tests         # 81 tests incl. corpus parity
+npx tsx packages/routing-engine/scripts/export-profiles.ts        # after editing profiles.ts
+npx tsx packages/routing-engine/scripts/export-corpus-fixtures.ts # after changing the engine
+PRINTO_UPDATE_REFERENCES=1 dotnet test clients/windows/Printo.Agent.Tests  # accept new render output
+```
+
+The corpus tests skip silently when `printo-materials` is absent; point `PRINTO_CORPUS_DIR`
+at it or keep it beside the checkout.
 
 ## 7. Working agreements
 
