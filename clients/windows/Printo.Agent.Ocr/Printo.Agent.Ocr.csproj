@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      A Windows TFM so the WinRT projection is available. Windows' own OCR engine is used
+      rather than a bundled model: it is inbox on every supported build, needs no extra files
+      in the MSI, no AV exclusion for a native runtime, and no per-machine model download on a
+      fleet of 20-30 locked-down workstations.
+    -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <RootNamespace>Printo.Agent.Ocr</RootNamespace>
+    <AssemblyName>Printo.Agent.Ocr</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Printo.Agent.Core\Printo.Agent.Core.csproj" />
+    <ProjectReference Include="..\Printo.Agent.Render\Printo.Agent.Render.csproj" />
+  </ItemGroup>
+
+</Project>

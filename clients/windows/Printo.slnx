@@ -4,6 +4,7 @@
     <Project Path="spike/Printo.Spike.PipePort/Printo.Spike.PipePort.csproj" />
   </Folder>
   <Project Path="Printo.Agent.Core/Printo.Agent.Core.csproj" />
+  <Project Path="Printo.Agent.Ocr/Printo.Agent.Ocr.csproj" />
   <Project Path="Printo.Agent.Printing/Printo.Agent.Printing.csproj" />
   <Project Path="Printo.Agent.Render/Printo.Agent.Render.csproj" />
   <Project Path="Printo.Agent.Tests/Printo.Agent.Tests.csproj" />

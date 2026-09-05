@@ -1,7 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <!--
+      A Windows TFM so the suite can reference Printo.Agent.Ocr, which needs the WinRT
+      projection for the inbox recogniser. The routing engine itself stays on a portable TFM;
+      its cross-platform behaviour is covered by the TypeScript side running the same
+      conformance fixtures.
+    -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <RootNamespace>Printo.Agent.Tests</RootNamespace>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
@@ -17,6 +24,7 @@
     <ProjectReference Include="..\Printo.Agent.Core\Printo.Agent.Core.csproj" />
     <ProjectReference Include="..\Printo.Agent.Render\Printo.Agent.Render.csproj" />
     <ProjectReference Include="..\Printo.Agent.Printing\Printo.Agent.Printing.csproj" />
+    <ProjectReference Include="..\Printo.Agent.Ocr\Printo.Agent.Ocr.csproj" />
   </ItemGroup>
 
 </Project>
