@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Printo.Agent.Core\Printo.Agent.Core.csproj" />
     <ProjectReference Include="..\Printo.Agent.Render\Printo.Agent.Render.csproj" />
+    <ProjectReference Include="..\Printo.Agent.Printing\Printo.Agent.Printing.csproj" />
     <ProjectReference Include="..\Printo.Agent.Runtime\Printo.Agent.Runtime.csproj" />
   </ItemGroup>
 

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <RootNamespace>Printo.Agent.Service</RootNamespace>
+    <AssemblyName>Printo.Agent</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <UserSecretsId>printo-agent</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Printo.Agent.Core\Printo.Agent.Core.csproj" />
+    <ProjectReference Include="..\Printo.Agent.Render\Printo.Agent.Render.csproj" />
+    <ProjectReference Include="..\Printo.Agent.Printing\Printo.Agent.Printing.csproj" />
+    <ProjectReference Include="..\Printo.Agent.Runtime\Printo.Agent.Runtime.csproj" />
+    <ProjectReference Include="..\Printo.Agent.Ocr\Printo.Agent.Ocr.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>
