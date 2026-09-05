@@ -13,6 +13,7 @@
     "test": "npm run --workspaces --if-present test",
     "test:e2e": "npm run smoke:compose",
     "smoke:compose": "bash scripts/compose-smoke.sh",
+    "smoke:prod": "bash scripts/compose-prod-smoke.sh",
     "dev": "npm run --workspaces --if-present dev",
     "migrate": "npm run -w @printo/api migrate"
   },

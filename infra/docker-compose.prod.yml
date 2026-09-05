@@ -1,0 +1,169 @@
+# Printo, production form.
+#
+# Run from the repository root:
+#
+#   cp .env.production.example .env
+#   $EDITOR .env                       # every REPLACE- value must change
+#   docker compose -f infra/docker-compose.prod.yml up -d --build
+#
+# Three differences from `docker-compose.yml`, which is the development stack:
+#
+#   1. **Images are built, not mounted.** No source bind mount, no `npm install` at container
+#      start, no writable application directory.
+#   2. **Nothing but Traefik publishes a port.** The application services are reachable only on
+#      the internal network, so the database and the API cannot be hit directly from the LAN.
+#   3. **Traefik is configured from files, never labels.** Routing is declared in
+#      `infra/traefik/dynamic/`, which means it can be reviewed, diffed and changed without
+#      touching a container definition - and a compromised container cannot rewrite its own
+#      routing by editing its labels.
+
+name: printo
+
+services:
+  traefik:
+    image: traefik:v3.3
+    restart: unless-stopped
+    command:
+      # The static configuration lives in a file too; the flags here only point at it.
+      - --configFile=/etc/traefik/traefik.yml
+    ports:
+      - "${TRAEFIK_HTTP_PORT:-80}:80"
+      - "${TRAEFIK_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      - ./traefik/certs:/etc/traefik/certs:ro
+    networks:
+      - edge
+      - internal
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 15s
+      timeout: 3s
+      retries: 6
+    depends_on:
+      api:
+        condition: service_started
+      web:
+        condition: service_started
+
+  web:
+    build:
+      context: ..
+      target: web
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      - API_BASE_URL=http://api:4000
+      - WORKER_BASE_URL=http://worker:5000
+    networks:
+      - internal
+    depends_on:
+      api:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ..
+      target: api
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgres://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:?set POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379
+      # No defaults on purpose: an API that started with a fallback signing secret would issue
+      # tokens anyone who has read this file can forge.
+      - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET}
+      - JWT_ACCESS_TTL=${JWT_ACCESS_TTL:-15m}
+      - JWT_REFRESH_TTL=${JWT_REFRESH_TTL:-7d}
+      - AUTH_HASH_STRATEGY=${AUTH_HASH_STRATEGY:-auto}
+      - EXTAUTH_BASE_URL=${EXTAUTH_BASE_URL:-}
+      - EXTAUTH_API_KEY=${EXTAUTH_API_KEY:-}
+      - BOOTSTRAP_ADMIN_TOKEN=${BOOTSTRAP_ADMIN_TOKEN:-}
+      - RETENTION_INTERVAL_HOURS=${RETENTION_INTERVAL_HOURS:-24}
+    networks:
+      - internal
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker:
+    build:
+      context: ..
+      target: worker
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgres://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:?set POSTGRES_DB}
+      - WORKER_STORE=postgres
+      - WORKER_SCANNER=${WORKER_SCANNER:-auto}
+      - WORKER_DISPATCH_PROVIDER_MODE=${WORKER_DISPATCH_PROVIDER_MODE:-socket}
+      - WORKER_DISPATCH_TIMEOUT_MS=${WORKER_DISPATCH_TIMEOUT_MS:-5000}
+      - WORKER_POLL_INTERVAL_MS=${WORKER_POLL_INTERVAL_MS:-60000}
+      - WORKER_PRINTER_PROVIDER_OVERRIDES=${WORKER_PRINTER_PROVIDER_OVERRIDES:-}
+      - WORKER_VISION_URL=http://vision:6000
+      - WORKER_CLASSIFIER=${WORKER_CLASSIFIER:-auto}
+    networks:
+      - internal
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      vision:
+        condition: service_started
+
+  vision:
+    build:
+      context: ../services/vision
+      args:
+        BUILD_PROFILE: ${VISION_BUILD_PROFILE:-full}
+    restart: unless-stopped
+    networks:
+      - internal
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - internal
+
+networks:
+  # Only Traefik publishes a port, so nothing on the LAN can reach the API, the worker or the
+  # database directly - every inbound request arrives through a router declared in
+  # `traefik/dynamic/`.
+  #
+  # `internal` is deliberately *not* `internal: true`. Outbound has to work: the worker mounts
+  # SMB shares and opens raw sockets to printers, and the API calls the external auth service.
+  # Cutting outbound would disable the product's actual job while only appearing to harden it.
+  edge:
+  internal:
+
+volumes:
+  pg_data:

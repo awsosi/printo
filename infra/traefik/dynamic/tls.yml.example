@@ -1,0 +1,18 @@
+# The site certificate.
+#
+# Copy to `tls.yml` once `../certs/printo.crt` and `../certs/printo.key` exist, then restart
+# Traefik. The file provider does watch this directory, but its inotify watch does not fire for
+# a file created on a bind mount from a Windows or macOS host.
+#
+# It is a separate, optional file on purpose. A default certificate that names files which are
+# not there does not degrade gracefully - Traefik fails to build the certificate store and then
+# every TLS handshake fails, so the stack looks up but serves nothing. With no such block at
+# all, Traefik generates its own self-signed certificate and the site works, with a browser
+# warning, which is what a clean checkout should do.
+
+tls:
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /etc/traefik/certs/printo.crt
+        keyFile: /etc/traefik/certs/printo.key

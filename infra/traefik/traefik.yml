@@ -1,0 +1,51 @@
+# Traefik static configuration.
+#
+# Static because it decides what Traefik *is* - its entrypoints, where it reads routing from,
+# how it logs. Anything that decides where a request *goes* lives in `dynamic/`, is watched, and
+# is reloaded without restarting the proxy.
+#
+# There is deliberately no Docker provider. Routing is declared in files an operator can read,
+# review and diff, not scattered across container labels: labels put a service's routing inside
+# the thing being routed, so a compromised or mistakenly redeployed container can silently
+# re-route itself, and `docker inspect` becomes the only way to answer "what is published".
+
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+
+  websecure:
+    address: ":443"
+
+  # Not published by compose, so the health endpoint is reachable from inside the container and
+  # nowhere else. Putting `ping` on `websecure` instead would make `traefik healthcheck` speak
+  # TLS to itself against a certificate it has no reason to trust.
+  ping:
+    address: ":8082"
+
+ping:
+  entryPoint: ping
+
+providers:
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+log:
+  level: INFO
+
+accessLog:
+  filters:
+    # Successful requests are the printer console being used; the interesting ones are refusals
+    # and failures. Logging every 200 on a busy warehouse console buries them.
+    statusCodes:
+      - "400-599"

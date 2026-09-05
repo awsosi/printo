@@ -11,3 +11,12 @@ __pycache__/
 bin/
 obj/
 *.user
+
+# TLS material for the Traefik file provider. The directory is tracked so the read-only mount
+# exists on a clean checkout; its contents never are.
+infra/traefik/certs/*
+!infra/traefik/certs/.gitkeep
+!infra/traefik/certs/README.md
+
+# The live TLS store points at those certificates; only the example is tracked.
+infra/traefik/dynamic/tls.yml

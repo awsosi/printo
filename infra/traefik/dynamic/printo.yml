@@ -1,0 +1,66 @@
+# Printo routing.
+#
+# `PRINTO_HOST` is not substituted here - Traefik's file provider does no templating - so the
+# host rule is written to accept both the configured hostname and a bare host-header-less
+# request. Deployments that terminate on one name should narrow `Host(...)` to it and drop the
+# PathPrefix fallback; both forms are left in so a fresh `docker compose up -d` is reachable at
+# the machine's own address before DNS is arranged.
+
+http:
+  routers:
+    web:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - websecure
+      service: web
+      priority: 1
+      tls: {}
+      middlewares:
+        - security-headers
+
+    # The API is reached under /api so the console and the fleet share one origin: agents and
+    # the browser then need one hostname and one certificate, not two.
+    api:
+      rule: "PathPrefix(`/api`)"
+      entryPoints:
+        - websecure
+      service: api
+      priority: 10
+      tls: {}
+      middlewares:
+        - strip-api
+        - security-headers
+
+  services:
+    web:
+      loadBalancer:
+        servers:
+          - url: "http://web:3000"
+        healthCheck:
+          path: /health
+          interval: 15s
+          timeout: 3s
+
+    api:
+      loadBalancer:
+        servers:
+          - url: "http://api:4000"
+        healthCheck:
+          path: /health
+          interval: 15s
+          timeout: 3s
+
+  middlewares:
+    strip-api:
+      stripPrefix:
+        prefixes:
+          - /api
+
+    security-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: same-origin
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
