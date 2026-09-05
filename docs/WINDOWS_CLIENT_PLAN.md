@@ -657,7 +657,8 @@ Nothing ships on "it looked right".
 | **M2** | **Complete** | 1266/1266 corpus pages routed correctly in **both** text-layer modes; 67 conformance fixtures pass on the TypeScript **and** C# engines; 0 pages attributed to GLS. The agent extracts its own features (geometry, ink box, text, barcodes, OCR) and `FeatureParityTests` proves they match the calibrated extractor — identical routing over 117 real pages, exact geometry, identical barcode decoding. Caveat unchanged: barcode predicates cannot be validated against real barcodes on this corpus (section 1.5a), and picture matching has no extractor yet. |
 | **M3** | **Complete but for hardware** | PDFium render with a true region crop, the transform maths, whole-sheet composition against the *printable* area, GDI output, raw ZPL, printer profiles with calibration, printer discovery, and a recording device. Six render-diff cases against checked-in reference images. Printable geometry is read from a real installed driver in a test. **Not done:** the physical matrix on CITIZEN / 4BARCODE / ZEBRA and on A4 lasers — postponed by the customer to a joint session (section 10.2). |
 | **M4** | **Complete but for capture** | Durable spool (idempotent intake, single-winner claim, lease-based recovery, backoff, poison queue), hot folders, job processor, work loop, fallback picker, Windows service host, tray and service/tray IPC. Soak: 30 documents across three worker lifetimes, nothing lost or duplicated. Picker measured on screen in 209-221 ms *in the foreground*. **Not done:** virtual-printer ingress, which is blocked on M1. |
-| **M5**-**M8** | Not started | — |
+| **M5** | **Complete but for the worker** | Fleet schema (13 tables) and API, verified by running all 12 migrations from empty against real Postgres. Agent enrolment with a per-machine key, bundle sync with checksum verification and a 304 fast path, heartbeat, printer reporting, and job/trace/fallback reporting. All three decision modes implemented and tested, including server-unreachable behaviour for each. Bundles are validated at publish time against the shared schema, so a rule set neither engine could execute is a 400 rather than a fleet-wide outage. Retention runs on an advisory-locked schedule instead of only on a button. 20 API tests against Postgres, 168 C# tests, 130 routing-engine tests. **Not done:** the worker's own adoption of the shared engine — see section 10.3. |
+| **M6**-**M8** | Not started | — |
 
 The GLS defect in M2's exit criteria turned out to be smaller and differently caused than the
 plan assumed: 278 pages carry the `*GLS certified label*` footer, but only **4** were actually
@@ -682,6 +683,39 @@ those numbers say it will. That needs the hardware session: print each render-di
 CITIZEN, 4BARCODE and ZEBRA at 100x150 and 100x200, and on the HP A4 units, measure the
 result, and record any per-printer calibration offset in its `PrinterProfile`. Until then the
 milestone is **not** reported as done.
+
+### 10.3 Why the worker has not adopted the shared engine
+
+The intent was that the worker and the agent execute one rule set. Measured against the
+corpus, the worker cannot: **it has no rasterizer, and without an ink box the engine finds
+no labels at all.**
+
+Running the golden corpus with `inkBox` nulled and everything else intact:
+
+| Input | Pages routed correctly |
+|---|---|
+| Full features | 1266 / 1266 (100.0%) |
+| No ink box | 678 / 1266 (53.6%) |
+
+The 588 failures are exactly the label pages — 423 FedEx, 145 DHL, 20 UPS — every one of
+them routed to A4. That is not a degradation, it is a floor: 53.6% is precisely the share of
+pages that are A4 anyway, so the engine contributes nothing without geometry. The reason is
+structural and already recorded in section 1.5: labels in this corpus are *embedded regions*
+on a carrier sheet, located by measurement, not whole pages identifiable from text.
+
+The worker loads `pdfjs-dist` without `canvas`, so it has a text layer and page dimensions and
+nothing else. Three ways forward, none of them free:
+
+1. **Give the worker a rasterizer** (`@napi-rs/canvas` is prebuilt and needs no system
+   packages, so it survives the Docker constraint). Costs CPU on every scanned page.
+2. **Measure the ink box in the Vision Service**, which already rasterizes, and return it as a
+   feature. Keeps the worker light; makes the engine path depend on a service.
+3. **Leave the worker on its heuristic classifier**, which is what it does today, and accept
+   that the two rule implementations are kept honest only by the conformance suite rather than
+   by shared production traffic.
+
+This is a real architectural choice rather than an oversight, so it is recorded here for a
+decision rather than settled unilaterally. Nothing else in M5 depends on it.
 
 Each milestone is committed and pushed to `github.com/awsosi/printo` as it completes.
 

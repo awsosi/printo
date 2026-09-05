@@ -118,8 +118,8 @@ defect.
 - [x] M2 — Corpus + engine core (complete; two gaps listed below)
 - [x] M3 — Print output (complete except the hardware pass, postponed by the user)
 - [~] M4 — Agent runtime + fallback picker (all but virtual-printer ingress, which needs M1)
-- [ ] M5 — Server integration ← **next**
-- [ ] M6 — Admin UI
+- [~] M5 — Server integration (all but the worker's own engine adoption — plan §10.3)
+- [ ] M6 — Admin UI ← **next**
 - [ ] M7 — Packaging + delivery
 - [ ] M8 — Hardening
 
@@ -207,8 +207,8 @@ which capture tier works. Hot folders are the working intake path meanwhile.
 
 ```bash
 npm run lint && npm run typecheck                      # repo-wide, must stay green
-npx vitest run --root packages/routing-engine          # 115 tests incl. golden corpus
-dotnet test clients/windows/Printo.Agent.Tests         # 148 tests incl. corpus parity and soak
+npx vitest run --root packages/routing-engine          # 130 tests incl. golden corpus
+dotnet test clients/windows/Printo.Agent.Tests         # 168 tests incl. corpus parity and soak
 Printo.Tray.exe --picker <document.pdf> [pages]        # measure the picker, prints timing
 Printo.Agent.exe --console --config <agent.json>       # run the service in the foreground
 npx tsx packages/routing-engine/scripts/export-profiles.ts        # after editing profiles.ts
@@ -216,8 +216,37 @@ npx tsx packages/routing-engine/scripts/export-corpus-fixtures.ts # after changi
 PRINTO_UPDATE_REFERENCES=1 dotnet test clients/windows/Printo.Agent.Tests  # accept new render output
 ```
 
+The agent API tests need a migrated database and skip silently without one:
+
+```bash
+docker compose -f infra/docker-compose.yml up -d db
+DATABASE_URL=postgres://printo:printo@127.0.0.1:5432/printo npm run migrate -w @printo/api
+PRINTO_TEST_DATABASE_URL=postgres://printo:printo@127.0.0.1:5432/printo npm run test -w @printo/api
+```
+
 The corpus tests skip silently when `printo-materials` is absent; point `PRINTO_CORPUS_DIR`
 at it or keep it beside the checkout.
+
+### M5 — what landed, and the one thing that did not
+
+Both halves are wired: the server stores the fleet and can decide a document from features
+alone, and the agent enrols, syncs its rule bundle, decides in whichever of the three modes it
+is configured for, and reports every job with its trace.
+
+Two things are worth knowing before touching this code:
+
+- **Only features cross the network, never the document.** `POST /agents/me/decide` takes
+  measured page features and returns a per-page plan, so the workstation stays the only place
+  a customer's invoice is rendered, and the request is kilobytes rather than megabytes. The
+  two-phase OCR protocol survives the round trip because only the agent holds the pixels.
+- **Bundles are validated at publish time** (`packages/routing-engine/src/wire.ts`), because
+  the C# engine throws on a predicate key it does not know. Without that check a bad rule set
+  would be accepted, pushed to every workstation, and fail at print time on all of them.
+
+**Not done:** the worker still uses its own heuristic classifier. This is measured, not
+forgotten — with no rasterizer the worker has no ink box, and without an ink box the shared
+engine routes 678/1266 corpus pages, missing *every* label. Plan §10.3 has the numbers and the
+three ways forward; it needs a decision, and nothing else depends on it.
 
 ## 7. Working agreements
 

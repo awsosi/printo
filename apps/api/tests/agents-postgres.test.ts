@@ -8,6 +8,7 @@ import { BUILTIN_PROFILES, type ConformanceSuite } from '@printo/routing-engine'
 import { createApiApp } from '../src/app.js';
 import { PostgresAuthStore } from '../src/store/postgres-auth-store.js';
 import { PostgresAgentStore } from '../src/agents/store.js';
+import { PostgresAdvisoryLock, RetentionScheduler } from '../src/agents/retention.js';
 
 /**
  * The agent API, against a real database.
@@ -575,5 +576,64 @@ suite('agent API (postgres)', () => {
     expect(run.status).toBe(200);
     expect(run.body.removed.job_history).toBe(1);
     expect((await pool.query('SELECT COUNT(*)::int AS n FROM agent_jobs')).rows[0].n).toBe(0);
+  });
+
+  it('sweeps on a schedule and only once across replicas', async () => {
+    const key = (await enroll(await newToken())).body.apiKey;
+    await request(app)
+      .post('/agents/me/jobs')
+      .set('x-printo-agent-key', key)
+      .send({
+        jobKey: 'stale',
+        source: 'HotFolder',
+        fileName: 'stale.pdf',
+        documentSha256: 'stale',
+        status: 'COMPLETED'
+      });
+
+    await pool.query(`UPDATE agent_jobs SET created_at = NOW() - INTERVAL '400 days'`);
+
+    const store = new PostgresAgentStore(pool);
+    const events: Record<string, unknown>[] = [];
+    const scheduler = new RetentionScheduler(store, {
+      lock: new PostgresAdvisoryLock(pool),
+      log: (event) => events.push(event)
+    });
+
+    const removed = await scheduler.runOnce();
+    expect(removed?.job_history).toBe(1);
+    expect(events.at(-1)?.event).toBe('retention_applied');
+
+    // A second replica holding the lock must skip rather than sweep in parallel: the counts
+    // and `last_run_at` have to describe one run, not an interleaving of two.
+    const holder = await pool.connect();
+    try {
+      await holder.query('SELECT pg_advisory_lock($1)', [PostgresAdvisoryLock.RETENTION_KEY]);
+
+      const blocked = new RetentionScheduler(store, {
+        lock: new PostgresAdvisoryLock(pool),
+        log: (event) => events.push(event)
+      });
+
+      expect(await blocked.runOnce()).toBeNull();
+      expect(events.at(-1)).toMatchObject({ event: 'retention_skipped', reason: 'locked' });
+    } finally {
+      await holder.query('SELECT pg_advisory_unlock($1)', [PostgresAdvisoryLock.RETENTION_KEY]);
+      holder.release();
+    }
+
+    // And the lock is released after a sweep, so the next one is not blocked by the last.
+    expect(await scheduler.runOnce()).not.toBeNull();
+  });
+
+  it('logs a failed sweep instead of taking the API down with it', async () => {
+    const events: Record<string, unknown>[] = [];
+    const scheduler = new RetentionScheduler(
+      { applyRetention: async () => { throw new Error('database is on fire'); } } as unknown as PostgresAgentStore,
+      { log: (event) => events.push(event) }
+    );
+
+    expect(await scheduler.runOnce()).toBeNull();
+    expect(events.at(-1)).toMatchObject({ event: 'retention_failed', error: 'database is on fire' });
   });
 });
