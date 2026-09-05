@@ -9,4 +9,5 @@
   <Project Path="Printo.Agent.Render/Printo.Agent.Render.csproj" />
   <Project Path="Printo.Agent.Runtime/Printo.Agent.Runtime.csproj" />
   <Project Path="Printo.Agent.Tests/Printo.Agent.Tests.csproj" />
+  <Project Path="Printo.Agent.Tray/Printo.Agent.Tray.csproj" />
 </Solution>

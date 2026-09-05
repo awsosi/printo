@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>Printo.Agent.Tray</RootNamespace>
+    <AssemblyName>Printo.Tray</AssemblyName>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+
+    <!-- Required by the LibraryImport source generator, which emits unsafe marshalling code. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!--
+      The picker must appear on the active monitor at the right size on a mixed-DPI desk, which
+      is the common setup: a laptop panel plus an external screen.
+    -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Printo.Agent.Core\Printo.Agent.Core.csproj" />
+    <ProjectReference Include="..\Printo.Agent.Render\Printo.Agent.Render.csproj" />
+    <ProjectReference Include="..\Printo.Agent.Runtime\Printo.Agent.Runtime.csproj" />
+  </ItemGroup>
+
+</Project>
