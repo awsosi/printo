@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Printo.Agent.Printing</RootNamespace>
+    <AssemblyName>Printo.Agent.Printing</AssemblyName>
+
+    <!-- Required by the LibraryImport source generator, which emits unsafe marshalling code. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!--
+      Windows-only by nature: this project is GDI and the spooler. It stays on the portable
+      TFM rather than net10.0-windows so the routing and render test projects can reference it
+      without becoming Windows-only themselves; every entry point that touches Win32 is
+      annotated with [SupportedOSPlatform("windows")] instead.
+    -->
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Printo.Agent.Core\Printo.Agent.Core.csproj" />
+    <ProjectReference Include="..\Printo.Agent.Render\Printo.Agent.Render.csproj" />
+  </ItemGroup>
+
+</Project>
