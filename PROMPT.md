@@ -117,8 +117,8 @@ defect.
 - [ ] **M1 — Capture spike — code written, BLOCKED on one elevated command (see below)**
 - [x] M2 — Corpus + engine core (complete; two gaps listed below)
 - [x] M3 — Print output (complete except the hardware pass, postponed by the user)
-- [ ] M4 — Agent runtime + fallback picker ← **next**
-- [ ] M5 — Server integration
+- [~] M4 — Agent runtime + fallback picker (all but virtual-printer ingress, which needs M1)
+- [ ] M5 — Server integration ← **next**
 - [ ] M6 — Admin UI
 - [ ] M7 — Packaging + delivery
 - [ ] M8 — Hardening
@@ -183,12 +183,34 @@ the hardware matrix in plan section 10.2 and needs the joint session — CITIZEN
 ZEBRA at 100x150 and 100x200, plus the A4 lasers, printing each render-diff case, measuring,
 and recording any per-printer offset in its `PrinterProfile`.
 
+### M4 — what landed
+
+`Printo.Agent.Runtime` (spool, hot folders, job processor, work loop, picker model, IPC,
+configuration), `Printo.Agent.Service` (Windows service host), `Printo.Agent.Tray` (tray icon,
+pipe server, picker window).
+
+Verified:
+
+- **Soak:** 30 documents across three worker lifetimes with the spool closed and reopened
+  between them — every job completed, each accepted once, exactly 30 pages printed.
+- **Crash recovery:** work stranded by a dead process is left alone while its lease holds and
+  reclaimed once it expires.
+- **Picker:** on screen in 209-221 ms against the 1 s criterion, on a real 6-page corpus
+  document, verified *in the foreground* rather than merely created.
+- **Service host:** run for real — accepts a drop, spools a copy, archives the original,
+  routes, and records the failure with backoff when no printer is mapped.
+
+Still missing from M4: **virtual-printer ingress**, which cannot be built until M1 answers
+which capture tier works. Hot folders are the working intake path meanwhile.
+
 ### Verification commands
 
 ```bash
 npm run lint && npm run typecheck                      # repo-wide, must stay green
 npx vitest run --root packages/routing-engine          # 115 tests incl. golden corpus
-dotnet test clients/windows/Printo.Agent.Tests         # 81 tests incl. corpus parity
+dotnet test clients/windows/Printo.Agent.Tests         # 148 tests incl. corpus parity and soak
+Printo.Tray.exe --picker <document.pdf> [pages]        # measure the picker, prints timing
+Printo.Agent.exe --console --config <agent.json>       # run the service in the foreground
 npx tsx packages/routing-engine/scripts/export-profiles.ts        # after editing profiles.ts
 npx tsx packages/routing-engine/scripts/export-corpus-fixtures.ts # after changing the engine
 PRINTO_UPDATE_REFERENCES=1 dotnet test clients/windows/Printo.Agent.Tests  # accept new render output

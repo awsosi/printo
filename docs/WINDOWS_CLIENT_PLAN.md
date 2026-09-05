@@ -4,7 +4,8 @@ Status: `APPROVED — in delivery`
 Last updated: 2026-09-05
 
 **Progress:** M1 blocked on one elevated step (section 5.0). M2 complete. M3 complete except
-the hardware pass, which the customer has postponed to a joint session. See section 10.1.
+the hardware pass, which the customer has postponed. M4 complete except virtual-printer
+ingress, which is blocked on M1. See section 10.1.
 
 This document is the proposal for the next phase of `printo`: a Windows agent that replaces
 Print&Share on the workstation, plus the server-side work needed to make routing genuinely
@@ -655,7 +656,8 @@ Nothing ships on "it looked right".
 | **M1** | **Blocked** | Both spikes build and self-test; binding a real queue needs one elevated `Add-Printer`. Neither capture question is answered yet — section 5.0. |
 | **M2** | **Complete** | 1266/1266 corpus pages routed correctly in **both** text-layer modes; 67 conformance fixtures pass on the TypeScript **and** C# engines; 0 pages attributed to GLS. The agent extracts its own features (geometry, ink box, text, barcodes, OCR) and `FeatureParityTests` proves they match the calibrated extractor — identical routing over 117 real pages, exact geometry, identical barcode decoding. Caveat unchanged: barcode predicates cannot be validated against real barcodes on this corpus (section 1.5a), and picture matching has no extractor yet. |
 | **M3** | **Complete but for hardware** | PDFium render with a true region crop, the transform maths, whole-sheet composition against the *printable* area, GDI output, raw ZPL, printer profiles with calibration, printer discovery, and a recording device. Six render-diff cases against checked-in reference images. Printable geometry is read from a real installed driver in a test. **Not done:** the physical matrix on CITIZEN / 4BARCODE / ZEBRA and on A4 lasers — postponed by the customer to a joint session (section 10.2). |
-| **M4**-**M8** | Not started | — |
+| **M4** | **Complete but for capture** | Durable spool (idempotent intake, single-winner claim, lease-based recovery, backoff, poison queue), hot folders, job processor, work loop, fallback picker, Windows service host, tray and service/tray IPC. Soak: 30 documents across three worker lifetimes, nothing lost or duplicated. Picker measured on screen in 209-221 ms *in the foreground*. **Not done:** virtual-printer ingress, which is blocked on M1. |
+| **M5**-**M8** | Not started | — |
 
 The GLS defect in M2's exit criteria turned out to be smaller and differently caused than the
 plan assumed: 278 pages carry the `*GLS certified label*` footer, but only **4** were actually

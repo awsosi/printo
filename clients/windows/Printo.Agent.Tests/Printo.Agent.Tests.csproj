@@ -26,6 +26,7 @@
     <ProjectReference Include="..\Printo.Agent.Printing\Printo.Agent.Printing.csproj" />
     <ProjectReference Include="..\Printo.Agent.Ocr\Printo.Agent.Ocr.csproj" />
     <ProjectReference Include="..\Printo.Agent.Runtime\Printo.Agent.Runtime.csproj" />
+    <ProjectReference Include="..\Printo.Agent.Tray\Printo.Agent.Tray.csproj" />
   </ItemGroup>
 
 </Project>
