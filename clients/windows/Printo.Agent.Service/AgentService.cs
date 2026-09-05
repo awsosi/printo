@@ -54,7 +54,26 @@ public sealed class AgentService(
         }
 
         var catalog = BuildCatalog();
-        var processor = new JobProcessor(spool, catalog, new PageFeatureExtractor(new ZxingBarcodeDecoder()), ocr);
+        var profiles = BuildProfiles();
+
+        var sync = new FleetSync(
+            configuration,
+            Path.Combine(configuration.DataDirectory, "identity.json"),
+            new BundleCache(Path.Combine(configuration.DataDirectory, "bundle.json")),
+            log: (code, detail) => logger.LogInformation("Fleet {Code}: {Detail}", code, detail));
+
+        using var client = sync.HasServer
+            ? new HttpServerClient(configuration.ServerUrl, () => sync.CurrentIdentity.ApiKey)
+            : null;
+
+        var decider = BuildDecider(sync, client, logger);
+        var reporter = client is null
+            ? null
+            : new JobReporter(client, (code, detail) => logger.LogWarning("Report {Code}: {Detail}", code, detail));
+
+        var processor = new JobProcessor(
+            spool, catalog, new PageFeatureExtractor(new ZxingBarcodeDecoder()), ocr, decider);
+
         var prompter = new TrayPrompter(WindowsSessions.InteractiveSessions);
 
         var worker = new AgentWorker(
@@ -67,16 +86,37 @@ public sealed class AgentService(
                 Owner = $"{Environment.MachineName}/{Environment.ProcessId}",
                 DedupeRetention = configuration.DedupeRetention,
             },
-            prompter);
+            prompter,
+            reporter);
 
         logger.LogInformation(
-            "Printo agent started: {Folders} watched folder(s), {Printers} printer(s), mode {Mode}",
+            "Printo agent started: {Folders} watched folder(s), {Printers} printer(s), mode {Mode}, server {Server}",
             configuration.HotFolders.Count,
             configuration.Printers.Count,
-            configuration.DecisionMode);
+            configuration.DecisionMode,
+            sync.HasServer ? configuration.ServerUrl : "none (standalone)");
+
+        var nextSync = DateTimeOffset.MinValue;
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            if (sync.HasServer && DateTimeOffset.UtcNow >= nextSync)
+            {
+                // On its own cadence, and never fatal: a job must not wait on a heartbeat, and
+                // a workstation whose server is down keeps printing on the rules it has.
+                try
+                {
+                    var pass = sync.RunOnce(profiles);
+                    logger.LogDebug("Sync: {Summary}", pass);
+                }
+                catch (Exception error) when (error is not OperationCanceledException)
+                {
+                    logger.LogError(error, "Fleet sync failed; continuing on the cached bundle");
+                }
+
+                nextSync = DateTimeOffset.UtcNow + SyncInterval;
+            }
+
             try
             {
                 var pass = worker.RunOnce();
@@ -106,8 +146,60 @@ public sealed class AgentService(
         logger.LogInformation("Printo agent stopped");
     }
 
+    /// <summary>
+    /// How often the agent talks to the server when it has one.
+    /// </summary>
+    /// <remarks>
+    /// A minute, not the five-second work-loop interval. The heartbeat carries the bundle
+    /// version, so a republished rule set reaches the fleet inside a minute, and thirty agents
+    /// on a one-minute cadence is half a request a second - nothing. Polling at the work-loop
+    /// rate would be twelve times the traffic for no operational gain.
+    /// </remarks>
+    private static readonly TimeSpan SyncInterval = TimeSpan.FromMinutes(1);
+
+    /// <summary>Builds the decision path this machine's configured mode calls for.</summary>
+    /// <remarks>
+    /// A configured mode that needs a server it has not been given falls back to local rather
+    /// than failing to start. The alternative - refusing to run - would leave a mis-provisioned
+    /// workstation unable to print at all, where local routing is exactly what it would have
+    /// done before enrolment anyway. The downgrade is logged, loudly, because it is not what
+    /// the administrator asked for.
+    /// </remarks>
+    private IRoutingDecider BuildDecider(FleetSync sync, HttpServerClient? client, ILogger log)
+    {
+        var local = new LocalDecider(() => sync.CurrentBundle);
+
+        if (configuration.DecisionMode == DecisionMode.Local || client is null)
+        {
+            if (configuration.DecisionMode != DecisionMode.Local)
+            {
+                log.LogWarning(
+                    "Decision mode {Mode} needs a server URL and none is configured; routing locally",
+                    configuration.DecisionMode);
+            }
+
+            return local;
+        }
+
+        var server = new ServerDecider(client, (code, detail) => log.LogWarning("Decide {Code}: {Detail}", code, detail))
+        {
+            Bundle = () => sync.CurrentBundle,
+        };
+
+        return configuration.DecisionMode == DecisionMode.Server
+            ? server
+            : new AutoDecider(
+                local,
+                server,
+                configuration.ConfidenceThreshold,
+                (code, detail) => log.LogInformation("Decide {Code}: {Detail}", code, detail));
+    }
+
     /// <summary>Builds the printer catalog from the machine's configured mapping.</summary>
-    private PrinterCatalog BuildCatalog()
+    private PrinterCatalog BuildCatalog() => PrinterCatalog.ForWindows(BuildProfiles());
+
+    /// <summary>The machine's printer map, as both the catalog and the fleet report want it.</summary>
+    private List<PrinterProfile> BuildProfiles()
     {
         var profiles = configuration.Printers.Select(printer => new PrinterProfile
         {
@@ -128,6 +220,6 @@ public sealed class AgentService(
             ThermalMode = printer.RawZpl ? ThermalMode.ZplRaster : ThermalMode.DriverRaster,
         }).ToList();
 
-        return PrinterCatalog.ForWindows(profiles);
+        return profiles;
     }
 }

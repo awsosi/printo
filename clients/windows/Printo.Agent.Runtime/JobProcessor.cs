@@ -33,6 +33,15 @@ public sealed class JobProcessingResult
     /// <summary>Why a person is needed, when <see cref="Outcome"/> is NeedsUser.</summary>
     public FallbackPrompt? Prompt { get; init; }
 
+    /// <summary><c>local</c> or <c>server</c>: where the routing verdict came from.</summary>
+    public string DecidedBy { get; init; } = "local";
+
+    /// <summary>Rule bundle the decision was made against; <c>null</c> means the built-ins.</summary>
+    public long? BundleVersion { get; init; }
+
+    /// <summary>True when the job printed on cached rules because the server was unreachable.</summary>
+    public bool Degraded { get; init; }
+
     public string? Error { get; init; }
 }
 
@@ -85,20 +94,39 @@ public sealed class JobProcessor
 
     private readonly IOcrEngine? ocr;
 
+    private IRoutingDecider? decider;
+
     public JobProcessor(
         JobSpool spool,
         IPrinterCatalog catalog,
         PageFeatureExtractor? extractor = null,
-        IOcrEngine? ocr = null)
+        IOcrEngine? ocr = null,
+        IRoutingDecider? decider = null)
     {
         this.spool = spool ?? throw new ArgumentNullException(nameof(spool));
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         this.extractor = extractor ?? new PageFeatureExtractor();
         this.ocr = ocr;
+        this.decider = decider;
     }
 
     /// <summary>Routing profiles to match against, in order. Defaults to the built-in set.</summary>
+    /// <remarks>
+    /// Ignored when an explicit <see cref="IRoutingDecider"/> was supplied, which owns its own
+    /// rule bundle. Kept for the standalone case and for tests that pin one profile.
+    /// </remarks>
     public IReadOnlyList<RoutingProfileRules> Profiles { get; init; } = BuiltinProfiles.All;
+
+    /// <summary>
+    /// How this job's routing is decided. Defaults to local evaluation of <see cref="Profiles"/>.
+    /// </summary>
+    /// <remarks>
+    /// Resolved on first use rather than in the constructor so the <see cref="Profiles"/> init
+    /// property is already set: an agent that pins a profile and takes the default decider must
+    /// get a decider over *that* profile, not over the built-ins.
+    /// </remarks>
+    private IRoutingDecider Decider =>
+        decider ??= new LocalDecider(() => new RuleBundle { Profiles = Profiles });
 
     /// <summary>Processes a claimed job.</summary>
     /// <param name="job">The claimed job.</param>
@@ -126,63 +154,34 @@ public sealed class JobProcessor
         var features = extractor.Extract(document, job.FileName);
         spool.SetPageCount(job.Id, features.PageCount);
 
-        var profile = RoutingEngine.MatchProfile(Profiles, features);
-        if (profile is null)
+        var resolved = Decider.Decide(features, new PageOcrFiller(document, ocr));
+
+        switch (resolved.Status)
         {
-            return Fail(job, "no routing profile matched the document");
+            case DecisionStatus.NoProfile:
+                return Fail(job, resolved.Detail ?? "no routing profile matched the document");
+
+            case DecisionStatus.RulesAskedOcrTwice:
+                // The contract is that a second pass is always decidable, so this is a defect
+                // in the rule set rather than a routing question a user could answer - it must
+                // fail loudly instead of landing in somebody's picker every morning.
+                return Fail(
+                    job,
+                    resolved.Detail ?? "the rule set asked for OCR twice; the second pass must be decidable");
+
+            case DecisionStatus.Decided:
+                break;
+
+            default:
+                return Undecided(job, document, features, resolved, userSelectedThermalPages);
         }
 
-        var (evaluation, ocrUnavailable) = Evaluate(profile, features, document);
-
-        if (evaluation is null && !ocrUnavailable)
+        if (resolved.Degraded)
         {
-            // OCR was supplied and the engine still asked for more. The contract is that a
-            // second pass is always decidable, so this is a defect in the rule set rather than
-            // a routing question a user could answer - it must fail loudly.
-            return Fail(job, "the rule set asked for OCR twice; the second pass must be decidable");
+            spool.Log(job.Id, "warning", "degraded", resolved.Detail ?? "decided on cached rules");
         }
 
-        if (evaluation is null && userSelectedThermalPages is not null)
-        {
-            // The engine could not decide, but a person already has. Their answer is the whole
-            // decision: unselected pages take the profile default and selected ones become
-            // labels. Without this the OCR check short-circuits ahead of the override and the
-            // picker's answer is silently discarded - the job comes straight back to the user.
-            var chosen = ApplyUserSelection(DefaultDecision(profile, features), userSelectedThermalPages);
-            spool.Log(
-                job.Id,
-                "info",
-                "user-selection",
-                $"thermal pages: {string.Join(",", userSelectedThermalPages.OrderBy(page => page))} (engine undecided)");
-            return Print(job, document, chosen);
-        }
-
-        if (evaluation is null)
-        {
-            // A rule needed OCR and this machine cannot do it. Asking a person is the right
-            // answer, not failing the job: "never guess silently, never drop" cuts both ways,
-            // and a hard failure would burn the retry budget and poison a printable document
-            // over a missing language pack.
-            var unavailable = new FallbackPrompt
-            {
-                ReasonCode = FallbackReasons.ToWire(FallbackReason.OcrUnavailable),
-                Message = "a rule needed OCR and no recogniser is available on this machine",
-                SuggestedThermalPages = RoutingEngine.RankLabelCandidates(features),
-                PageCount = features.PageCount,
-                TraceJson = "{}",
-            };
-
-            spool.AwaitUser(job.Id, unavailable.ReasonCode);
-            spool.Log(job.Id, "warning", "fallback", $"{unavailable.ReasonCode}: {unavailable.Message}");
-            return new JobProcessingResult
-            {
-                Outcome = JobOutcome.NeedsUser,
-                Decision = null,
-                Prompt = unavailable,
-            };
-        }
-
-        var decision = evaluation;
+        var decision = resolved.Document!;
 
         // The user's answer from the picker replaces the engine's page-level verdicts.
         if (userSelectedThermalPages is not null)
@@ -203,57 +202,117 @@ public sealed class JobProcessor
                 Outcome = JobOutcome.NeedsUser,
                 Decision = decision,
                 Prompt = prompt,
+                DecidedBy = resolved.DecidedBy,
+                BundleVersion = resolved.BundleVersion,
+                Degraded = resolved.Degraded,
             };
         }
 
-        return Print(job, document, decision);
+        return Print(job, document, decision, resolved);
     }
 
     /// <summary>
-    /// Evaluates the document, servicing one round of OCR requests.
+    /// Handles a document the engine could not route: no recogniser, or no reachable server.
     /// </summary>
     /// <remarks>
-    /// Exactly one round: the engine's contract is that a second pass is always decidable, and
-    /// looping until it stops asking would turn a mistaken rule into an infinite render loop on
-    /// a workstation.
+    /// Asking a person is the right answer here, not failing the job. "Never guess silently,
+    /// never drop" cuts both ways, and a hard failure would burn the retry budget and poison a
+    /// perfectly printable document over a missing language pack or a dropped VPN.
     /// </remarks>
-    private (DocumentDecision? Decision, bool OcrUnavailable) Evaluate(
-        RoutingProfileRules profile, DocumentFeatures features, PdfDocument document)
+    private JobProcessingResult Undecided(
+        SpoolJob job,
+        PdfDocument document,
+        DocumentFeatures features,
+        RoutingDecision resolved,
+        IReadOnlySet<int>? userSelectedThermalPages)
     {
-        var evaluation = RoutingEngine.EvaluateDocument(profile, features);
-        if (!evaluation.NeedsFeatures)
+        var reason = resolved.Status == DecisionStatus.OcrUnavailable
+            ? FallbackReason.OcrUnavailable
+            : FallbackReason.ServerUnavailable;
+
+        if (resolved.Profile is null)
         {
-            return (evaluation.Document, false);
+            // Nothing to apply a user's answer to and no default route to fall back on.
+            return Fail(job, resolved.Detail ?? $"{FallbackReasons.ToWire(reason)}: the document could not be routed");
         }
 
-        if (ocr is null)
+        if (userSelectedThermalPages is not null)
         {
-            return (null, true);
+            // The engine could not decide, but a person already has. Their answer is the whole
+            // decision: unselected pages take the profile default and selected ones become
+            // labels. Without this the undecided check short-circuits ahead of the override and
+            // the picker's answer is silently discarded - the job comes straight back to them.
+            var chosen = ApplyUserSelection(
+                DefaultDecision(resolved.Profile, features), userSelectedThermalPages);
+
+            spool.Log(
+                job.Id,
+                "info",
+                "user-selection",
+                $"thermal pages: {string.Join(",", userSelectedThermalPages.OrderBy(page => page))} (engine undecided)");
+
+            return Print(job, document, chosen, resolved);
         }
 
-        var pages = features.Pages.ToList();
-        foreach (var group in evaluation.Ocr.GroupBy(request => request.PageNumber))
+        var prompt = new FallbackPrompt
         {
-            var index = pages.FindIndex(page => page.PageNumber == group.Key);
-            if (index < 0)
-            {
-                continue;
-            }
-
-            using var source = document.OpenPage(group.Key - 1);
-            pages[index] = PageFeatureExtractor.WithOcr(pages[index], source, group, ocr);
-        }
-
-        var enriched = new DocumentFeatures
-        {
-            FileName = features.FileName,
-            SourceApp = features.SourceApp,
+            ReasonCode = FallbackReasons.ToWire(reason),
+            Message = resolved.Detail ?? "the document could not be routed on this machine",
+            SuggestedThermalPages = RoutingEngine.RankLabelCandidates(features),
             PageCount = features.PageCount,
-            Pages = pages,
+            TraceJson = "{}",
         };
 
-        var second = RoutingEngine.EvaluateDocument(profile, enriched);
-        return second.NeedsFeatures ? (null, false) : (second.Document, false);
+        spool.AwaitUser(job.Id, prompt.ReasonCode);
+        spool.Log(job.Id, "warning", "fallback", $"{prompt.ReasonCode}: {prompt.Message}");
+
+        return new JobProcessingResult
+        {
+            Outcome = JobOutcome.NeedsUser,
+            Decision = null,
+            Prompt = prompt,
+            DecidedBy = resolved.DecidedBy,
+            BundleVersion = resolved.BundleVersion,
+        };
+    }
+
+    /// <summary>
+    /// Recognises the rectangles a rule asked for, on pages this host has open.
+    /// </summary>
+    /// <remarks>
+    /// The same filler serves the local engine and the server one: only the workstation holds
+    /// the pixels, so a server that answers `needs-features` is answered from here too.
+    /// </remarks>
+    private sealed class PageOcrFiller(PdfDocument document, IOcrEngine? ocr) : IOcrFiller
+    {
+        public DocumentFeatures? Fill(DocumentFeatures features, IReadOnlyList<OcrRequest> requests)
+        {
+            if (ocr is null)
+            {
+                return null;
+            }
+
+            var pages = features.Pages.ToList();
+            foreach (var group in requests.GroupBy(request => request.PageNumber))
+            {
+                var index = pages.FindIndex(page => page.PageNumber == group.Key);
+                if (index < 0)
+                {
+                    continue;
+                }
+
+                using var source = document.OpenPage(group.Key - 1);
+                pages[index] = PageFeatureExtractor.WithOcr(pages[index], source, group, ocr);
+            }
+
+            return new DocumentFeatures
+            {
+                FileName = features.FileName,
+                SourceApp = features.SourceApp,
+                PageCount = features.PageCount,
+                Pages = pages,
+            };
+        }
     }
 
     /// <summary>Returns a prompt when this document needs a person, or <c>null</c>.</summary>
@@ -386,7 +445,8 @@ public sealed class JobProcessor
         };
     }
 
-    private JobProcessingResult Print(SpoolJob job, PdfDocument document, DocumentDecision decision)
+    private JobProcessingResult Print(
+        SpoolJob job, PdfDocument document, DocumentDecision decision, RoutingDecision resolved)
     {
         // Grouped by route so each printer receives one document rather than one per page:
         // a five-page invoice must not become five spooler jobs.
@@ -480,6 +540,9 @@ public sealed class JobProcessor
             Outcome = JobOutcome.Printed,
             Decision = decision,
             PagesPerPrinter = printed,
+            DecidedBy = resolved.DecidedBy,
+            BundleVersion = resolved.BundleVersion,
+            Degraded = resolved.Degraded,
         };
     }
 

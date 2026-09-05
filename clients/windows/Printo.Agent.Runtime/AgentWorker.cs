@@ -51,7 +51,8 @@ public sealed class AgentWorker(
     JobSpool spool,
     JobProcessor processor,
     AgentWorkerOptions options,
-    IFallbackPrompter? prompter = null)
+    IFallbackPrompter? prompter = null,
+    JobReporter? reporter = null)
 {
     private readonly JobSpool spool = spool ?? throw new ArgumentNullException(nameof(spool));
 
@@ -156,15 +157,23 @@ public sealed class AgentWorker(
         var result = processor.Process(job);
         if (result.Outcome != JobOutcome.NeedsUser || prompter is null || result.Prompt is null)
         {
+            reporter?.Report(job, result);
             return result;
         }
 
+        // Timed around the prompt itself, because "how long did a person spend deciding" is one
+        // of the two numbers that say whether a fallback is worth a rule: the other is whether
+        // they agreed with the engine.
+        var started = System.Diagnostics.Stopwatch.StartNew();
         var answer = prompter.Ask(job, result.Prompt);
+        started.Stop();
+
         if (answer is null)
         {
             // Nobody answered. The job stays parked in the tray rather than printing something
             // wrong — the plan's "no timeout by default" behaviour.
             spool.Log(job.Id, "info", "picker-unanswered", result.Prompt.ReasonCode);
+            reporter?.Report(job, result, new FallbackAnswer());
             return result;
         }
 
@@ -179,6 +188,25 @@ public sealed class AgentWorker(
             return result;
         }
 
-        return processor.Process(claimed, answer);
+        var resolved = processor.Process(claimed, answer);
+
+        // Reported once, against the prompt that was actually shown: the re-run has no prompt
+        // of its own, so without carrying it the answer would arrive with nothing to compare to.
+        reporter?.Report(
+            claimed,
+            new JobProcessingResult
+            {
+                Outcome = resolved.Outcome,
+                Decision = resolved.Decision,
+                PagesPerPrinter = resolved.PagesPerPrinter,
+                Prompt = result.Prompt,
+                DecidedBy = resolved.DecidedBy,
+                BundleVersion = resolved.BundleVersion,
+                Degraded = resolved.Degraded,
+                Error = resolved.Error,
+            },
+            new FallbackAnswer { Selection = answer, Elapsed = started.Elapsed });
+
+        return resolved;
     }
 }

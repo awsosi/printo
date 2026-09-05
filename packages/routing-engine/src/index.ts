@@ -16,3 +16,4 @@ export * from './engine.js';
 export * from './transform.js';
 export * from './profiles.js';
 export * from './conformance.js';
+export * from './wire.js';

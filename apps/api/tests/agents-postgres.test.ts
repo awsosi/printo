@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import request from 'supertest';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { BUILTIN_PROFILES, type ConformanceSuite } from '@printo/routing-engine';
 import { createApiApp } from '../src/app.js';
 import { PostgresAuthStore } from '../src/store/postgres-auth-store.js';
 import { PostgresAgentStore } from '../src/agents/store.js';
@@ -22,6 +26,28 @@ import { PostgresAgentStore } from '../src/agents/store.js';
  */
 const connectionString = process.env.PRINTO_TEST_DATABASE_URL;
 const suite = connectionString ? describe : describe.skip;
+
+/**
+ * Documents for the decision tests, taken from the engine's own conformance fixtures.
+ *
+ * Reusing them rather than inventing new page features is the point: if the server's
+ * `/decide` ever answers differently from the engine both sides run, one of these tests and
+ * the conformance suite disagree, which is exactly the divergence that must not go unnoticed.
+ */
+const FIXTURES: ConformanceSuite = JSON.parse(
+  readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../../../tests/conformance/lazy-ocr-and-fallbacks.json'),
+    'utf8'
+  )
+);
+
+function fixtureDocument(name: string): unknown {
+  const fixture = FIXTURES.fixtures.find((entry) => entry.name === name);
+  if (!fixture) {
+    throw new Error(`conformance fixture '${name}' is gone; the decision tests reference it`);
+  }
+  return fixture.document;
+}
 
 suite('agent API (postgres)', () => {
   let pool: Pool;
@@ -71,6 +97,15 @@ suite('agent API (postgres)', () => {
 
     expect(response.status).toBe(201);
     return response.body.token as string;
+  }
+
+  /** A publishable bundle carrying the profiles the agent also ships with. */
+  function bundlePayload(): Record<string, unknown> {
+    return {
+      schemaVersion: 1,
+      profiles: JSON.parse(JSON.stringify(BUILTIN_PROFILES)),
+      generatedAt: new Date().toISOString()
+    };
   }
 
   async function enroll(token: string, installId = 'install-1') {
@@ -150,7 +185,7 @@ suite('agent API (postgres)', () => {
     const published = await request(app)
       .post('/admin/bundles')
       .set('authorization', `Bearer ${adminToken}`)
-      .send({ payload: { profiles: [{ profile: 'OneClickPrint' }] }, notes: 'first' });
+      .send({ payload: bundlePayload(), notes: 'first' });
 
     expect(published.status).toBe(201);
     const version = published.body.bundle.version;
@@ -165,6 +200,149 @@ suite('agent API (postgres)', () => {
       .get(`/agents/me/bundle?since=${version}`)
       .set('x-printo-agent-key', key);
     expect(unchanged.status).toBe(304);
+  });
+
+  it('refuses to publish a bundle either engine could not execute', async () => {
+    const broken = bundlePayload() as { profiles: Array<Record<string, unknown>> };
+    (broken.profiles[0].pageRules as Array<Record<string, unknown>>)[0].when = {
+      geometry: { inkAspect: { min: 2, max: 1 } }
+    };
+
+    const rejected = await request(app)
+      .post('/admin/bundles')
+      .set('authorization', `Bearer ${adminToken}`)
+      .send({ payload: broken });
+
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.error).toBe('INVALID_BUNDLE');
+    // The path matters more than the message: an admin has to be able to find the rule.
+    expect(rejected.body.detail).toContain('bundle.profiles[0].pageRules[0].when.geometry.inkAspect');
+
+    const unknown = bundlePayload() as { profiles: Array<Record<string, unknown>> };
+    (unknown.profiles[0].pageRules as Array<Record<string, unknown>>)[0].when = { colour: { is: 'red' } };
+
+    const alsoRejected = await request(app)
+      .post('/admin/bundles')
+      .set('authorization', `Bearer ${adminToken}`)
+      .send({ payload: unknown });
+
+    expect(alsoRejected.status).toBe(400);
+    expect(alsoRejected.body.detail).toContain('unknown predicate');
+
+    // Nothing reached the fleet.
+    expect((await pool.query('SELECT COUNT(*)::int AS n FROM rule_bundles')).rows[0].n).toBe(0);
+  });
+
+  it('decides a document server-side from features alone', async () => {
+    const key = (await enroll(await newToken())).body.apiKey;
+
+    const decided = await request(app)
+      .post('/agents/me/decide')
+      .set('x-printo-agent-key', key)
+      .send({ features: fixtureDocument('FedEx label geometry decides without any OCR') });
+
+    expect(decided.status).toBe(200);
+    expect(decided.body.status).toBe('decided');
+    expect(decided.body.decision.pages[0].route).toBe('THERMAL');
+    // No bundle published: the server decided on the same built-in profiles the agent ships.
+    expect(decided.body.bundleVersion).toBeNull();
+  });
+
+  it('carries the two-phase OCR protocol across the network', async () => {
+    const key = (await enroll(await newToken())).body.apiKey;
+    const features = fixtureDocument(
+      'A DHL-shaped page with no usable text stops and asks for OCR of the ink box'
+    );
+
+    const first = await request(app)
+      .post('/agents/me/decide')
+      .set('x-printo-agent-key', key)
+      .send({ features });
+
+    expect(first.status).toBe(200);
+    expect(first.body.status).toBe('needs-features');
+    expect(first.body.ocr).toHaveLength(1);
+    expect(first.body.ocr[0].pageNumber).toBe(1);
+
+    // The agent is the only side holding the pixels, so it fills the region and asks again.
+    const enriched = fixtureDocument(
+      'OCR recovers the waybill markings the anonymiser flattened into an image'
+    );
+
+    const second = await request(app)
+      .post('/agents/me/decide')
+      .set('x-printo-agent-key', key)
+      .send({ features: enriched, secondPass: true });
+
+    expect(second.status).toBe(200);
+    expect(second.body.status).toBe('decided');
+    expect(second.body.decision.pages[0].route).toBe('A4');
+
+    // A second pass that still asks is a rule-set defect, not a question for the user.
+    const looping = await request(app)
+      .post('/agents/me/decide')
+      .set('x-printo-agent-key', key)
+      .send({ features, secondPass: true });
+
+    expect(looping.status).toBe(422);
+    expect(looping.body.error).toBe('RULES_ASK_OCR_TWICE');
+  });
+
+  it('rejects malformed features rather than throwing', async () => {
+    const key = (await enroll(await newToken())).body.apiKey;
+
+    const response = await request(app)
+      .post('/agents/me/decide')
+      .set('x-printo-agent-key', key)
+      .send({ features: { fileName: 'x.pdf', pages: [{ pageNumber: 1 }] } });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('INVALID_FEATURES');
+    expect(response.body.detail).toContain('features.pages[0]');
+
+    expect((await request(app).post('/agents/me/decide').send({})).status).toBe(401);
+  });
+
+  it('decides with the published bundle once one exists', async () => {
+    const key = (await enroll(await newToken())).body.apiKey;
+
+    // A bundle whose only rule sends every page to thermal: proves the server executes what
+    // was published rather than its own built-ins.
+    const published = await request(app)
+      .post('/admin/bundles')
+      .set('authorization', `Bearer ${adminToken}`)
+      .send({
+        payload: {
+          schemaVersion: 1,
+          profiles: [
+            {
+              profile: 'EverythingThermal',
+              version: 1,
+              pageRules: [
+                {
+                  id: 'all-thermal',
+                  name: 'Everything is a label',
+                  when: { pageIndex: { range: { min: 1 } } },
+                  then: { route: 'THERMAL', confidence: 1 }
+                }
+              ],
+              fallback: { route: 'A4', onUnknown: 'prompt' }
+            }
+          ]
+        }
+      });
+
+    expect(published.status).toBe(201);
+
+    const decided = await request(app)
+      .post('/agents/me/decide')
+      .set('x-printo-agent-key', key)
+      .send({ features: fixtureDocument('An A4 invoice takes the profile default silently') });
+
+    expect(decided.status).toBe(200);
+    expect(decided.body.decision.profile).toBe('EverythingThermal');
+    expect(decided.body.decision.pages[0].route).toBe('THERMAL');
+    expect(decided.body.bundleVersion).toBe(published.body.bundle.version);
   });
 
   it('replaces the reported printers wholesale', async () => {

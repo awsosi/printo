@@ -1,5 +1,15 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { ROLES } from '@printo/shared';
+import {
+  BUILTIN_PROFILES,
+  evaluateDocument,
+  matchProfile,
+  parseBundlePayload,
+  parseDocumentFeatures,
+  WireFormatError,
+  type EngineOptions,
+  type RuleBundlePayload
+} from '@printo/routing-engine';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import type { JsonObject } from '../types.js';
 import type { AgentStore } from './store.js';
@@ -44,6 +54,27 @@ function parsePageNumbers(value: unknown): number[] {
  */
 export function createAgentRouter(store: AgentStore): Router {
   const router = Router();
+
+  /**
+   * The rules the server itself executes, and the version it would tell an agent to sync.
+   *
+   * With no bundle published the server falls back to the same built-in profiles the agent
+   * ships with, so `server` and `auto` decision modes work on a fresh install rather than
+   * failing until somebody remembers to press publish. A bundle that is present but no longer
+   * parses is a different matter and is reported, not silently replaced: agents are already
+   * running it, and quietly deciding by different rules than the fleet is the worst outcome.
+   */
+  async function activeRules(): Promise<{ payload: RuleBundlePayload; version: number | null }> {
+    const bundle = await store.latestBundle();
+    if (!bundle) {
+      return {
+        payload: { schemaVersion: 1, profiles: BUILTIN_PROFILES },
+        version: null
+      };
+    }
+
+    return { payload: parseBundlePayload(bundle.payload), version: bundle.version };
+  }
 
   /** Resolves the calling agent from its API key. */
   async function requireAgent(req: Request, res: Response, next: NextFunction) {
@@ -133,6 +164,77 @@ export function createAgentRouter(store: AgentStore): Router {
     }
 
     return res.json(bundle);
+  });
+
+  /**
+   * Decides one document on the server, from features the agent measured.
+   *
+   * This is what `server` and `auto` decision modes call. Only the *features* cross the
+   * network, never the document: a workstation stays the only place a customer's invoice is
+   * rendered, and the payload is a few kilobytes rather than a few megabytes.
+   *
+   * The two-phase OCR protocol survives the round trip unchanged. The server answers
+   * `needs-features` with the rectangles a rule wants, the agent - which is the only side
+   * holding the pixels - recognises them and posts the enriched features back. As locally,
+   * exactly one extra round is allowed: a second `needs-features` is a defect in the rule set,
+   * not a question a user could answer, and it is reported as such rather than looped on.
+   */
+  router.post('/agents/me/decide', requireAgent, async (req, res) => {
+    let features;
+    try {
+      features = parseDocumentFeatures(req.body?.features);
+    } catch (error) {
+      if (error instanceof WireFormatError) {
+        return res.status(400).json({ error: 'INVALID_FEATURES', detail: error.message });
+      }
+      throw error;
+    }
+
+    let rules;
+    try {
+      rules = await activeRules();
+    } catch (error) {
+      if (error instanceof WireFormatError) {
+        return res.status(500).json({ error: 'BUNDLE_UNREADABLE', detail: error.message });
+      }
+      throw error;
+    }
+
+    const profile = matchProfile(rules.payload.profiles, features);
+    if (!profile) {
+      // Not an error: it is the NO_PROFILE_MATCH fallback, and the agent must raise it the
+      // same way it would have locally.
+      return res.json({ status: 'no-profile', bundleVersion: rules.version });
+    }
+
+    const options: EngineOptions = rules.payload.carrierSignatures
+      ? { carrierSignatures: rules.payload.carrierSignatures }
+      : {};
+
+    const secondPass = Boolean(req.body?.secondPass);
+    const evaluation = evaluateDocument(profile, features, options);
+
+    if (evaluation.status === 'needs-features') {
+      if (secondPass) {
+        return res.status(422).json({
+          error: 'RULES_ASK_OCR_TWICE',
+          detail: 'the rule set asked for OCR twice; the second pass must be decidable',
+          bundleVersion: rules.version
+        });
+      }
+
+      return res.json({
+        status: 'needs-features',
+        ocr: evaluation.ocr,
+        bundleVersion: rules.version
+      });
+    }
+
+    return res.json({
+      status: 'decided',
+      decision: evaluation.document,
+      bundleVersion: rules.version
+    });
   });
 
   router.post('/agents/me/printers', requireAgent, async (req, res) => {
@@ -306,6 +408,17 @@ export function createAgentRouter(store: AgentStore): Router {
   router.post('/admin/bundles', ...admin, async (req, res) => {
     if (!isJsonObject(req.body?.payload)) {
       return res.status(400).json({ error: 'INVALID_BUNDLE' });
+    }
+
+    try {
+      // Publishing is the last point at which a bad rule set costs one HTTP response instead
+      // of every workstation in the building.
+      parseBundlePayload(req.body.payload);
+    } catch (error) {
+      if (error instanceof WireFormatError) {
+        return res.status(400).json({ error: 'INVALID_BUNDLE', detail: error.message });
+      }
+      throw error;
     }
 
     const bundle = await store.publishBundle({

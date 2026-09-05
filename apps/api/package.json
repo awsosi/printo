@@ -10,6 +10,7 @@
     "migrate": "tsx src/db/migrate.ts"
   },
   "dependencies": {
+    "@printo/routing-engine": "0.1.0",
     "@printo/shared": "0.1.0",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.5",
