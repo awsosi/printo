@@ -2817,6 +2817,7 @@ export function createWebApp(options: CreateWebAppOptions = {}) {
       path: '/admin/review-queue/:id/propose-rule',
       upstreamPath: (req) => `/admin/review-queue/${req.params.id}/propose-rule`
     },
+    { method: 'get', path: '/admin/accounting', upstreamPath: () => '/admin/accounting' },
     { method: 'get', path: '/admin/retention', upstreamPath: () => '/admin/retention' },
     { method: 'put', path: '/admin/retention/:scope', upstreamPath: (req) => `/admin/retention/${req.params.scope}` },
     { method: 'post', path: '/admin/retention/run', upstreamPath: () => '/admin/retention/run' }

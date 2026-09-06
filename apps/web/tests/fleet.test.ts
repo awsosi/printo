@@ -23,6 +23,8 @@ describe('fleet admin', () => {
     expect(res.text).toContain('id="fleetBundleEditor"');
     expect(res.text).toContain('id="fleetFallbackSummary"');
     expect(res.text).toContain('id="fleetReviewList"');
+    expect(res.text).toContain('id="fleetAccountingList"');
+    expect(res.text).toContain('id="fleetReconciliation"');
 
     // And it is actually driven, not decorative.
     expect(res.text).toContain('function loadFleet()');
@@ -50,6 +52,7 @@ describe('fleet admin', () => {
       ['get', '/admin/bundles/latest'],
       ['get', '/admin/fallbacks/summary'],
       ['get', '/admin/review-queue?status=OPEN'],
+      ['get', '/admin/accounting'],
       ['post', '/admin/bundles', { payload: { schemaVersion: 1, profiles: [] } }],
       ['patch', '/admin/agents/agent-1', { status: 'DISABLED' }],
       ['post', '/admin/agents/enrollment-tokens', { validForHours: 1 }],
@@ -69,7 +72,7 @@ describe('fleet admin', () => {
 
     // Query strings survive the hop: the review queue is filtered server-side, not in the page.
     expect(seen[3].url).toBe('http://api:4000/admin/review-queue?status=OPEN');
-    expect(seen[5]).toMatchObject({ url: 'http://api:4000/admin/agents/agent-1', method: 'PATCH' });
+    expect(seen.find((call) => call.url.endsWith('/admin/agents/agent-1'))).toMatchObject({ method: 'PATCH' });
   });
 
   it('refuses fleet calls that arrive without a token', async () => {

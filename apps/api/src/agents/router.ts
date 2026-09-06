@@ -562,6 +562,28 @@ export function createAgentRouter(store: AgentStore): Router {
     return item ? res.json({ item }) : res.status(404).json({ error: 'REVIEW_ITEM_NOT_FOUND' });
   });
 
+  /**
+   * What was printed, by whom, and where it went.
+   *
+   * Defaults to the last 30 days. The reconciliation figure is the part worth reading: it
+   * compares what the agents said their documents contained with how many per-page records
+   * actually arrived, and names the jobs where those disagree. A chargeback built on numbers
+   * nobody has reconciled is a chargeback that will be disputed.
+   */
+  router.get('/admin/accounting', ...admin, async (req, res) => {
+    const to = req.query.to ? new Date(String(req.query.to)) : new Date();
+    const from = req.query.from
+      ? new Date(String(req.query.from))
+      : new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from >= to) {
+      return res.status(400).json({ error: 'INVALID_RANGE' });
+    }
+
+    const summary = await store.summariseAccounting({ from, to });
+    return res.json({ from: from.toISOString(), to: to.toISOString(), ...summary });
+  });
+
   router.get('/admin/retention', ...admin, async (_req, res) => {
     return res.json({ policies: await store.listRetentionPolicies() });
   });

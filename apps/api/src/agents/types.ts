@@ -148,6 +148,39 @@ export interface ReviewQueueRecord {
   resolvedAt: string | null;
 }
 
+/** One line of the accounting view: what a machine printed, for whom, and where it went. */
+export interface AccountingRow {
+  agentId: string;
+  machineName: string;
+  userName: string | null;
+  route: string | null;
+  printerQueue: string | null;
+  jobs: number;
+  pages: number;
+}
+
+/**
+ * Whether the per-page records add up to what the agents said they printed.
+ *
+ * Two independent counts: `declaredPages` is the page count the agent reported for the
+ * document, `recordedPages` is how many per-page rows actually arrived. They should match for
+ * completed jobs. A shortfall means pages were routed and never reported - which is exactly
+ * the failure that would make a chargeback wrong - so it is surfaced rather than smoothed over.
+ */
+export interface AccountingReconciliation {
+  completedJobs: number;
+  declaredPages: number;
+  recordedPages: number;
+  /** Jobs whose page rows do not match their declared count, worst first. */
+  discrepancies: Array<{
+    agentJobId: string;
+    machineName: string;
+    fileName: string;
+    declaredPages: number;
+    recordedPages: number;
+  }>;
+}
+
 export interface RetentionPolicyRecord {
   scope: string;
   retainDays: number;

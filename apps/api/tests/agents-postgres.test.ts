@@ -765,6 +765,89 @@ suite('agent API (postgres)', () => {
     ).toBe(404);
   });
 
+  it('accounts for what was printed, and says when it does not reconcile', async () => {
+    const key = (await enroll(await newToken())).body.apiKey;
+
+    async function report(jobKey: string, pageCount: number, pages: unknown[], status = 'COMPLETED') {
+      const response = await request(app)
+        .post('/agents/me/jobs')
+        .set('x-printo-agent-key', key)
+        .send({
+          jobKey,
+          source: 'HotFolder',
+          fileName: `${jobKey}.pdf`,
+          documentSha256: jobKey,
+          pageCount,
+          userName: 'olek',
+          status,
+          pages
+        });
+      expect(response.status).toBe(201);
+    }
+
+    // Two well-formed jobs: a four-page document split across both printers, and a one-page
+    // label. Every page reported.
+    await report('mixed', 4, [
+      { pageNumber: 1, route: 'A4', printerQueue: 'HP-A4' },
+      { pageNumber: 2, route: 'THERMAL', printerQueue: 'ZEBRA-01' },
+      { pageNumber: 3, route: 'A4', printerQueue: 'HP-A4' },
+      { pageNumber: 4, route: 'A4', printerQueue: 'HP-A4' }
+    ]);
+    await report('label', 1, [{ pageNumber: 1, route: 'THERMAL', printerQueue: 'ZEBRA-01' }]);
+
+    const clean = await request(app).get('/admin/accounting').set('authorization', `Bearer ${adminToken}`);
+
+    expect(clean.status).toBe(200);
+    expect(clean.body.reconciliation).toMatchObject({
+      completedJobs: 2,
+      declaredPages: 5,
+      recordedPages: 5,
+      discrepancies: []
+    });
+
+    const a4 = clean.body.rows.find((row: { printerQueue: string }) => row.printerQueue === 'HP-A4');
+    const thermal = clean.body.rows.find((row: { printerQueue: string }) => row.printerQueue === 'ZEBRA-01');
+    expect(a4).toMatchObject({ machineName: 'WS-001', userName: 'olek', route: 'A4', pages: 3 });
+    expect(thermal).toMatchObject({ route: 'THERMAL', pages: 2, jobs: 2 });
+
+    // A job that says it had three pages but reports one. This is the failure that makes a
+    // chargeback wrong, so it has to be named rather than averaged away.
+    await report('short', 3, [{ pageNumber: 1, route: 'A4', printerQueue: 'HP-A4' }]);
+
+    const broken = await request(app).get('/admin/accounting').set('authorization', `Bearer ${adminToken}`);
+
+    expect(broken.body.reconciliation.declaredPages).toBe(8);
+    expect(broken.body.reconciliation.recordedPages).toBe(6);
+    expect(broken.body.reconciliation.discrepancies).toHaveLength(1);
+    expect(broken.body.reconciliation.discrepancies[0]).toMatchObject({
+      fileName: 'short.pdf',
+      declaredPages: 3,
+      recordedPages: 1
+    });
+
+    // A job that failed before routing legitimately has no page rows. Counting it as a
+    // discrepancy would bury the real ones in noise.
+    await report('failed', 2, [], 'FAILED');
+    const withFailure = await request(app).get('/admin/accounting').set('authorization', `Bearer ${adminToken}`);
+    expect(withFailure.body.reconciliation.discrepancies).toHaveLength(1);
+    expect(withFailure.body.reconciliation.completedJobs).toBe(3);
+
+    // A window that excludes everything reports nothing rather than failing.
+    const empty = await request(app)
+      .get('/admin/accounting?from=2020-01-01&to=2020-02-01')
+      .set('authorization', `Bearer ${adminToken}`);
+    expect(empty.body.rows).toEqual([]);
+    expect(empty.body.reconciliation.completedJobs).toBe(0);
+
+    expect(
+      (
+        await request(app)
+          .get('/admin/accounting?from=2026-01-01&to=2025-01-01')
+          .set('authorization', `Bearer ${adminToken}`)
+      ).status
+    ).toBe(400);
+  });
+
   it('sweeps on a schedule and only once across replicas', async () => {
     const key = (await enroll(await newToken())).body.apiKey;
     await request(app)

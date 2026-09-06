@@ -2,6 +2,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { Pool } from 'pg';
 import type { JsonObject } from '../types.js';
 import type {
+  AccountingReconciliation,
+  AccountingRow,
   AgentDecisionMode,
   AgentJobPageInput,
   AgentJobRecord,
@@ -126,6 +128,12 @@ export interface AgentStore {
     proposedRule?: JsonObject | null;
     resolvedBy?: string | null;
   }): Promise<ReviewQueueRecord | null>;
+
+  /** What was printed in a window, grouped by machine, user and destination. */
+  summariseAccounting(range: { from: Date; to: Date }): Promise<{
+    rows: AccountingRow[];
+    reconciliation: AccountingReconciliation;
+  }>;
 
   listRetentionPolicies(): Promise<RetentionPolicyRecord[]>;
   setRetentionPolicy(scope: string, retainDays: number): Promise<RetentionPolicyRecord | null>;
@@ -680,6 +688,93 @@ export class PostgresAgentStore implements AgentStore {
       ]
     );
     return result.rowCount ? mapReview(result.rows[0]) : null;
+  }
+
+  async summariseAccounting(range: { from: Date; to: Date }): Promise<{
+    rows: AccountingRow[];
+    reconciliation: AccountingReconciliation;
+  }> {
+    // LEFT JOIN, not INNER: a job that failed before any page was routed still belongs in the
+    // view. Dropping it would make a machine that is failing every job look idle.
+    const rows = await this.pool.query(
+      `SELECT a.id                AS agent_id,
+              a.machine_name      AS machine_name,
+              j.user_name         AS user_name,
+              p.route             AS route,
+              p.printer_queue     AS printer_queue,
+              COUNT(DISTINCT j.id)::int AS jobs,
+              COUNT(p.id)::int          AS pages
+         FROM agent_jobs j
+         JOIN agents a ON a.id = j.agent_id
+    LEFT JOIN agent_job_pages p ON p.agent_job_id = j.id
+        WHERE j.created_at >= $1 AND j.created_at < $2
+     GROUP BY a.id, a.machine_name, j.user_name, p.route, p.printer_queue
+     ORDER BY pages DESC, machine_name`,
+      [range.from, range.to]
+    );
+
+    // Reconciliation covers completed jobs only. An failed or awaiting-user job legitimately
+    // has fewer page rows than pages, and counting those as discrepancies would bury the real
+    // ones in noise.
+    const totals = await this.pool.query(
+      `SELECT COUNT(*)::int                    AS completed_jobs,
+              COALESCE(SUM(j.page_count), 0)::int AS declared_pages,
+              COALESCE(SUM(counted.pages), 0)::int AS recorded_pages
+         FROM agent_jobs j
+    LEFT JOIN LATERAL (
+              SELECT COUNT(*)::int AS pages
+                FROM agent_job_pages p
+               WHERE p.agent_job_id = j.id
+         ) counted ON TRUE
+        WHERE j.status = 'COMPLETED'
+          AND j.created_at >= $1 AND j.created_at < $2`,
+      [range.from, range.to]
+    );
+
+    const discrepancies = await this.pool.query(
+      `SELECT j.id            AS agent_job_id,
+              a.machine_name  AS machine_name,
+              j.file_name     AS file_name,
+              j.page_count::int AS declared_pages,
+              COALESCE(counted.pages, 0)::int AS recorded_pages
+         FROM agent_jobs j
+         JOIN agents a ON a.id = j.agent_id
+    LEFT JOIN LATERAL (
+              SELECT COUNT(*)::int AS pages
+                FROM agent_job_pages p
+               WHERE p.agent_job_id = j.id
+         ) counted ON TRUE
+        WHERE j.status = 'COMPLETED'
+          AND j.created_at >= $1 AND j.created_at < $2
+          AND j.page_count <> COALESCE(counted.pages, 0)
+     ORDER BY ABS(j.page_count - COALESCE(counted.pages, 0)) DESC
+        LIMIT 50`,
+      [range.from, range.to]
+    );
+
+    return {
+      rows: rows.rows.map((row) => ({
+        agentId: row.agent_id as string,
+        machineName: row.machine_name as string,
+        userName: (row.user_name as string) ?? null,
+        route: (row.route as string) ?? null,
+        printerQueue: (row.printer_queue as string) ?? null,
+        jobs: row.jobs as number,
+        pages: row.pages as number
+      })),
+      reconciliation: {
+        completedJobs: totals.rows[0].completed_jobs as number,
+        declaredPages: totals.rows[0].declared_pages as number,
+        recordedPages: totals.rows[0].recorded_pages as number,
+        discrepancies: discrepancies.rows.map((row) => ({
+          agentJobId: row.agent_job_id as string,
+          machineName: row.machine_name as string,
+          fileName: row.file_name as string,
+          declaredPages: row.declared_pages as number,
+          recordedPages: row.recorded_pages as number
+        }))
+      }
+    };
   }
 
   async listRetentionPolicies(): Promise<RetentionPolicyRecord[]> {

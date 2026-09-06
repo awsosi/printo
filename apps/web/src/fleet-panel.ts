@@ -86,6 +86,18 @@ export function fleetPanelHtml(): string {
               <section class="card stack">
                 <div class="section-title">
                   <div class="stack">
+                    <h2>Accounting</h2>
+                    <p class="muted">Pages printed in the last 30 days, by machine, user and destination.</p>
+                  </div>
+                  <span class="pill" id="fleetAccountingTotal">0 pages</span>
+                </div>
+                <div id="fleetReconciliation" class="status muted"></div>
+                <div id="fleetAccountingList" class="status-table"></div>
+              </section>
+
+              <section class="card stack">
+                <div class="section-title">
+                  <div class="stack">
                     <h2>Review queue</h2>
                     <p class="muted">Answered fallbacks waiting to become a rule.</p>
                   </div>
@@ -111,7 +123,8 @@ export function fleetPanelScript(): string {
           bundle: null,
           summary: [],
           fallbacks: [],
-          review: []
+          review: [],
+          accounting: null
         };
 
         function fleetSetStatus(id, message, tone) {
@@ -242,6 +255,57 @@ export function fleetPanelScript(): string {
           '</div>';
         }
 
+        function renderFleetAccounting() {
+          const target = byId('fleetAccountingList');
+          const note = byId('fleetReconciliation');
+          const data = fleet.accounting;
+
+          if (!data || !data.rows.length) {
+            byId('fleetAccountingTotal').textContent = '0 pages';
+            note.textContent = 'Nothing printed in this window.';
+            note.className = 'status muted';
+            target.innerHTML = '';
+            return;
+          }
+
+          const pages = data.rows.reduce(function (sum, row) { return sum + row.pages; }, 0);
+          byId('fleetAccountingTotal').textContent = pages + (pages === 1 ? ' page' : ' pages');
+
+          const r = data.reconciliation;
+          const short = r.declaredPages - r.recordedPages;
+          if (short === 0) {
+            note.textContent = 'Reconciled: ' + r.completedJobs + ' completed job(s), ' +
+              r.recordedPages + ' page(s), and every page accounted for.';
+            note.className = 'status ok';
+          } else {
+            // Surfaced rather than smoothed over: a chargeback built on numbers nobody has
+            // reconciled is a chargeback that will be disputed.
+            note.textContent = 'Does not reconcile: agents declared ' + r.declaredPages +
+              ' page(s) but reported ' + r.recordedPages + ' (' + Math.abs(short) +
+              (short > 0 ? ' missing' : ' extra') + ') across ' + r.discrepancies.length + ' job(s).';
+            note.className = 'status danger';
+          }
+
+          target.innerHTML = data.rows.slice(0, 30).map(function (row) {
+            return '<div class="item">' +
+              '<div class="section-title">' +
+                '<strong>' + escapeHtml(row.machineName) + '</strong>' +
+                '<span class="pill">' + row.pages + '</span>' +
+              '</div>' +
+              '<p class="muted">' + escapeHtml(row.userName || 'unknown user') +
+                ' · ' + escapeHtml(row.route || 'not routed') +
+                ' · ' + escapeHtml(row.printerQueue || 'no queue') +
+                ' · ' + row.jobs + ' job(s)</p>' +
+            '</div>';
+          }).join('') + data.reconciliation.discrepancies.slice(0, 5).map(function (item) {
+            return '<div class="item">' +
+              '<div class="section-title"><strong>' + escapeHtml(item.fileName) + '</strong>' +
+              '<span class="pill danger">' + item.recordedPages + ' of ' + item.declaredPages + '</span></div>' +
+              '<p class="muted">' + escapeHtml(item.machineName) + ' reported fewer pages than the document had.</p>' +
+            '</div>';
+          }).join('');
+        }
+
         function renderFleetReview() {
           const target = byId('fleetReviewList');
           const open = fleet.review.filter(function (item) { return item.status === 'OPEN'; });
@@ -303,6 +367,14 @@ export function fleetPanelScript(): string {
             fleet.summary = [];
             fleet.fallbacks = [];
             renderFleetFallbacks();
+          }
+
+          try {
+            fleet.accounting = await request('/admin/accounting', 'GET');
+            renderFleetAccounting();
+          } catch (error) {
+            fleet.accounting = null;
+            renderFleetAccounting();
           }
 
           try {
