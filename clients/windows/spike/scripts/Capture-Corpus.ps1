@@ -275,11 +275,19 @@ try {
         # Said out loud, because "Chrome did not open" was the single most confusing symptom of
         # the first attempt and nothing on screen distinguished it from "Chrome opened and you
         # did not print".
+        # Chrome's launcher process hands the command line to the browser process and exits, so
+        # a zero exit code from the process we started means nothing. What matters is whether a
+        # browser is actually running on our profile.
         Start-Sleep -Seconds 2
-        if ($browser -and $browser.HasExited) {
-            Write-Warning "Chrome exited immediately (code $($browser.ExitCode)). Open the file by hand and print it."
-        } elseif ($browser) {
-            Write-Host "  Chrome is up (pid $($browser.Id)). Waiting for the job..."
+        $running = @(Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -like "*$profileDir*" })
+
+        if ($running.Count -gt 0) {
+            Write-Host "  Chrome is up ($($running.Count) processes). Waiting for the job..."
+        } elseif ($browser -and $browser.HasExited -and $browser.ExitCode -ne 0) {
+            Write-Warning "Chrome failed to start (code $($browser.ExitCode)). Open the file by hand and print it."
+        } else {
+            Write-Host '  Waiting for the job...'
         }
 
         $deadline = (Get-Date).AddSeconds($TimeoutSeconds)

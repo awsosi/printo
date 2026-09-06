@@ -289,6 +289,60 @@ This is why no production code was allowed to assume an answer. Virtual-printer 
 be built as "hot folders, but from the spooler": the routing has to be made rotation-tolerant
 first, or the feature ships broken for the input it exists to handle.
 
+### 5.0a What the print path does, measured across seven documents
+
+One document is an anecdote. `Capture-Corpus.ps1` printed a curated spread from Chrome - one
+document per page-shape family in the census, plus a page of nothing but visible prose - and
+`compare_captures.py` and `CaptureRoutingTests` measured all 22 resulting pages. The captures
+are checked in under `tests/capture/`.
+
+**Four transformations, and each takes a class of predicate with it.**
+
+| Transformation | Pages | What it costs |
+|---|---|---|
+| Text layer removed | **22 of 22** | Every `text` predicate. Including the HTML probe: 368 characters of ordinary prose, no images, comes back with nothing extractable. Glyphs become marks. |
+| Landscape turned to portrait | **10 of 22** | `orientation`, and `pageWidthMm` / `pageHeightMm` for those pages. |
+| Non-A4 media replaced by A4 | **5 of 22** | `pageIsLabelStock`, and every page-size predicate, for label stock (99x200) and the UPS carrier sheet (231x318). |
+| Images resampled down to ~300 dpi | 4 of 22 | Nothing: 300 dpi is ample for barcodes and OCR, and nothing is ever resampled *up*. |
+
+**What survives, and it is the important part: physical size.** Content is placed at 1:1 on the
+new sheet rather than scaled to it. `SCALED` does not appear once in 22 pages. An ink box that
+measured 101.6 x 156.0 mm on disk measures 150.6 x 101.6 mm printed - the same rectangle,
+turned - and a 99 x 200 mm label page's ink lands at 99.3 x 195.8 mm on A4, in the corner.
+
+**Why "make matching rotation-tolerant" is not enough.** Measured against the shipped rules,
+transposing a page's geometry recovers the three embedded FedEx/DHL labels, whose rules key on
+an A4-landscape sheet. It recovers none of the others, because no transposition brings back a
+page size that was substituted away:
+
+| Label page, as delivered | Rule that should match | Why it still fails |
+|---|---|---|
+| ink 150.6x101.6, aspect 0.68 | `fedex-label-embedded` | fixed by transposing: 101.6x150.6, aspect 1.48, on a 297x210 sheet |
+| ink 99.3x195.8 at (0,0) | `dhl-label-stock` | needs `pageIsLabelStock`; the page is A4 now, and turning it does not make it 99x200 |
+| ink 99.6x197.4 | `ups-label-embedded` | needs a 231x318 sheet; that size no longer exists on this path |
+
+**And geometry alone cannot finish the job anyway.** Sorting the 22 measured ink boxes by their
+short edge separates the classes - labels at 99-102 mm, courier waybill sheets at 92-94 mm,
+invoices at 190+ mm - but only by a 5 mm margin, and section 1 already established from the
+corpus that the DHL waybill sheet and the DHL parcel label sit at 92.2x183.6 and 91.9x180.3 mm.
+Those two are not separable by any measurement. Only content separates them, and on this input
+path content means OCR, barcodes or picture matching, because text is gone.
+
+**The consequence for the rule set.** On the virtual-printer path:
+
+- `text` predicates are dead. The OCR equivalents carry that load, and OCR stops being an
+  optimisation for scanned pages and becomes load-bearing for every job.
+- Page-frame predicates - `pageWidthMm`, `pageHeightMm`, `orientation`, `pageIsLabelStock` -
+  describe the queue's media, not the document. They are evidence about the printer.
+- The ink box is the reliable measurement, once normalised for orientation.
+- Barcode and picture matching are the discriminators of last resort, and both are implemented.
+  Barcode decoding remains unvalidated against real barcodes (section 1.5a) and this raises the
+  cost of leaving it that way.
+
+This does not invalidate the corpus work: 1266/1266 still holds for documents that reach the
+agent as files, which is the hot-folder path and the majority of the existing rule set's
+purpose. It means the printed path needs rules stated in terms that survive printing.
+
 ### 5.1 Hot-folder mode (robustness rules)
 
 - Watch N configurable directories; per-directory extension list + include/exclude filename

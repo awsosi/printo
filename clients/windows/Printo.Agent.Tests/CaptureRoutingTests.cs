@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Printo.Agent.Core.Routing;
 using Printo.Agent.Render;
 using Xunit;
@@ -6,166 +7,192 @@ using Xunit.Abstractions;
 
 namespace Printo.Agent.Tests;
 
+/// <summary>One capture in <c>tests/capture/manifest.json</c>.</summary>
+public sealed record CaptureFixture
+{
+    /// <summary>File name of the captured job, in <c>tests/capture</c>.</summary>
+    public string Capture { get; init; } = string.Empty;
+
+    /// <summary>The corpus document it was printed from, or null for the generated probe.</summary>
+    public string? Source { get; init; }
+}
+
 /// <summary>
-/// Routing a real job exactly as the Windows virtual printer delivers it.
+/// Routing real jobs exactly as the Windows virtual printer delivers them.
 /// </summary>
 /// <remarks>
-/// Every other routing test in this suite starts from a document on disk. This one starts from
-/// what came back out of the spooler, which is not the same thing and must not be assumed to
-/// be. The fixture is `czwart_anon/OneClickPrint_VTW189036998_anon.pdf` printed from Chrome to
-/// an IPP Everywhere queue during the M1 capture (plan section 5.0): `application/pdf`, the
-/// page's embedded image passed through at its native 200 dpi, produced by the inbox
-/// "Microsoft: Print To PDF" renderer.
+/// Every other routing test in this suite starts from a document on disk. These start from what
+/// came back out of the spooler, and the two are not the same thing.
+///
+/// The fixtures are seven documents printed from Chrome to an IPP Everywhere queue - one per
+/// page-shape family in the corpus census, plus a page of nothing but visible text. Measured
+/// across their 22 pages, the print path applies four transformations, and each one takes a
+/// class of predicate with it:
+///
+/// <list type="bullet">
+/// <item>every page loses its text layer - all 22, including plain HTML text;</item>
+/// <item>every landscape page is turned to portrait - 10 of 22;</item>
+/// <item>every non-A4 page is placed on A4 instead, label stock included;</item>
+/// <item>images are resampled down to about 300 dpi, never up.</item>
+/// </list>
+///
+/// What survives is the artwork's physical size. Content is placed at 1:1 rather than scaled to
+/// the new sheet, so an ink box that measured 101.6 x 156.0 mm on disk measures 156.4 x 102.0 mm
+/// printed: the same rectangle, turned. That is the fact any fix has to be built on.
 /// </remarks>
 public sealed class CaptureRoutingTests(ITestOutputHelper output)
 {
-    private const string Capture = "chrome-ipp-a4-landscape-dhl.pdf";
-
-    /// <summary>What the spooler did to the page, measured rather than assumed.</summary>
-    [Fact]
-    public void TheSpoolerRelaysTheSourcePageOntoPortraitStock()
+    /// <summary>Every capture, so a new fixture is covered by adding a file and a manifest line.</summary>
+    public static TheoryData<string> Captures()
     {
-        if (Load() is not { } document)
+        var data = new TheoryData<string>();
+        foreach (var fixture in Manifest())
+        {
+            data.Add(fixture.Capture);
+        }
+
+        // TheoryData may not be empty, and the fixtures are absent in a bare checkout.
+        if (Manifest().Count == 0)
+        {
+            data.Add(string.Empty);
+        }
+
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(Captures))]
+    public void EveryCapturedPageIsMeasuredAndRouted(string capture)
+    {
+        if (string.IsNullOrEmpty(capture) || RepositoryPaths.Captures is not { } directory)
         {
             return;
         }
 
+        var document = Extract(Path.Combine(directory, capture), capture);
+        var evaluation = RoutingEngine.EvaluateDocument(BuiltinProfiles.OneClickPrint, document);
+        Assert.NotNull(evaluation.Document);
+
+        output.WriteLine(capture);
+        var decisions = evaluation.Document!.Pages.ToDictionary(page => page.PageNumber);
         foreach (var page in document.Pages)
         {
-            output.WriteLine(Describe(page));
+            var decision = decisions.GetValueOrDefault(page.PageNumber);
+            output.WriteLine(
+                "  " + Describe(page) + "  ->  "
+                    + (decision is null
+                        ? "(needs features)"
+                        : $"{decision.Route,-7} {decision.RuleId ?? "(no rule)"}"));
         }
 
-        // The source document is A4 landscape, 297x210 mm, with a portrait label region on it.
-        // Chrome asked for portrait stock (orientation-requested=3) and Windows turned the
-        // sheet to fit, so the agent is handed 210x297 mm with the content rotated.
-        Assert.All(document.Pages, page =>
-        {
-            Assert.InRange(page.PageWidthMm, 208, 212);
-            Assert.InRange(page.PageHeightMm, 295, 299);
-            Assert.Equal(PageOrientation.Portrait, page.Orientation);
-        });
+        // Nothing is asserted about *where* pages go here - that is the subject of the two tests
+        // below. This one exists so that every capture is exercised end to end through PDFium,
+        // the extractor and the engine, and a fixture that crashes any of them fails loudly.
+        Assert.Equal(document.Pages.Count, evaluation.Document.Pages.Count);
     }
 
     /// <summary>
-    /// The spooler's PDF has no text layer, so text predicates cannot fire on a captured job.
+    /// No captured page carries a text layer - not even one that was nothing but text.
     /// </summary>
     /// <remarks>
-    /// The source carries 168 characters of text - added by the anonymiser, and invisible - and
-    /// the print path renders visible content only, so it does not survive. This is the same
-    /// condition as production originals, which are image-only (plan section 1.5), and the
-    /// engine is proven at 1266/1266 with `--strip-text-layer`. It is recorded here because a
-    /// rule set that quietly depends on text would pass every existing test and fail on every
-    /// real print job.
-    /// </remarks>
-    [Fact]
-    public void ACapturedJobCarriesNoTextLayer()
-    {
-        if (Load() is not { } document)
-        {
-            return;
-        }
-
-        Assert.All(document.Pages, page => Assert.True(
-            string.IsNullOrWhiteSpace(page.Text),
-            $"page {page.PageNumber} unexpectedly carries text: {page.Text}"));
-    }
-
-    /// <summary>
-    /// The consequence, and the reason M1 existed: the corpus-calibrated geometry rules do not
-    /// recognise their own document once it has been through the spooler.
-    /// </summary>
-    /// <remarks>
-    /// Every embedded-label rule in the shipped profile is written against the source sheet -
-    /// `orientation: landscape`, `pageWidthMm 290-305`, `inkWidthMm 88-118`. None of those hold
-    /// for a rotated page. The label is still there and still the same size in millimetres; it
-    /// is on its side, and the rules are stated in a frame that turned with it.
+    /// The print path converts glyphs to marks. The text probe is the decisive case: an HTML
+    /// page with 368 characters of ordinary visible prose and no images at all comes back with
+    /// no extractable text, so this is not an artefact of the corpus being scanned material.
     ///
-    /// This test asserts the defect rather than papering over it. It is expected to fail - and
-    /// to be rewritten - when the geometry predicates are made orientation-independent, which
-    /// is the point at which the virtual printer can route a document that its own corpus
-    /// fixture already routes correctly.
+    /// The consequence is that every `text` predicate in a rule set is dead on this input path,
+    /// and the OCR ones carry the load. The engine is proven at 1266/1266 with the text layer
+    /// stripped, so the rules can do it - but a rule set that quietly depends on text would
+    /// pass every other test in this repository and fail on every real print job.
     /// </remarks>
     [Fact]
-    public void CorpusCalibratedRulesMissTheirOwnDocumentOnceItHasBeenPrinted()
+    public void NoCapturedPageCarriesATextLayer()
     {
-        if (Load() is not { } document)
+        if (RepositoryPaths.Captures is not { } directory)
         {
             return;
         }
 
-        var evaluation = RoutingEngine.EvaluateDocument(BuiltinProfiles.OneClickPrint, document);
-        Assert.NotNull(evaluation.Document);
-
-        foreach (var decision in evaluation.Document!.Pages)
+        var withText = new List<string>();
+        foreach (var fixture in Manifest())
         {
-            output.WriteLine(string.Create(
-                CultureInfo.InvariantCulture,
-                $"page {decision.PageNumber}: route={decision.Route} rule={decision.RuleId ?? "(none)"} "
-                    + $"confidence={decision.Confidence:0.00} hold={decision.Hold}"));
+            var document = Extract(Path.Combine(directory, fixture.Capture), fixture.Capture);
+            foreach (var page in document.Pages.Where(page => !string.IsNullOrWhiteSpace(page.Text)))
+            {
+                withText.Add($"{fixture.Capture} p{page.PageNumber}: {page.Text}");
+            }
         }
 
-        Assert.All(
-            evaluation.Document.Pages,
-            decision => Assert.Equal(RoutingProfileRules.RouteA4, decision.Route));
+        Assert.Empty(withText);
     }
 
-    /// <summary>The same document from disk, for contrast: this is what the rules were built on.</summary>
+    /// <summary>
+    /// The defect: rules calibrated on source files do not recognise the same documents printed.
+    /// </summary>
+    /// <remarks>
+    /// Asserted rather than papered over, so the fix has something to turn green. Expect this to
+    /// be rewritten - not deleted - when matching is made orientation-independent: the same
+    /// documents should then route their labels to thermal by whichever path they arrive on.
+    /// </remarks>
     [Fact]
-    public void TheSameDocumentFromDiskRoutesItsLabelToThermal()
+    public void CorpusCalibratedRulesFindNoLabelInAnyCapturedDocument()
     {
-        var corpus = RepositoryPaths.CorpusPdfs;
-        if (corpus is null)
+        if (RepositoryPaths.Captures is not { } directory)
         {
             return;
         }
 
-        var path = Path.Combine(corpus, "czwart_anon", "OneClickPrint_VTW189036998_anon.pdf");
-        if (!File.Exists(path))
+        var thermal = new List<string>();
+        foreach (var fixture in Manifest())
         {
-            return;
+            var document = Extract(Path.Combine(directory, fixture.Capture), fixture.Capture);
+            var evaluation = RoutingEngine.EvaluateDocument(BuiltinProfiles.OneClickPrint, document);
+            foreach (var decision in evaluation.Document?.Pages ?? [])
+            {
+                if (decision.Route == RoutingProfileRules.RouteThermal)
+                {
+                    thermal.Add($"{fixture.Capture} p{decision.PageNumber} via {decision.RuleId}");
+                }
+            }
         }
 
-        using var pdf = PdfDocument.Load(File.ReadAllBytes(path));
-        var document = new PageFeatureExtractor().Extract(pdf, Path.GetFileName(path));
-
-        foreach (var page in document.Pages)
+        foreach (var line in thermal)
         {
-            output.WriteLine(Describe(page));
+            output.WriteLine("thermal: " + line);
         }
 
-        var evaluation = RoutingEngine.EvaluateDocument(BuiltinProfiles.OneClickPrint, document);
-        Assert.NotNull(evaluation.Document);
-
-        foreach (var decision in evaluation.Document!.Pages)
-        {
-            output.WriteLine(string.Create(
-                CultureInfo.InvariantCulture,
-                $"page {decision.PageNumber}: route={decision.Route} rule={decision.RuleId ?? "(none)"}"));
-        }
-
-        Assert.Contains(
-            evaluation.Document.Pages,
-            decision => decision.Route == RoutingProfileRules.RouteThermal);
+        // Six of these seven documents contain an outgoing carrier label. None is found.
+        Assert.Empty(thermal);
     }
 
-    private DocumentFeatures? Load()
+    private static IReadOnlyList<CaptureFixture> Manifest()
     {
         var directory = RepositoryPaths.Captures;
         if (directory is null)
         {
-            output.WriteLine("the capture fixtures are not in this checkout; skipping");
-            return null;
+            return [];
         }
 
-        var path = Path.Combine(directory, Capture);
+        var path = Path.Combine(directory, "manifest.json");
+        if (!File.Exists(path))
+        {
+            return [];
+        }
+
+        return JsonSerializer.Deserialize<List<CaptureFixture>>(
+            File.ReadAllText(path),
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+    }
+
+    private static DocumentFeatures Extract(string path, string name)
+    {
         using var pdf = PdfDocument.Load(File.ReadAllBytes(path));
-        return new PageFeatureExtractor().Extract(pdf, Capture, sourceApp: "Chrome");
+        return new PageFeatureExtractor().Extract(pdf, name, sourceApp: "Chrome");
     }
 
     private static string Describe(PageFeatures page) => string.Create(
         CultureInfo.InvariantCulture,
-        $"page {page.PageNumber}: {page.PageWidthMm:0.#}x{page.PageHeightMm:0.#} mm {page.Orientation}, "
-            + $"ink {page.InkBox?.WidthMm ?? 0:0.#}x{page.InkBox?.HeightMm ?? 0:0.#} mm at "
-            + $"({page.InkBox?.XMm ?? 0:0.#},{page.InkBox?.YMm ?? 0:0.#}) aspect "
-            + $"{page.InkBox?.Aspect ?? 0:0.00}, text chars {page.Text?.Length ?? 0}");
+        $"p{page.PageNumber} {page.PageWidthMm,5:0.#}x{page.PageHeightMm,5:0.#}mm {page.Orientation,-9} "
+            + $"ink {page.InkBox?.WidthMm ?? 0,5:0.#}x{page.InkBox?.HeightMm ?? 0,5:0.#}mm "
+            + $"@({page.InkBox?.XMm ?? 0,5:0.#},{page.InkBox?.YMm ?? 0,5:0.#}) "
+            + $"aspect {page.InkBox?.Aspect ?? 0:0.00} text {page.Text?.Length ?? 0,4}");
 }
