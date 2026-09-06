@@ -9,7 +9,7 @@
 
 import { resolveCarrier, type CarrierSignatureSet } from './carrier.js';
 import type { DocumentFeatures, PageFeatures, RectMm } from './features.js';
-import { padRect } from './features.js';
+import { decodedBarcodes, padRect } from './features.js';
 import { evaluatePredicate, findFirstFailure, resolveRect, type EvaluationContext } from './predicates.js';
 import {
   DEFAULT_CONFIDENCE_THRESHOLD,
@@ -21,6 +21,7 @@ import {
   type TransformSpec
 } from './rules.js';
 import type {
+  BarcodeRequest,
   DocumentDecision,
   OcrRequest,
   PageDecision,
@@ -139,7 +140,8 @@ export function evaluatePage(
     ruleId: '',
     ocrRequests: [],
     ocrRectsUsed: new Set<string>(),
-    templateRequests: []
+    templateRequests: [],
+    barcodeRequests: []
   };
 
   const ruleTraces: RuleTrace[] = [];
@@ -154,13 +156,18 @@ export function evaluatePage(
     context.ruleId = rule.id;
     const predicate = evaluatePredicate(rule.when, context);
 
-    if (context.ocrRequests.length > 0 || context.templateRequests.length > 0) {
-      // Both kinds go back in one round rather than one request at a time: a rule that wants
-      // OCR *and* a template would otherwise cost two extra passes over the document.
+    if (
+      context.ocrRequests.length > 0 ||
+      context.templateRequests.length > 0 ||
+      context.barcodeRequests.length > 0
+    ) {
+      // All three kinds go back in one round rather than one request at a time: a rule that
+      // wants OCR *and* a template would otherwise cost two extra passes over the document.
       return {
         status: 'needs-features',
         ocr: dedupeOcr(context.ocrRequests),
-        templates: dedupeTemplates(context.templateRequests)
+        templates: dedupeTemplates(context.templateRequests),
+        barcodes: dedupeBarcodes(context.barcodeRequests)
       };
     }
 
@@ -199,7 +206,7 @@ export function evaluatePage(
       inkCoverage: page.inkBox?.coverage ?? null
     },
     carrier,
-    barcodes: page.barcodes.map((barcode) => ({
+    barcodes: (decodedBarcodes(page) ?? []).map((barcode) => ({
       symbology: barcode.symbology,
       value: barcode.value
     })),
@@ -292,6 +299,19 @@ function dedupeOcr(requests: OcrRequest[]): OcrRequest[] {
 }
 
 /** One request per page and template; a rule set asking twice costs one match, not two. */
+/** One decode per page, however many rules asked: the scan is page-wide. */
+function dedupeBarcodes(requests: BarcodeRequest[]): BarcodeRequest[] {
+  const seen = new Set<number>();
+  const unique: BarcodeRequest[] = [];
+  for (const request of requests) {
+    if (!seen.has(request.pageNumber)) {
+      seen.add(request.pageNumber);
+      unique.push(request);
+    }
+  }
+  return unique;
+}
+
 function dedupeTemplates(requests: TemplateRequest[]): TemplateRequest[] {
   const seen = new Set<string>();
   const unique: TemplateRequest[] = [];
@@ -315,26 +335,34 @@ export function evaluateDocument(
   options: EngineOptions = {}
 ):
   | { status: 'decided'; document: DocumentDecision }
-  | { status: 'needs-features'; ocr: OcrRequest[]; templates: TemplateRequest[] } {
+  | {
+      status: 'needs-features';
+      ocr: OcrRequest[];
+      templates: TemplateRequest[];
+      barcodes: BarcodeRequest[];
+    } {
   const decisions: PageDecision[] = [];
   const pending: OcrRequest[] = [];
   const pendingTemplates: TemplateRequest[] = [];
+  const pendingBarcodes: BarcodeRequest[] = [];
 
   for (const page of document.pages) {
     const evaluation = evaluatePage(profile, page, document, options);
     if (evaluation.status === 'needs-features') {
       pending.push(...evaluation.ocr);
       pendingTemplates.push(...evaluation.templates);
+      pendingBarcodes.push(...evaluation.barcodes);
       continue;
     }
     decisions.push(evaluation.decision);
   }
 
-  if (pending.length > 0 || pendingTemplates.length > 0) {
+  if (pending.length > 0 || pendingTemplates.length > 0 || pendingBarcodes.length > 0) {
     return {
       status: 'needs-features',
       ocr: dedupeOcr(pending),
-      templates: dedupeTemplates(pendingTemplates)
+      templates: dedupeTemplates(pendingTemplates),
+      barcodes: dedupeBarcodes(pendingBarcodes)
     };
   }
 
@@ -399,7 +427,7 @@ export function labelLikeness(page: PageFeatures): number {
   if (page.pageWidthMm <= 130 && page.pageHeightMm <= 260) {
     score += 0.2;
   }
-  if (page.barcodes.length > 0) {
+  if ((decodedBarcodes(page) ?? []).length > 0) {
     score += 0.2;
   }
   return Math.min(1, score);

@@ -46,6 +46,12 @@ export interface ConformanceFixture {
    * pass. Pins the same laziness contract as `expectNeedsOcr`, for picture rules.
    */
   expectNeedsTemplates?: Array<{ pageNumber: number; template: string; ruleId?: string }>;
+  /**
+   * When set, the engine must stop and ask for a barcode decode on exactly these pages on the
+   * first pass. Pins the same laziness contract as `expectNeedsOcr`, for barcode rules - the
+   * one that matters most, because decoding is the most expensive measurement per page.
+   */
+  expectNeedsBarcodes?: Array<{ pageNumber: number; ruleId?: string }>;
   expect?: {
     pages?: ExpectedPageOutcome[];
     document?: ExpectedDocumentOutcome;

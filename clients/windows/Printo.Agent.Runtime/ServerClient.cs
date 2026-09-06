@@ -68,6 +68,9 @@ public sealed class ServerDecisionResponse
     /// <summary>Templates the server wants matched; only this machine holds the pixels.</summary>
     public IReadOnlyList<TemplateRequest> Templates { get; init; } = [];
 
+    /// <summary>Pages the server wants barcodes decoded on; again, only this machine can.</summary>
+    public IReadOnlyList<BarcodeRequest> Barcodes { get; init; } = [];
+
     public long? BundleVersion { get; init; }
 }
 
@@ -404,6 +407,9 @@ public sealed class HttpServerClient : IServerClient, IDisposable
                 Ocr = body.GetProperty("ocr").Deserialize<List<OcrRequest>>(Json) ?? [],
                 Templates = body.TryGetProperty("templates", out var wanted)
                     ? wanted.Deserialize<List<TemplateRequest>>(Json) ?? []
+                    : [],
+                Barcodes = body.TryGetProperty("barcodes", out var scans)
+                    ? scans.Deserialize<List<BarcodeRequest>>(Json) ?? []
                     : [],
                 BundleVersion = version,
             },

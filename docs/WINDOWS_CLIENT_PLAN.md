@@ -383,11 +383,11 @@ unconditionally.** `AgentService` builds the extractor with a `ZxingBarcodeDecod
 page of every job is scanned for barcodes before a single rule is evaluated — 216 ms a page,
 against 87 ms for the OCR that only escalating pages pay. Rasterisation is not what costs:
 rendering the same page at 200 and 300 dpi is 34 ms of that 216, so about 180 ms is the scanning
-itself, and a shared raster would buy back very little. The lever is that barcodes are eager
-while OCR and picture matching are lazy. Making barcode decoding lazy — requested by the engine,
-for the pages a rule actually asks about, exactly as OCR and templates already are — takes the
-always-paid cost from 231 ms a page to about 11 ms, which is more than every OCR call in a
-typical job costs.
+itself, and a shared raster would buy back very little. The lever is that barcodes were eager
+while OCR and picture matching were lazy. **This has since been fixed** (section 6.1): barcode
+decoding now goes through the same two-phase request protocol, so it runs for the pages a rule
+actually asks about, taking the always-paid cost from 231 ms a page to about 11 ms — more than
+every OCR call in a typical job costs.
 
 Note also that this 525 ms is an upper bound for a reason worth keeping in view: **nothing
 decoded on any of the 22 pages**, because the anonymiser destroyed the barcodes (section 1.5a).
@@ -435,8 +435,8 @@ recognition only on the page where the first one failed.
 is affordable: the seven-page job in this corpus pays about 1.6 s of always-paid cost today, and
 roughly 90 ms more for each page that escalates to OCR — against a print job the user is already
 waiting seconds for. Cost is not a reason to prefer one rule-set shape over the other. The
-efficiency work with the largest return is not avoiding OCR but making barcode decoding lazy,
-and that is worth doing whichever shape is chosen. And any rule set for this path must normalise
+efficiency work with the largest return was not avoiding OCR but making barcode decoding lazy,
+which has since been done. And any rule set for this path must normalise
 the ink box for orientation *before* handing it to the recogniser, not only before comparing
 geometry.
 
@@ -475,6 +475,19 @@ worker), kept honest by a shared golden-corpus conformance suite that runs in CI
 
 Steps 3-5 are lazy: a page that a text rule already resolves at high confidence never gets
 rasterized. This is what makes it fast enough to run on the workstation.
+
+**Step 3 was not actually lazy until 2026-09-06.** OCR and picture matching went through the
+two-phase request protocol as designed, but the agent handed a decoder to the feature extractor,
+so every page of every job was scanned for barcodes before a rule was evaluated. Section 5.0b
+measured what that cost — 216 ms a page, against 11 ms for geometry and 87 ms for OCR of the ink
+box — and barcodes now use the same protocol: `PageFeatures.barcodes` is `null` until something
+decodes it, a `barcode` predicate on a `null` page raises a `BarcodeRequest`, and the host
+answers it for that page alone. An empty list stays meaningfully different from `null`: it is
+the answer "scanned, none here", and conflating the two would have the engine ask twice and fail
+the job as a defective rule set.
+
+That takes the cost every page pays from 231 ms to about 11 ms, which is worth more than every
+OCR call in a typical job.
 
 ### 6.2 Rule schema (sketch)
 

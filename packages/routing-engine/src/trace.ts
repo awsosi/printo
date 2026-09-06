@@ -131,9 +131,29 @@ export interface TemplateRequest {
   ruleId: string;
 }
 
+/**
+ * A page the host must decode barcodes on before the rule can be evaluated.
+ *
+ * The same laziness as OCR and templates, and for a sharper reason: decoding is measured at
+ * 216 ms a page against 87 ms for OCR of the ink box (plan section 5.0b), and it used to run on
+ * every page of every job whether or not a rule asked. There is no rectangle here because
+ * decoding is page-wide - a symbol is found wherever it sits, and the `rect` on a `barcode`
+ * predicate filters the results rather than steering the scan.
+ */
+export interface BarcodeRequest {
+  pageNumber: number;
+  /** The rule that asked, for logging. */
+  ruleId: string;
+}
+
 export type PageEvaluation =
   | { status: 'decided'; decision: PageDecision }
-  | { status: 'needs-features'; ocr: OcrRequest[]; templates: TemplateRequest[] };
+  | {
+      status: 'needs-features';
+      ocr: OcrRequest[];
+      templates: TemplateRequest[];
+      barcodes: BarcodeRequest[];
+    };
 
 /** Document-level result. */
 export interface DocumentDecision {

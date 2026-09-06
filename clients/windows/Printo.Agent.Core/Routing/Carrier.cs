@@ -213,7 +213,10 @@ public static class CarrierResolver
 
                 if (signal.Source == CarrierSignalSource.BarcodeSymbology)
                 {
-                    hit = page.Barcodes.Any(barcode =>
+                    // `null` means nothing decoded this page. A barcode signal cannot fire on
+                    // evidence nobody gathered, so it does not contribute; the carrier is
+                    // resolved again on the second pass if a rule goes on to ask for barcodes.
+                    hit = (page.Barcodes ?? []).Any(barcode =>
                         string.Equals(barcode.Symbology, signal.Pattern, StringComparison.OrdinalIgnoreCase));
                 }
                 else
@@ -226,7 +229,8 @@ public static class CarrierResolver
 
                     hit = signal.Source switch
                     {
-                        CarrierSignalSource.BarcodeValue => page.Barcodes.Any(barcode => regex.IsMatch(barcode.Value)),
+                        CarrierSignalSource.BarcodeValue =>
+                            (page.Barcodes ?? []).Any(barcode => regex.IsMatch(barcode.Value)),
                         CarrierSignalSource.Text => text.Length > 0 && regex.IsMatch(text),
                         _ => ocr.Length > 0 && regex.IsMatch(ocr),
                     };

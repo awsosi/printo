@@ -297,7 +297,31 @@ describe('document feature validation', () => {
 
     expect(parsed.pageCount).toBe(1);
     expect(parsed.pages[0].inkBox).toBeNull();
-    expect(parsed.pages[0].barcodes).toEqual([]);
     expect(parsed.pages[0].rotation).toBe(0);
+
+    // Not `[]`. A sender that omits `barcodes` has not decoded the page, and the engine must be
+    // able to ask it to - collapsing that into "scanned, found none" is how a rule reads a
+    // verdict off evidence nobody gathered.
+    expect(parsed.pages[0].barcodes).toBeNull();
+  });
+
+  it('keeps an empty barcode array distinct from an absent one', () => {
+    const parsed = parseDocumentFeatures({
+      fileName: 'x.pdf',
+      pages: [
+        {
+          pageNumber: 1,
+          pageCount: 1,
+          pageWidthMm: 210,
+          pageHeightMm: 297,
+          orientation: 'portrait',
+          text: 'hello',
+          barcodes: []
+        }
+      ]
+    });
+
+    // Scanned, and there were none: a rule can act on this, and the engine must not ask again.
+    expect(parsed.pages[0].barcodes).toEqual([]);
   });
 });

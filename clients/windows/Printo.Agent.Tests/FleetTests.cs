@@ -814,7 +814,8 @@ public sealed class FleetTests : IDisposable
         public DocumentFeatures? Fill(
             DocumentFeatures features,
             IReadOnlyList<OcrRequest> requests,
-            IReadOnlyList<TemplateRequest> templates) => null;
+            IReadOnlyList<TemplateRequest> templates,
+            IReadOnlyList<BarcodeRequest> barcodes) => null;
     }
 
     /// <summary>Counts the rounds of OCR the engine or the server asked for.</summary>
@@ -825,7 +826,8 @@ public sealed class FleetTests : IDisposable
         public DocumentFeatures? Fill(
             DocumentFeatures features,
             IReadOnlyList<OcrRequest> requests,
-            IReadOnlyList<TemplateRequest> templates)
+            IReadOnlyList<TemplateRequest> templates,
+            IReadOnlyList<BarcodeRequest> barcodes)
         {
             Calls++;
             return features;

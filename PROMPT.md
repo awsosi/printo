@@ -5,10 +5,10 @@
 > assistant picks the work up — Claude Code, Codex or a person — and assumes no memory of any
 > earlier session.
 >
-> **Start here:** section 6 is where the project stands, and **section 6a is a decision that
-> is open and blocks the next milestone.** Do not begin virtual-printer ingress before it is
-> settled with the user; the evidence for why is in the same section. Section 6b is a log of
-> what the last session changed and why, including two corrections worth carrying forward.
+> **Start here:** section 6 is where the project stands. Section 6a was the decision blocking
+> the next milestone; it was **settled on 2026-09-06** — one rule set for both paths — and the
+> evidence behind it is in the same section. Section 6b is a log of what the last sessions
+> changed and why, including corrections worth carrying forward.
 >
 > **Lifecycle of this file:** delete it when every milestone in
 > `docs/WINDOWS_CLIENT_PLAN.md` section 10 is complete and the Definition of Done in section 12
@@ -196,7 +196,11 @@ from the full corpus that the DHL waybill sheet and DHL parcel label sit at 92.2
 91.9x180.3 mm - not separable by measurement at all. Content must discriminate, and on this
 path content means OCR, barcodes or picture matching.
 
-Two ways to organise it, **not yet chosen by the user**:
+Two ways to organise it. **The user chose (1) on 2026-09-06** — one rule set for both paths,
+keyed on the orientation-normalised ink box plus content, with page-frame predicates demoted to
+optional corroboration. The corpus must be re-proven at 1266/1266 in both text-layer modes, and
+the seven captures must route their labels to thermal. The user also approved making barcode
+decoding lazy at the same time.
 
 1. **One rule set for both paths**, keyed on ink box and content, page-frame predicates demoted
    to optional corroboration. Cleaner; but it re-derives rules that currently pass 1266/1266 and
@@ -204,7 +208,7 @@ Two ways to organise it, **not yet chosen by the user**:
 2. **A second profile for virtual-printer input**, leaving the corpus-calibrated profile to
    serve hot folders and files. Lower risk; two rule sets to keep true.
 
-The assistant leaned toward (1) with (2) as the safe path. **Ask before choosing.**
+The assistant leaned toward (1) with (2) as the safe path, and (1) is what was chosen.
 
 **The cost question is now answered, and it does not favour either shape.** Plan section 5.0b
 measures every stage on all 22 captured pages (`CaptureCostTests`, opt-in). On an idle machine:
@@ -214,11 +218,11 @@ builds the extractor with a `ZxingBarcodeDecoder`. Content-based routing is affo
 seven-page job pays about 1.6 s of always-paid cost. **Cost is not a reason to choose between
 (1) and (2).**
 
-Two things did come out of it that any shape has to honour:
+Two things came out of it that any shape has to honour:
 
-- **Making barcode decoding lazy** — requested by the engine like OCR and templates already are
-  — takes the always-paid cost from 231 ms a page to about 11 ms. That is the single largest
-  efficiency win available, and it is worth more than every OCR call in a job.
+- **Barcode decoding is now lazy** (done 2026-09-06). It goes through the same two-phase request
+  protocol as OCR and templates, so it runs only for the pages a rule asks about — taking the
+  always-paid cost from 231 ms a page to about 11 ms.
 - **The recogniser is orientation-sensitive and the print path turns pages.** A page reading 4
   characters upright reads 954 turned. The right turn is predicted by the ink box being wider
   than tall on **22 of 22** pages, so it costs nothing to derive — but OCR regions must be

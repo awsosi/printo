@@ -90,7 +90,15 @@ public sealed class AgentService(
             : new JobReporter(client, (code, detail) => logger.LogWarning("Report {Code}: {Detail}", code, detail));
 
         var processor = new JobProcessor(
-            spool, catalog, new PageFeatureExtractor(new ZxingBarcodeDecoder()), ocr, decider)
+            spool,
+            catalog,
+
+            // No decoder on the extractor: barcodes are decoded for the pages a rule asks
+            // about, which the job processor serves from the decoder below.
+            new PageFeatureExtractor(),
+            ocr,
+            decider,
+            new ZxingBarcodeDecoder())
         {
             // Read from the bundle at construction. A republished bundle takes effect on the
             // next service start; templates change far less often than rules, and re-reading

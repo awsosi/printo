@@ -46,6 +46,43 @@ public sealed class JobProcessorTests : IDisposable
         }
     }
 
+    /// <summary>Counts how many pages were actually put through a barcode decode.</summary>
+    private sealed class CountingBarcodeDecoder : IBarcodeDecoder
+    {
+        public int Calls { get; private set; }
+
+        public IReadOnlyList<DetectedBarcode> Decode(PdfPage page)
+        {
+            Calls++;
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// A document routed by geometry is never put through a barcode decode.
+    /// </summary>
+    /// <remarks>
+    /// The saving this laziness exists for, asserted rather than assumed. Decoding is the most
+    /// expensive measurement a page can be put through - 216 ms against 87 ms for OCR of the ink
+    /// box and 11 ms for geometry, measured in plan section 5.0b - and it used to run on every
+    /// page of every job because the service handed the decoder to the extractor. Both of these
+    /// pages are settled by their geometry, so nothing should ask.
+    /// </remarks>
+    [Fact]
+    public void NeverDecodesBarcodesOnAPageNoRuleAskedAbout()
+    {
+        var decoder = new CountingBarcodeDecoder();
+        var pdf = TestPdf.Build(
+            TestPdf.A4Document(),
+            TestPdf.FedExStyleLabelOnA4Landscape());
+
+        var job = Enqueue(pdf);
+        var result = new JobProcessor(spool, Catalog(), barcodeDecoder: decoder).Process(job);
+
+        Assert.Equal(JobOutcome.Printed, result.Outcome);
+        Assert.Equal(0, decoder.Calls);
+    }
+
     /// <summary>
     /// A recogniser that returns fixed text, so the OCR branch is exercised deterministically.
     /// </summary>

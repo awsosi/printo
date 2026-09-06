@@ -164,12 +164,16 @@ public static class RoutingEngine
             context.RuleId = rule.Id;
             var predicate = PredicateEvaluator.Evaluate(rule.When, context);
 
-            if (context.OcrRequests.Count > 0 || context.TemplateRequests.Count > 0)
+            if (context.OcrRequests.Count > 0
+                || context.TemplateRequests.Count > 0
+                || context.BarcodeRequests.Count > 0)
             {
-                // Both kinds go back in one round rather than one request at a time: a rule
-                // that wants OCR *and* a template would otherwise cost two extra passes.
+                // All three kinds go back in one round rather than one request at a time: a
+                // rule that wants OCR *and* a template would otherwise cost two extra passes.
                 return PageEvaluation.NeedsOcr(
-                    Dedupe(context.OcrRequests), DedupeTemplates(context.TemplateRequests));
+                    Dedupe(context.OcrRequests),
+                    DedupeTemplates(context.TemplateRequests),
+                    DedupeBarcodes(context.BarcodeRequests));
             }
 
             ruleTraces.Add(new RuleTrace
@@ -211,7 +215,7 @@ public static class RoutingEngine
                 InkCoverage = page.InkBox?.Coverage,
             },
             Carrier = carrier,
-            Barcodes = page.Barcodes
+            Barcodes = (page.Barcodes ?? [])
                 .Select(barcode => new TracedBarcode { Symbology = barcode.Symbology, Value = barcode.Value })
                 .ToList(),
             HasTextLayer = !string.IsNullOrEmpty(page.Text),
@@ -338,6 +342,7 @@ public static class RoutingEngine
         var decisions = new List<PageDecision>();
         var pending = new List<OcrRequest>();
         var pendingTemplates = new List<TemplateRequest>();
+        var pendingBarcodes = new List<BarcodeRequest>();
 
         foreach (var page in document.Pages)
         {
@@ -346,15 +351,17 @@ public static class RoutingEngine
             {
                 pending.AddRange(evaluation.Ocr);
                 pendingTemplates.AddRange(evaluation.Templates);
+                pendingBarcodes.AddRange(evaluation.Barcodes);
                 continue;
             }
 
             decisions.Add(evaluation.Decision!);
         }
 
-        if (pending.Count > 0 || pendingTemplates.Count > 0)
+        if (pending.Count > 0 || pendingTemplates.Count > 0 || pendingBarcodes.Count > 0)
         {
-            return DocumentEvaluation.NeedsOcr(Dedupe(pending), DedupeTemplates(pendingTemplates));
+            return DocumentEvaluation.NeedsOcr(
+                Dedupe(pending), DedupeTemplates(pendingTemplates), DedupeBarcodes(pendingBarcodes));
         }
 
         DocumentFallbackOutcome? fallback = null;
@@ -416,6 +423,22 @@ public static class RoutingEngine
     }
 
     /// <summary>One request per page and template; a rule asking twice costs one match.</summary>
+    /// <summary>One decode per page, however many rules asked: the scan is page-wide.</summary>
+    private static List<BarcodeRequest> DedupeBarcodes(IReadOnlyList<BarcodeRequest> requests)
+    {
+        var seen = new HashSet<int>();
+        var unique = new List<BarcodeRequest>();
+        foreach (var request in requests)
+        {
+            if (seen.Add(request.PageNumber))
+            {
+                unique.Add(request);
+            }
+        }
+
+        return unique;
+    }
+
     private static List<TemplateRequest> DedupeTemplates(IReadOnlyList<TemplateRequest> requests)
     {
         var seen = new HashSet<string>();
@@ -472,7 +495,7 @@ public static class RoutingEngine
             score += 0.2;
         }
 
-        if (page.Barcodes.Count > 0)
+        if (page.Barcodes is { Count: > 0 })
         {
             score += 0.2;
         }

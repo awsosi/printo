@@ -31,6 +31,9 @@ public sealed class EvaluationContext
 
     /// <summary>Filled by <c>image</c> predicates whose template the host has not matched yet.</summary>
     public List<TemplateRequest> TemplateRequests { get; } = [];
+
+    /// <summary>Filled by <c>barcode</c> predicates on a page nothing has decoded yet.</summary>
+    public List<BarcodeRequest> BarcodeRequests { get; } = [];
 }
 
 public static class PredicateEvaluator
@@ -350,6 +353,20 @@ public static class PredicateEvaluator
     private static PredicateTrace EvaluateBarcode(BarcodeCondition condition, string path, EvaluationContext context)
     {
         var page = context.Page;
+        // Nobody has decoded this page yet: ask, exactly as an `ocr` predicate asks for a region
+        // it has not been given. An empty list would be a different answer - a page scanned and
+        // found to have no barcodes - and treating the two alike is how a rule ends up reading
+        // "no barcode" off a page no one looked at.
+        if (page.Barcodes is null)
+        {
+            context.BarcodeRequests.Add(new BarcodeRequest
+            {
+                PageNumber = page.PageNumber,
+                RuleId = context.RuleId,
+            });
+            return Leaf("barcode", path, false, DescribeBarcodeConstraint(condition), "barcodes pending");
+        }
+
         IEnumerable<DetectedBarcode> candidates = page.Barcodes;
 
         if (condition.Rect is not null)
@@ -391,6 +408,22 @@ public static class PredicateEvaluator
         var matched = matching.Count >= minCount
             && (condition.MaxCount is null || matching.Count <= condition.MaxCount.Value);
 
+        // Report what was actually on the page, not just the filtered count: "0 matched, page
+        // had 3 Code128" is diagnosable, "0" is not.
+        var measured = matching.Count > 0
+            ? $"{matching.Count} matched: " +
+              string.Join(", ", matching.Select(barcode => $"{barcode.Symbology}:{Clip(barcode.Value, 24)}"))
+            : $"0 matched of {page.Barcodes.Count} on page" +
+              (page.Barcodes.Count > 0
+                  ? $" ({string.Join(", ", page.Barcodes.Select(barcode => barcode.Symbology))})"
+                  : string.Empty);
+
+        return Leaf("barcode", path, matched, DescribeBarcodeConstraint(condition), measured);
+    }
+
+    /// <summary>The rule's own words, so a pending request traces the same constraint a match would.</summary>
+    private static string DescribeBarcodeConstraint(BarcodeCondition condition)
+    {
         var parts = new List<string>();
         if (condition.Symbology is { Count: > 0 })
         {
@@ -407,23 +440,13 @@ public static class PredicateEvaluator
             parts.Add($"valueContains \"{condition.ValueContains}\"");
         }
 
-        parts.Add($"count >= {minCount}");
+        parts.Add($"count >= {condition.MinCount ?? 1}");
         if (condition.MaxCount is not null)
         {
             parts.Add($"count <= {condition.MaxCount.Value}");
         }
 
-        // Report what was actually on the page, not just the filtered count: "0 matched, page
-        // had 3 Code128" is diagnosable, "0" is not.
-        var measured = matching.Count > 0
-            ? $"{matching.Count} matched: " +
-              string.Join(", ", matching.Select(barcode => $"{barcode.Symbology}:{Clip(barcode.Value, 24)}"))
-            : $"0 matched of {page.Barcodes.Count} on page" +
-              (page.Barcodes.Count > 0
-                  ? $" ({string.Join(", ", page.Barcodes.Select(barcode => barcode.Symbology))})"
-                  : string.Empty);
-
-        return Leaf("barcode", path, matched, string.Join(", ", parts), measured);
+        return string.Join(", ", parts);
     }
 
     private static PredicateTrace EvaluateImage(ImageCondition condition, string path, EvaluationContext context)

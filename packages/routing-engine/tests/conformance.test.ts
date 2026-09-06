@@ -70,6 +70,30 @@ describe('conformance fixtures', () => {
           const profile = resolveProfile(fixture.profile);
           const evaluation = evaluateDocument(profile, fixture.document);
 
+          if (fixture.expectNeedsBarcodes && fixture.expectNeedsBarcodes.length > 0) {
+            expect(evaluation.status, fixture.rationale).toBe('needs-features');
+            if (evaluation.status !== 'needs-features') {
+              return;
+            }
+
+            const actualBarcodes = evaluation.barcodes.map((request) => request.pageNumber).sort();
+            const expectedBarcodes = fixture.expectNeedsBarcodes
+              .map((request) => request.pageNumber)
+              .sort();
+            expect(actualBarcodes).toEqual(expectedBarcodes);
+
+            for (const request of fixture.expectNeedsBarcodes) {
+              if (request.ruleId === undefined) {
+                continue;
+              }
+              const match = evaluation.barcodes.find(
+                (entry) => entry.pageNumber === request.pageNumber
+              );
+              expect(match?.ruleId).toBe(request.ruleId);
+            }
+            return;
+          }
+
           if (fixture.expectNeedsTemplates && fixture.expectNeedsTemplates.length > 0) {
             expect(evaluation.status, fixture.rationale).toBe('needs-features');
             if (evaluation.status !== 'needs-features') {

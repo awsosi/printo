@@ -13,7 +13,7 @@
  *      rather than silently resolved.
  */
 
-import type { PageFeatures } from './features.js';
+import { decodedBarcodes, type PageFeatures } from './features.js';
 import type { CarrierEvidence, CarrierResolution } from './trace.js';
 
 /** Where a piece of carrier evidence was found. Order matters: it sets the weight ceiling. */
@@ -157,7 +157,10 @@ export function resolveCarrier(
       let hit = false;
 
       if (signal.source === 'barcodeSymbology') {
-        hit = page.barcodes.some(
+        // `null` means nothing has decoded this page. A barcode signal cannot fire on evidence
+        // nobody gathered, so it simply does not contribute - the carrier is resolved again on
+        // the second pass if a rule goes on to ask for barcodes.
+        hit = (decodedBarcodes(page) ?? []).some(
           (barcode) => barcode.symbology.toLowerCase() === signal.pattern.toLowerCase()
         );
       } else {
@@ -167,7 +170,7 @@ export function resolveCarrier(
         }
 
         if (signal.source === 'barcodeValue') {
-          hit = page.barcodes.some((barcode) => regex.test(barcode.value));
+          hit = (decodedBarcodes(page) ?? []).some((barcode) => regex.test(barcode.value));
         } else if (signal.source === 'text') {
           hit = text.length > 0 && regex.test(text);
         } else {

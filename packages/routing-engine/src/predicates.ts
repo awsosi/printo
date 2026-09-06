@@ -8,6 +8,7 @@
 
 import {
   barcodeClusterRect,
+  decodedBarcodes,
   ocrRegionKey,
   pageRect,
   rectOverlapFraction,
@@ -27,7 +28,13 @@ import type {
   RectSpec,
   TextPredicate
 } from './rules.js';
-import type { CarrierResolution, OcrRequest, PredicateTrace, TemplateRequest } from './trace.js';
+import type {
+  BarcodeRequest,
+  CarrierResolution,
+  OcrRequest,
+  PredicateTrace,
+  TemplateRequest
+} from './trace.js';
 
 /**
  * A page whose own media is small enough to be label stock rather than a sheet carrying a
@@ -51,6 +58,8 @@ export interface EvaluationContext {
   ocrRectsUsed: Set<string>;
   /** Filled by `image` predicates whose template the host has not matched yet. */
   templateRequests: TemplateRequest[];
+  /** Filled by `barcode` predicates on a page nothing has decoded yet. */
+  barcodeRequests: BarcodeRequest[];
 }
 
 /** Collapses whitespace so a rule written as one phrase survives line breaks. */
@@ -276,7 +285,21 @@ function evaluateBarcode(
   context: EvaluationContext
 ): PredicateTrace {
   const { page } = context;
-  let candidates = page.barcodes;
+
+  // Nobody has decoded this page yet: ask, exactly as an `ocr` predicate asks for a region it
+  // has not been given. `[]` would be a different answer - a page scanned and found to have no
+  // barcodes - and treating the two alike is how a rule ends up reading "no barcode" off a page
+  // no one looked at.
+  const decoded = decodedBarcodes(page);
+  if (decoded === null) {
+    context.barcodeRequests.push({
+      pageNumber: page.pageNumber,
+      ruleId: context.ruleId
+    });
+    return leaf('barcode', path, false, describeBarcodeConstraint(predicate), 'barcodes pending');
+  }
+
+  let candidates = decoded;
 
   if (predicate.rect) {
     const rect = resolveRect(predicate.rect, page);
@@ -310,27 +333,33 @@ function evaluateBarcode(
   const maxCount = predicate.maxCount;
   const matched = candidates.length >= minCount && (maxCount === undefined || candidates.length <= maxCount);
 
-  const constraint = [
-    predicate.symbology ? `symbology ${predicate.symbology.join('|')}` : null,
-    predicate.valueMatches ? `valueMatches /${predicate.valueMatches}/` : null,
-    predicate.valueContains ? `valueContains "${predicate.valueContains}"` : null,
-    `count >= ${minCount}`,
-    maxCount !== undefined ? `count <= ${maxCount}` : null
-  ]
-    .filter((part): part is string => part !== null)
-    .join(', ');
+  const constraint = describeBarcodeConstraint(predicate);
 
   // Report what was actually on the page, not just the filtered count: "0 matched, page had
   // 3 Code128" is diagnosable, "0" is not.
   const measured =
     candidates.length > 0
       ? `${candidates.length} matched: ${candidates.map((barcode) => `${barcode.symbology}:${clip(barcode.value, 24)}`).join(', ')}`
-      : `0 matched of ${page.barcodes.length} on page` +
-        (page.barcodes.length > 0
-          ? ` (${page.barcodes.map((barcode) => barcode.symbology).join(', ')})`
+      : `0 matched of ${decoded.length} on page` +
+        (decoded.length > 0
+          ? ` (${decoded.map((barcode) => barcode.symbology).join(', ')})`
           : '');
 
   return leaf('barcode', path, matched, constraint, measured);
+}
+
+/** The rule's own words, so a pending request traces the same constraint a match would. */
+function describeBarcodeConstraint(predicate: BarcodePredicate): string {
+  const minCount = predicate.minCount ?? 1;
+  return [
+    predicate.symbology ? `symbology ${predicate.symbology.join('|')}` : null,
+    predicate.valueMatches ? `valueMatches /${predicate.valueMatches}/` : null,
+    predicate.valueContains ? `valueContains "${predicate.valueContains}"` : null,
+    `count >= ${minCount}`,
+    predicate.maxCount !== undefined ? `count <= ${predicate.maxCount}` : null
+  ]
+    .filter((part): part is string => part !== null)
+    .join(', ');
 }
 
 function evaluateImage(

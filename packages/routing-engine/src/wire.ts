@@ -777,18 +777,25 @@ function parsePage(value: unknown, path: string): PageFeatures {
     };
   }
 
-  const rawBarcodes = value.barcodes ?? [];
-  isArray(rawBarcodes, `${path}.barcodes`);
-  const barcodes: DetectedBarcode[] = rawBarcodes.map((entry, index) => {
-    const child = `${path}.barcodes[${index}]`;
-    const rect = parseRectMm(entry, child);
-    const barcode = entry as Record<string, unknown>;
-    return {
-      ...rect,
-      symbology: requireString(barcode.symbology, `${child}.symbology`),
-      value: typeof barcode.value === 'string' ? barcode.value : ''
-    };
-  });
+  // Absent or null means nobody has decoded this page, which is not the same as an empty
+  // array. A sender that has scanned and found nothing must say so with `[]`, because the
+  // engine will otherwise ask it to scan - and on the printed path that is the most expensive
+  // thing it can be asked to do.
+  let barcodes: DetectedBarcode[] | null = null;
+  if (value.barcodes !== undefined && value.barcodes !== null) {
+    const rawBarcodes = value.barcodes;
+    isArray(rawBarcodes, `${path}.barcodes`);
+    barcodes = rawBarcodes.map((entry, index) => {
+      const child = `${path}.barcodes[${index}]`;
+      const rect = parseRectMm(entry, child);
+      const barcode = entry as Record<string, unknown>;
+      return {
+        ...rect,
+        symbology: requireString(barcode.symbology, `${child}.symbology`),
+        value: typeof barcode.value === 'string' ? barcode.value : ''
+      };
+    });
+  }
 
   let textLines: TextLine[] | undefined;
   if (value.textLines !== undefined && value.textLines !== null) {

@@ -25,9 +25,17 @@ public interface IOcrEngine
 /// Builds the <see cref="PageFeatures"/> the routing engine consumes.
 /// </summary>
 /// <remarks>
-/// Extraction is staged to match the engine's laziness: geometry and the text layer are
-/// always cheap and always produced; barcodes are decoded only when a decoder is configured;
-/// OCR runs only for the rectangles the engine asks for, on the second evaluation pass.
+/// Extraction is staged to match the engine's laziness: geometry and the text layer are always
+/// cheap and always produced; OCR runs only for the rectangles the engine asks for, on the
+/// second evaluation pass; and barcodes are decoded the same way, through
+/// <see cref="WithBarcodes"/>.
+///
+/// A decoder passed to the constructor puts barcodes back on the eager path, which is what the
+/// corpus tooling wants - it extracts every feature of every page once, offline, and the rule
+/// bands were calibrated against exactly that. The agent passes none, so a page nothing asked
+/// about is never scanned: measured at 216 ms a page against 87 ms for OCR of the ink box (plan
+/// section 5.0b), it was the largest single cost on the print path and the only one being paid
+/// unconditionally.
 ///
 /// The measurements here must agree with <c>tools/corpus/extract_features.py</c> to the last
 /// decimal the rules depend on, because the rule bands were calibrated on that extractor's
@@ -83,7 +91,42 @@ public sealed class PageFeatureExtractor
             // "no text layer", which is a different diagnosis from "text did not match".
             Text = text.Length == 0 ? null : text,
             InkBox = PageRenderer.MeasureInkBox(page),
-            Barcodes = barcodes?.Decode(page) ?? [],
+
+            // Null when no decoder is configured: nobody looked, which is not the same as
+            // looked and found none. The engine asks for a decode when a rule needs one.
+            Barcodes = barcodes?.Decode(page),
+        };
+    }
+
+    /// <summary>
+    /// Decodes the page's barcodes, returning a page ready for a second pass.
+    /// </summary>
+    /// <remarks>
+    /// The whole page every time: a <c>rect</c> on a <c>barcode</c> predicate filters what was
+    /// found rather than steering the scan, and a symbol sits where it sits. Recorded even when
+    /// nothing decodes - an empty list is the answer "scanned, none here", and without it the
+    /// engine would ask again on the second pass and fail the job as a rule set that asked
+    /// twice, blaming the rules for a page that simply has no barcode.
+    /// </remarks>
+    public static PageFeatures WithBarcodes(PageFeatures page, PdfPage source, IBarcodeDecoder decoder)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(decoder);
+
+        return new PageFeatures
+        {
+            PageNumber = page.PageNumber,
+            PageCount = page.PageCount,
+            PageWidthMm = page.PageWidthMm,
+            PageHeightMm = page.PageHeightMm,
+            Orientation = page.Orientation,
+            Rotation = page.Rotation,
+            Text = page.Text,
+            TextLines = page.TextLines,
+            InkBox = page.InkBox,
+            Barcodes = decoder.Decode(source),
+            OcrRegions = page.OcrRegions,
+            TemplateMatches = page.TemplateMatches,
         };
     }
 

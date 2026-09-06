@@ -183,10 +183,20 @@ public sealed class CaptureRoutingTests(ITestOutputHelper output)
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
     }
 
+    /// <summary>
+    /// Every feature of every page, eagerly - barcodes included.
+    /// </summary>
+    /// <remarks>
+    /// These tests evaluate the engine directly, with no host to answer a request for a feature
+    /// it has not been given, so the pages are extracted the way the corpus tooling extracts
+    /// them rather than the way the agent does. The agent leaves barcodes to
+    /// <see cref="PageFeatureExtractor.WithBarcodes"/> and decodes only what a rule asks about;
+    /// here that would come back as "needs features" and measure nothing.
+    /// </remarks>
     private static DocumentFeatures Extract(string path, string name)
     {
         using var pdf = PdfDocument.Load(File.ReadAllBytes(path));
-        return new PageFeatureExtractor().Extract(pdf, name, sourceApp: "Chrome");
+        return new PageFeatureExtractor(new ZxingBarcodeDecoder()).Extract(pdf, name, sourceApp: "Chrome");
     }
 
     private static string Describe(PageFeatures page) => string.Create(

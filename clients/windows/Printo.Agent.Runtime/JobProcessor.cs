@@ -126,6 +126,16 @@ public sealed class JobProcessor
 
     private readonly IOcrEngine? ocr;
 
+    /// <summary>
+    /// Decodes barcodes when a rule asks for them, and only then.
+    /// </summary>
+    /// <remarks>
+    /// Held here rather than given to the extractor because decoding is lazy: the extractor
+    /// produces geometry and text for every page, and this is consulted for the pages the engine
+    /// comes back asking about.
+    /// </remarks>
+    private readonly IBarcodeDecoder? barcodes;
+
     private IRoutingDecider? decider;
 
     public JobProcessor(
@@ -133,13 +143,15 @@ public sealed class JobProcessor
         IPrinterCatalog catalog,
         PageFeatureExtractor? extractor = null,
         IOcrEngine? ocr = null,
-        IRoutingDecider? decider = null)
+        IRoutingDecider? decider = null,
+        IBarcodeDecoder? barcodeDecoder = null)
     {
         this.spool = spool ?? throw new ArgumentNullException(nameof(spool));
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         this.extractor = extractor ?? new PageFeatureExtractor();
         this.ocr = ocr;
         this.decider = decider;
+        barcodes = barcodeDecoder;
     }
 
     /// <summary>Routing profiles to match against, in order. Defaults to the built-in set.</summary>
@@ -190,7 +202,7 @@ public sealed class JobProcessor
         var features = extractor.Extract(document, job.FileName);
         spool.SetPageCount(job.Id, features.PageCount);
 
-        var resolved = Decider.Decide(features, new PageOcrFiller(document, ocr, Templates));
+        var resolved = Decider.Decide(features, new PageOcrFiller(document, ocr, Templates, barcodes));
 
         switch (resolved.Status)
         {
@@ -322,12 +334,14 @@ public sealed class JobProcessor
     private sealed class PageOcrFiller(
         PdfDocument document,
         IOcrEngine? ocr,
-        IReadOnlyDictionary<string, BundleTemplate> templates) : IOcrFiller
+        IReadOnlyDictionary<string, BundleTemplate> templates,
+        IBarcodeDecoder? barcodes) : IOcrFiller
     {
         public DocumentFeatures? Fill(
             DocumentFeatures features,
             IReadOnlyList<OcrRequest> requests,
-            IReadOnlyList<TemplateRequest> templateRequests)
+            IReadOnlyList<TemplateRequest> templateRequests,
+            IReadOnlyList<BarcodeRequest> barcodeRequests)
         {
             if (ocr is null && requests.Count > 0)
             {
@@ -363,6 +377,24 @@ public sealed class JobProcessor
                 pages[index] = WithTemplates(pages[index], source, group, templates);
             }
 
+            foreach (var request in barcodeRequests)
+            {
+                var index = pages.FindIndex(page => page.PageNumber == request.PageNumber);
+                if (index < 0)
+                {
+                    continue;
+                }
+
+                using var source = document.OpenPage(request.PageNumber - 1);
+
+                // With no decoder the page is recorded as scanned and empty rather than left
+                // null. Otherwise the engine asks again on the second pass and the job fails as
+                // a rule set that asked twice, which blames the rules for a missing component.
+                pages[index] = barcodes is null
+                    ? WithNoBarcodes(pages[index])
+                    : PageFeatureExtractor.WithBarcodes(pages[index], source, barcodes);
+            }
+
             return new DocumentFeatures
             {
                 FileName = features.FileName,
@@ -371,6 +403,23 @@ public sealed class JobProcessor
                 Pages = pages,
             };
         }
+
+        /// <summary>Records "scanned, none found" on a machine with no decoder configured.</summary>
+        private static PageFeatures WithNoBarcodes(PageFeatures page) => new()
+        {
+            PageNumber = page.PageNumber,
+            PageCount = page.PageCount,
+            PageWidthMm = page.PageWidthMm,
+            PageHeightMm = page.PageHeightMm,
+            Orientation = page.Orientation,
+            Rotation = page.Rotation,
+            Text = page.Text,
+            TextLines = page.TextLines,
+            InkBox = page.InkBox,
+            Barcodes = [],
+            OcrRegions = page.OcrRegions,
+            TemplateMatches = page.TemplateMatches,
+        };
 
         /// <summary>
         /// Runs the requested template matches and records every result, whatever it scored.

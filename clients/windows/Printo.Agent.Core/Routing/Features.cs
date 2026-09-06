@@ -119,7 +119,20 @@ public sealed class PageFeatures
     /// <summary><c>null</c> on a blank page.</summary>
     public InkBox? InkBox { get; init; }
 
-    public IReadOnlyList<DetectedBarcode> Barcodes { get; init; } = [];
+    /// <summary>
+    /// Decoded barcodes, or <c>null</c> when nothing has decoded this page yet.
+    /// </summary>
+    /// <remarks>
+    /// Populated lazily, like <see cref="OcrRegions"/> and <see cref="TemplateMatches"/>:
+    /// decoding is the most expensive thing done to a page no rule has asked about - 216 ms
+    /// against 87 ms for OCR of the ink box, measured in plan section 5.0b - and most pages are
+    /// settled by geometry long before any rule wants a barcode.
+    ///
+    /// <c>null</c> and an empty list are deliberately different. Empty means the page was
+    /// scanned and had none, which a rule can act on; null means nobody looked, and the engine
+    /// asks for a decode rather than concluding there is nothing there.
+    /// </remarks>
+    public IReadOnlyList<DetectedBarcode>? Barcodes { get; init; }
 
     /// <summary>Populated lazily, keyed by <see cref="Geometry.OcrRegionKey"/>.</summary>
     public IReadOnlyList<OcrRegion>? OcrRegions { get; init; }
@@ -174,7 +187,7 @@ public static class Geometry
     /// <summary>Smallest rectangle containing every decoded barcode, or <c>null</c>.</summary>
     public static RectMm? BarcodeClusterRect(PageFeatures page)
     {
-        if (page.Barcodes.Count == 0)
+        if (page.Barcodes is not { Count: > 0 })
         {
             return null;
         }

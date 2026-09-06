@@ -86,7 +86,16 @@ export interface PageFeatures {
   textLines?: TextLine[];
   /** `null` on a blank page. */
   inkBox: InkBox | null;
-  barcodes: DetectedBarcode[];
+  /**
+   * Decoded barcodes, or `null` when nothing has decoded this page yet.
+   *
+   * Populated lazily, like `ocrRegions` and `templateMatches`: decoding is the most expensive
+   * thing done to a page that no rule has asked about — 216 ms against 87 ms for OCR of the ink
+   * box, measured in plan section 5.0b — and most pages are settled by geometry long before any
+   * rule wants a barcode. `null` and `[]` are deliberately different: `[]` means the page was
+   * scanned and had none, which a rule can act on, and `null` means nobody looked.
+   */
+  barcodes?: DetectedBarcode[] | null;
   /** Populated lazily, keyed by `ocrRegionKey`. */
   ocrRegions?: OcrRegion[];
   /** Populated lazily by the host when an `image` rule asked for a template. */
@@ -121,9 +130,22 @@ export function pageRect(page: PageFeatures): RectMm {
   return { xMm: 0, yMm: 0, widthMm: page.pageWidthMm, heightMm: page.pageHeightMm };
 }
 
+/**
+ * The page's decoded barcodes, or `null` when nothing has decoded it.
+ *
+ * Absent and `null` mean the same thing and both have to be handled: features parsed by `wire`
+ * normalise a missing key to `null`, but a conformance fixture is raw JSON, where an omitted
+ * `barcodes` arrives as `undefined`. Going through one accessor keeps every call site from
+ * having to remember that.
+ */
+export function decodedBarcodes(page: PageFeatures): DetectedBarcode[] | null {
+  return page.barcodes ?? null;
+}
+
 /** Smallest rectangle containing every decoded barcode, or `null` when there are none. */
 export function barcodeClusterRect(page: PageFeatures): RectMm | null {
-  if (page.barcodes.length === 0) {
+  const barcodes = decodedBarcodes(page);
+  if (barcodes === null || barcodes.length === 0) {
     return null;
   }
 
@@ -132,7 +154,7 @@ export function barcodeClusterRect(page: PageFeatures): RectMm | null {
   let right = Number.NEGATIVE_INFINITY;
   let bottom = Number.NEGATIVE_INFINITY;
 
-  for (const barcode of page.barcodes) {
+  for (const barcode of barcodes) {
     left = Math.min(left, barcode.xMm);
     top = Math.min(top, barcode.yMm);
     right = Math.max(right, barcode.xMm + barcode.widthMm);

@@ -89,7 +89,8 @@ public interface IOcrFiller
     DocumentFeatures? Fill(
         DocumentFeatures features,
         IReadOnlyList<OcrRequest> requests,
-        IReadOnlyList<TemplateRequest> templates);
+        IReadOnlyList<TemplateRequest> templates,
+        IReadOnlyList<BarcodeRequest> barcodes);
 }
 
 /// <summary>Decides where a document's pages go.</summary>
@@ -140,7 +141,7 @@ public sealed class LocalDecider(Func<RuleBundle> bundle) : IRoutingDecider
             return RoutingDecision.Decided(first.Document!, profile, "local", rules.Version);
         }
 
-        var enriched = ocr.Fill(features, first.Ocr, first.Templates);
+        var enriched = ocr.Fill(features, first.Ocr, first.Templates, first.Barcodes);
         if (enriched is null)
         {
             return new RoutingDecision
@@ -226,7 +227,7 @@ public sealed class ServerDecider(IServerClient client, Action<string, string>? 
                     response.Decision!, profile ?? Fallback(rules), "server", response.BundleVersion);
             }
 
-            var enriched = ocr.Fill(features, response.Ocr, response.Templates);
+            var enriched = ocr.Fill(features, response.Ocr, response.Templates, response.Barcodes);
             if (enriched is null)
             {
                 return new RoutingDecision

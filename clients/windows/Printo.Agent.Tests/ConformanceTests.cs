@@ -66,6 +66,29 @@ public sealed class ConformanceTests
         var profile = fixture.ResolveProfile();
         var evaluation = RoutingEngine.EvaluateDocument(profile, fixture.Document);
 
+        if (fixture.ExpectNeedsBarcodes is { Count: > 0 })
+        {
+            Assert.True(evaluation.NeedsFeatures, $"{where}: expected the engine to request a barcode decode");
+            var actualBarcodes = evaluation.Barcodes
+                .Select(request => request.PageNumber)
+                .OrderBy(value => value)
+                .ToList();
+            var expectedBarcodes = fixture.ExpectNeedsBarcodes
+                .Select(request => request.PageNumber)
+                .OrderBy(value => value)
+                .ToList();
+            Assert.Equal(expectedBarcodes, actualBarcodes);
+
+            foreach (var request in fixture.ExpectNeedsBarcodes.Where(entry => entry.RuleId is not null))
+            {
+                var match = evaluation.Barcodes.FirstOrDefault(entry => entry.PageNumber == request.PageNumber);
+                Assert.NotNull(match);
+                Assert.Equal(request.RuleId, match!.RuleId);
+            }
+
+            return;
+        }
+
         if (fixture.ExpectNeedsTemplates is { Count: > 0 })
         {
             Assert.True(evaluation.NeedsFeatures, $"{where}: expected the engine to request a template match");

@@ -199,6 +199,24 @@ public sealed class TemplateRequest
     public string RuleId { get; init; } = string.Empty;
 }
 
+/// <summary>
+/// A page the host must decode barcodes on before the rule can be evaluated.
+/// </summary>
+/// <remarks>
+/// The same laziness as OCR and templates, and for a sharper reason: decoding is measured at
+/// 216 ms a page against 87 ms for OCR of the ink box (plan section 5.0b), and it used to run on
+/// every page of every job whether or not a rule asked. There is no rectangle here because
+/// decoding is page-wide - a symbol is found wherever it sits, and the <c>rect</c> on a
+/// <c>barcode</c> predicate filters the results rather than steering the scan.
+/// </remarks>
+public sealed class BarcodeRequest
+{
+    public int PageNumber { get; init; }
+
+    /// <summary>The rule that asked, for logging.</summary>
+    public string RuleId { get; init; } = string.Empty;
+}
+
 public sealed class PageEvaluation
 {
     public PageDecision? Decision { get; init; }
@@ -207,13 +225,25 @@ public sealed class PageEvaluation
 
     public IReadOnlyList<TemplateRequest> Templates { get; init; } = [];
 
+    public IReadOnlyList<BarcodeRequest> Barcodes { get; init; } = [];
+
     public bool NeedsFeatures => Decision is null;
 
     public static PageEvaluation Decided(PageDecision decision) => new() { Decision = decision };
 
+    /// <summary>
+    /// Reports every measurement the host must take before evaluation can finish.
+    /// </summary>
+    /// <remarks>
+    /// Still named for OCR, which was the first and is much the most common of the three. All
+    /// three kinds go back in one round: a rule wanting OCR <em>and</em> a template would
+    /// otherwise cost two extra passes over the document.
+    /// </remarks>
     public static PageEvaluation NeedsOcr(
-        IReadOnlyList<OcrRequest> requests, IReadOnlyList<TemplateRequest>? templates = null) =>
-        new() { Ocr = requests, Templates = templates ?? [] };
+        IReadOnlyList<OcrRequest> requests,
+        IReadOnlyList<TemplateRequest>? templates = null,
+        IReadOnlyList<BarcodeRequest>? barcodes = null) =>
+        new() { Ocr = requests, Templates = templates ?? [], Barcodes = barcodes ?? [] };
 }
 
 public sealed class DocumentDecision
@@ -233,11 +263,15 @@ public sealed class DocumentEvaluation
 
     public IReadOnlyList<TemplateRequest> Templates { get; init; } = [];
 
+    public IReadOnlyList<BarcodeRequest> Barcodes { get; init; } = [];
+
     public bool NeedsFeatures => Document is null;
 
     public static DocumentEvaluation Decided(DocumentDecision decision) => new() { Document = decision };
 
     public static DocumentEvaluation NeedsOcr(
-        IReadOnlyList<OcrRequest> requests, IReadOnlyList<TemplateRequest>? templates = null) =>
-        new() { Ocr = requests, Templates = templates ?? [] };
+        IReadOnlyList<OcrRequest> requests,
+        IReadOnlyList<TemplateRequest>? templates = null,
+        IReadOnlyList<BarcodeRequest>? barcodes = null) =>
+        new() { Ocr = requests, Templates = templates ?? [], Barcodes = barcodes ?? [] };
 }

@@ -234,9 +234,15 @@ export function createAgentRouter(store: AgentStore): Router {
         });
       }
 
+      // Every kind the engine asked for, not just OCR. Only the agent holds the pixels, so a
+      // request it is never told about is one it cannot answer: the second pass would arrive
+      // unchanged, the server would ask again and the job would fail as a rule set that asked
+      // twice - blaming the rules for a message the server did not send.
       return res.json({
         status: 'needs-features',
         ocr: evaluation.ocr,
+        templates: evaluation.templates,
+        barcodes: evaluation.barcodes,
         bundleVersion: rules.version
       });
     }
