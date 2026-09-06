@@ -850,6 +850,120 @@ suite('agent API (postgres)', () => {
     ).toBe(404);
   });
 
+  it('keeps a page thumbnail so a fallback can be looked at, not just read', async () => {
+    const key = (await enroll(await newToken())).body.apiKey;
+
+    const job = await request(app)
+      .post('/agents/me/jobs')
+      .set('x-printo-agent-key', key)
+      .send({
+        jobKey: 'with-thumbnail',
+        source: 'HotFolder',
+        fileName: 'x.pdf',
+        documentSha256: 'x',
+        pageCount: 2,
+        status: 'AWAITING_USER',
+        pages: [{ pageNumber: 1, route: 'A4' }, { pageNumber: 2, route: 'THERMAL' }]
+      });
+
+    // A 1x1 PNG is enough: what is being tested is the round trip, not the image.
+    const png =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+    const uploaded = await request(app)
+      .post(`/agents/me/jobs/${job.body.job.id}/artifacts`)
+      .set('x-printo-agent-key', key)
+      .send({ pageNumber: 2, png });
+
+    expect(uploaded.status).toBe(202);
+
+    const detail = await request(app)
+      .get(`/admin/agent-jobs/${job.body.job.id}`)
+      .set('authorization', `Bearer ${adminToken}`);
+
+    // Page numbers, not the images: a job detail must not carry a megabyte of base64 the
+    // console may never display.
+    expect(detail.body.thumbnails).toEqual([2]);
+    expect(JSON.stringify(detail.body)).not.toContain(png);
+
+    const image = await request(app)
+      .get(`/admin/agent-jobs/${job.body.job.id}/pages/2/thumbnail`)
+      .set('authorization', `Bearer ${adminToken}`);
+
+    expect(image.status).toBe(200);
+    expect(image.headers['content-type']).toBe('image/png');
+    expect(image.body).toBeInstanceOf(Buffer);
+    expect(image.body.equals(Buffer.from(png, 'base64'))).toBe(true);
+
+    // Re-uploading replaces rather than accumulating: a retried job must not leave two images
+    // of one page, and the newer render is the one that matches the decision.
+    await request(app)
+      .post(`/agents/me/jobs/${job.body.job.id}/artifacts`)
+      .set('x-printo-agent-key', key)
+      .send({ pageNumber: 2, png });
+
+    expect(
+      (await request(app).get(`/admin/agent-jobs/${job.body.job.id}`).set('authorization', `Bearer ${adminToken}`))
+        .body.thumbnails
+    ).toEqual([2]);
+
+    expect(
+      (
+        await request(app)
+          .get(`/admin/agent-jobs/${job.body.job.id}/pages/1/thumbnail`)
+          .set('authorization', `Bearer ${adminToken}`)
+      ).status
+    ).toBe(404);
+
+    // A full-resolution page is exactly what the design says never crosses the network.
+    const huge = await request(app)
+      .post(`/agents/me/jobs/${job.body.job.id}/artifacts`)
+      .set('x-printo-agent-key', key)
+      .send({ pageNumber: 3, png: 'A'.repeat(900_000) });
+
+    expect(huge.status).toBe(413);
+
+    expect(
+      (
+        await request(app)
+          .post(`/agents/me/jobs/${job.body.job.id}/artifacts`)
+          .set('x-printo-agent-key', key)
+          .send({ pageNumber: 1, png: 'not base64!' })
+      ).status
+    ).toBe(400);
+  });
+
+  it('records the events an agent reports against a job', async () => {
+    const key = (await enroll(await newToken())).body.apiKey;
+
+    const job = await request(app)
+      .post('/agents/me/jobs')
+      .set('x-printo-agent-key', key)
+      .send({
+        jobKey: 'with-events',
+        source: 'HotFolder',
+        fileName: 'x.pdf',
+        documentSha256: 'x',
+        status: 'COMPLETED'
+      });
+
+    const posted = await request(app)
+      .post(`/agents/me/jobs/${job.body.job.id}/events`)
+      .set('x-printo-agent-key', key)
+      .send({ level: 'info', code: 'media-resolved', detail: { detail: 'THERMAL -> ZEBRA-01 at 100x150mm' } });
+
+    expect(posted.status).toBe(202);
+
+    const stored = await pool.query(
+      'SELECT level, code, detail FROM agent_job_events WHERE agent_job_id = $1',
+      [job.body.job.id]
+    );
+
+    expect(stored.rowCount).toBe(1);
+    expect(stored.rows[0].code).toBe('media-resolved');
+    expect(stored.rows[0].detail.detail).toContain('ZEBRA-01');
+  });
+
   it('accounts for what was printed, and says when it does not reconcile', async () => {
     const key = (await enroll(await newToken())).body.apiKey;
 

@@ -1,4 +1,5 @@
 using System.Globalization;
+using Printo.Agent.Render;
 
 namespace Printo.Agent.Runtime;
 
@@ -86,6 +87,43 @@ public sealed class AgentWorker(
     /// </summary>
     public int Recover() => spool.RecoverStaleClaims();
 
+    /// <summary>
+    /// Renders the pages a fallback asked about, so the review queue can show them.
+    /// </summary>
+    /// <remarks>
+    /// Only on a fallback, and only the pages in question. A thumbnail of every page of every
+    /// job would be a picture of every document the company prints sitting on the server, which
+    /// is neither wanted nor needed: the review queue exists to explain the pages a person had
+    /// to judge.
+    ///
+    /// Failure here is silent by design. The document has already printed or is already parked;
+    /// losing a picture of it must not turn into a failed job.
+    /// </remarks>
+    private IReadOnlyDictionary<int, byte[]>? Thumbnails(SpoolJob job, FallbackPrompt prompt)
+    {
+        if (reporter is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = PdfDocument.Load(File.ReadAllBytes(job.PayloadPath));
+            var wanted = prompt.SuggestedThermalPages.ToHashSet();
+
+            return PickerModel.RenderThumbnails(document, wanted)
+                // The suggested pages, plus enough context to judge them. A five-page document
+                // is shown whole; a fifty-page one is not, because nobody reviews fifty images.
+                .Where(page => wanted.Contains(page.PageNumber) || document.PageCount <= 8)
+                .ToDictionary(page => page.PageNumber, page => page.Thumbnail);
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException)
+        {
+            spool.Log(job.Id, "warning", "thumbnail-failed", error.Message);
+            return null;
+        }
+    }
+
     /// <summary>Runs one full pass: intake, then as much of the queue as is ready.</summary>
     public PassResult RunOnce(int maxJobs = 25)
     {
@@ -157,7 +195,7 @@ public sealed class AgentWorker(
         var result = processor.Process(job);
         if (result.Outcome != JobOutcome.NeedsUser || prompter is null || result.Prompt is null)
         {
-            reporter?.Report(job, result);
+            reporter?.Report(job, result, events: spool.Events(job.Id));
             return result;
         }
 
@@ -173,7 +211,12 @@ public sealed class AgentWorker(
             // Nobody answered. The job stays parked in the tray rather than printing something
             // wrong — the plan's "no timeout by default" behaviour.
             spool.Log(job.Id, "info", "picker-unanswered", result.Prompt.ReasonCode);
-            reporter?.Report(job, result, new FallbackAnswer());
+            reporter?.Report(
+                job,
+                result,
+                new FallbackAnswer(),
+                spool.Events(job.Id),
+                Thumbnails(job, result.Prompt));
             return result;
         }
 
@@ -199,13 +242,16 @@ public sealed class AgentWorker(
                 Outcome = resolved.Outcome,
                 Decision = resolved.Decision,
                 PagesPerPrinter = resolved.PagesPerPrinter,
+                Printed = resolved.Printed,
                 Prompt = result.Prompt,
                 DecidedBy = resolved.DecidedBy,
                 BundleVersion = resolved.BundleVersion,
                 Degraded = resolved.Degraded,
                 Error = resolved.Error,
             },
-            new FallbackAnswer { Selection = answer, Elapsed = started.Elapsed });
+            new FallbackAnswer { Selection = answer, Elapsed = started.Elapsed },
+            spool.Events(claimed.Id),
+            Thumbnails(claimed, result.Prompt));
 
         return resolved;
     }

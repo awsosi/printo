@@ -682,6 +682,64 @@ public sealed class FleetTests : IDisposable
     }
 
     [Fact]
+    public void SendsTheJobsAuditTrailAndThumbnailsAfterTheJobItself()
+    {
+        var server = new ScriptedServer()
+            .OnJson("POST agents/me/jobs", new { job = new { id = "job-1" } }, HttpStatusCode.Created)
+            .OnJson("POST agents/me/jobs/job-1/events", new { ok = true }, HttpStatusCode.Accepted)
+            .OnJson("POST agents/me/jobs/job-1/artifacts", new { ok = true }, HttpStatusCode.Accepted);
+
+        using var client = Client(server);
+        var reporter = new JobReporter(client);
+
+        var reported = reporter.Report(
+            SampleJob(),
+            new JobProcessingResult { Outcome = JobOutcome.Printed, Decision = null },
+            null,
+            [
+                new SpoolEvent { Level = "info", Code = "media-resolved", Detail = "THERMAL -> ZEBRA-01 at 100x150mm" },
+                new SpoolEvent { Level = "warning", Code = "degraded", Detail = "server unreachable" },
+            ],
+            new Dictionary<int, byte[]> { [2] = [1, 2, 3] });
+
+        Assert.Equal("job-1", reported);
+
+        // The job first, then its trail. An event posted against a job the server has not seen
+        // would be rejected, so the order is not incidental.
+        Assert.Equal("agents/me/jobs", server.Requests[0].Path);
+        Assert.Equal(2, server.Requests.Count(request => request.Path == "agents/me/jobs/job-1/events"));
+
+        var artifact = Assert.Single(server.Requests, request => request.Path == "agents/me/jobs/job-1/artifacts");
+        Assert.Contains("\"pageNumber\":2", artifact.Body);
+        Assert.Contains(Convert.ToBase64String(new byte[] { 1, 2, 3 }), artifact.Body);
+    }
+
+    [Fact]
+    public void LosingTheAuditTrailDoesNotMakeAReportedJobLookUnreported()
+    {
+        // The job lands; everything after it fails. The document has already printed, and a
+        // dropped connection on the supplementary uploads must not undo that.
+        var server = new ScriptedServer()
+            .OnJson("POST agents/me/jobs", new { job = new { id = "job-1" } }, HttpStatusCode.Created)
+            .On("POST agents/me/jobs/job-1/events", _ => throw new HttpRequestException("connection reset"))
+            .On("POST agents/me/jobs/job-1/artifacts", _ => throw new HttpRequestException("connection reset"));
+
+        using var client = Client(server);
+        var failures = new List<string>();
+        var reporter = new JobReporter(client, (code, _) => failures.Add(code));
+
+        var reported = reporter.Report(
+            SampleJob(),
+            new JobProcessingResult { Outcome = JobOutcome.Printed, Decision = null },
+            null,
+            [new SpoolEvent { Level = "info", Code = "media-resolved" }],
+            new Dictionary<int, byte[]> { [1] = [9] });
+
+        Assert.Equal("job-1", reported);
+        Assert.Equal(["event-failed", "thumbnail-failed"], failures);
+    }
+
+    [Fact]
     public void ReportingNeverStopsPrintingWhenTheServerIsDown()
     {
         var server = new ScriptedServer { Offline = true };
@@ -719,6 +777,16 @@ public sealed class FleetTests : IDisposable
         {
             EnrolmentToken = token,
         };
+
+    private static SpoolJob SampleJob() => new()
+    {
+        Id = 1,
+        JobKey = "k",
+        Source = JobSource.HotFolder,
+        FileName = "x.pdf",
+        DocumentSha256 = "d",
+        PayloadPath = "unused",
+    };
 
     /// <summary>A server that accepts an enrolment, for tests about what happens afterwards.</summary>
     private static ScriptedServer Enrolled() => new ScriptedServer().OnJson(

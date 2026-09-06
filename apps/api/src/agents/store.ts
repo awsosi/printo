@@ -5,6 +5,7 @@ import type {
   AccountingReconciliation,
   AccountingRow,
   AgentDecisionMode,
+  AgentJobArtifactRecord,
   AgentJobPageRecord,
   AgentJobPageInput,
   AgentJobRecord,
@@ -112,6 +113,19 @@ export interface AgentStore {
 
   /** One job with its per-page outcomes, for "why did this page print like that". */
   getJob(agentJobId: string): Promise<{ job: AgentJobRecord; pages: AgentJobPageRecord[] } | null>;
+
+  /** Stores a rendered page image, replacing any previous one for that page. */
+  saveArtifact(input: {
+    agentJobId: string;
+    pageNumber: number;
+    contentType: string;
+    bytes: Buffer;
+  }): Promise<void>;
+
+  /** Page numbers that have an image, so the console knows what it can show. */
+  listArtifacts(agentJobId: string): Promise<number[]>;
+
+  getArtifact(agentJobId: string, pageNumber: number): Promise<AgentJobArtifactRecord | null>;
   listFallbacks(options?: { limit?: number; reasonCode?: string }): Promise<FallbackEventRecord[]>;
   summariseFallbacks(): Promise<FallbackSummaryRow[]>;
 
@@ -619,6 +633,56 @@ export class PostgresAgentStore implements AgentStore {
     };
   }
 
+  async saveArtifact(input: {
+    agentJobId: string;
+    pageNumber: number;
+    contentType: string;
+    bytes: Buffer;
+  }): Promise<void> {
+    // Replace rather than accumulate: a job re-reported after a retry must not leave two
+    // images of the same page, and the newer render is the one that matches the decision.
+    await this.pool.query(
+      `INSERT INTO agent_job_artifacts (agent_job_id, page_number, kind, content_type, bytes)
+       VALUES ($1, $2, 'thumbnail', $3, $4)
+       ON CONFLICT (agent_job_id, page_number, kind)
+       DO UPDATE SET content_type = EXCLUDED.content_type,
+                     bytes = EXCLUDED.bytes,
+                     created_at = NOW()`,
+      [input.agentJobId, input.pageNumber, input.contentType, input.bytes]
+    );
+  }
+
+  async listArtifacts(agentJobId: string): Promise<number[]> {
+    const result = await this.pool.query(
+      'SELECT page_number FROM agent_job_artifacts WHERE agent_job_id = $1 ORDER BY page_number',
+      [agentJobId]
+    );
+    return result.rows.map((row) => row.page_number as number);
+  }
+
+  async getArtifact(agentJobId: string, pageNumber: number): Promise<AgentJobArtifactRecord | null> {
+    const result = await this.pool.query(
+      `SELECT * FROM agent_job_artifacts
+        WHERE agent_job_id = $1 AND page_number = $2 AND kind = 'thumbnail'`,
+      [agentJobId, pageNumber]
+    );
+
+    if (!result.rowCount) {
+      return null;
+    }
+
+    const row = result.rows[0];
+    return {
+      id: row.id as string,
+      agentJobId: row.agent_job_id as string,
+      pageNumber: row.page_number as number,
+      kind: 'thumbnail',
+      contentType: row.content_type as string,
+      bytes: row.bytes as Buffer,
+      createdAt: toIso(row.created_at as Date)!
+    };
+  }
+
   async listFallbacks(options?: { limit?: number; reasonCode?: string }): Promise<FallbackEventRecord[]> {
     const limit = Math.min(Math.max(options?.limit ?? 100, 1), 500);
     const result = options?.reasonCode
@@ -845,6 +909,8 @@ export class PostgresAgentStore implements AgentStore {
                 SELECT p.id FROM agent_job_pages p
                   JOIN agent_jobs j ON j.id = p.agent_job_id
                  WHERE j.created_at < $1)`
+          : policy.scope === 'thumbnails'
+            ? `DELETE FROM agent_job_artifacts WHERE created_at < $1`
           : policy.scope === 'job_history'
             ? 'DELETE FROM agent_jobs WHERE created_at < $1'
             : policy.scope === 'fallbacks'

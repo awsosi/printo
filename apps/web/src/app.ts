@@ -73,6 +73,22 @@ async function sendProxyRequest(input: {
       return res.status(response.status).json(await response.json());
     }
 
+    // Anything that is not JSON or text is passed through as bytes. Decoding a PNG as text
+    // replaces every byte outside the character set with U+FFFD, which turns a page thumbnail
+    // into a broken image with no error anywhere to explain it.
+    if (contentType && !contentType.startsWith('text/')) {
+      const body = Buffer.from(await response.arrayBuffer());
+      res.status(response.status);
+      res.setHeader('content-type', contentType);
+
+      const cacheControl = response.headers.get('cache-control');
+      if (cacheControl) {
+        res.setHeader('cache-control', cacheControl);
+      }
+
+      return res.send(body);
+    }
+
     return res.status(response.status).send(await response.text());
   } catch {
     return res.status(502).json({ error: 'UPSTREAM_UNAVAILABLE' });
@@ -2808,6 +2824,12 @@ export function createWebApp(options: CreateWebAppOptions = {}) {
       method: 'get',
       path: '/admin/agent-jobs/:jobId',
       upstreamPath: (req) => `/admin/agent-jobs/${req.params.jobId}`
+    },
+    {
+      method: 'get',
+      path: '/admin/agent-jobs/:jobId/pages/:pageNumber/thumbnail',
+      upstreamPath: (req) =>
+        `/admin/agent-jobs/${req.params.jobId}/pages/${req.params.pageNumber}/thumbnail`
     },
     { method: 'get', path: '/admin/fallbacks', upstreamPath: () => '/admin/fallbacks' },
     { method: 'get', path: '/admin/fallbacks/summary', upstreamPath: () => '/admin/fallbacks/summary' },

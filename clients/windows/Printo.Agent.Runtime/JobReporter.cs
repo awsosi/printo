@@ -33,19 +33,91 @@ public sealed class JobReporter(IServerClient client, Action<string, string>? lo
     /// <summary>
     /// Reports one processed job. Returns the server's job id, or <c>null</c> if it did not land.
     /// </summary>
-    public string? Report(SpoolJob job, JobProcessingResult result, FallbackAnswer? answer = null)
+    public string? Report(
+        SpoolJob job,
+        JobProcessingResult result,
+        FallbackAnswer? answer = null,
+        IReadOnlyList<SpoolEvent>? events = null,
+        IReadOnlyDictionary<int, byte[]>? thumbnails = null)
     {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(result);
 
+        string serverJobId;
         try
         {
-            return client.ReportJobAsync(Build(job, result, answer)).GetAwaiter().GetResult();
+            serverJobId = client.ReportJobAsync(Build(job, result, answer)).GetAwaiter().GetResult();
         }
         catch (Exception error) when (error is ServerUnavailableException or ServerRejectedException)
         {
             log?.Invoke("report-failed", $"{job.JobKey}: {error.Message}");
             return null;
+        }
+
+        // Everything below is supplementary. The job itself has landed, and losing its audit
+        // trail or a thumbnail to a dropped connection must not make the job look unreported.
+        SendEvents(serverJobId, events);
+        SendThumbnails(serverJobId, thumbnails);
+
+        return serverJobId;
+    }
+
+    /// <summary>
+    /// Uploads the job's own audit trail.
+    /// </summary>
+    /// <remarks>
+    /// The agent already keeps these locally - which media layer was chosen, that the picker
+    /// went unanswered, that the machine printed on cached rules. Sending them means a support
+    /// question can be answered from the console instead of by reaching the workstation, which
+    /// on a packing bench mid-shift is the difference between a minute and an afternoon.
+    /// </remarks>
+    private void SendEvents(string serverJobId, IReadOnlyList<SpoolEvent>? events)
+    {
+        if (events is null || events.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var entry in events)
+        {
+            try
+            {
+                client.ReportEventAsync(
+                        serverJobId,
+                        entry.Level,
+                        entry.Code,
+                        entry.Detail is null
+                            ? null
+                            : JsonSerializer.SerializeToElement(new { detail = entry.Detail }, HttpServerClient.Json))
+                    .GetAwaiter().GetResult();
+            }
+            catch (Exception error) when (error is ServerUnavailableException or ServerRejectedException)
+            {
+                log?.Invoke("event-failed", $"{entry.Code}: {error.Message}");
+                return;
+            }
+        }
+    }
+
+    /// <summary>Uploads rendered page images so a fallback can be looked at, not just read.</summary>
+    private void SendThumbnails(string serverJobId, IReadOnlyDictionary<int, byte[]>? thumbnails)
+    {
+        if (thumbnails is null || thumbnails.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var (pageNumber, png) in thumbnails.OrderBy(entry => entry.Key))
+        {
+            try
+            {
+                client.ReportThumbnailAsync(serverJobId, pageNumber, png).GetAwaiter().GetResult();
+            }
+            catch (Exception error) when (error is ServerUnavailableException or ServerRejectedException)
+            {
+                log?.Invoke("thumbnail-failed", $"page {pageNumber}: {error.Message}");
+                return;
+            }
         }
     }
 

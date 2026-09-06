@@ -428,8 +428,17 @@ export function fleetPanelScript(): string {
             return;
           }
 
+          const withImages = detail.thumbnails || [];
+
           target.innerHTML = detail.pages.map(function (page) {
             const transform = page.transform || {};
+            // Rendered by the agent when it had to ask a person, so a reviewer can see the page
+            // rather than only read about it.
+            const image = withImages.indexOf(page.pageNumber) >= 0
+              ? '<img src="/admin/agent-jobs/' + encodeURIComponent(detail.job.id) +
+                  '/pages/' + page.pageNumber + '/thumbnail" alt="Page ' + page.pageNumber +
+                  '" style="max-width:180px;border:1px solid var(--line);border-radius:6px;" />'
+              : '';
             // The two fields that answer "why did it print at that size". Media comes through a
             // five-layer precedence chain, so the value alone would not be an explanation.
             const media = transform.effectiveMedia
@@ -448,6 +457,7 @@ export function fleetPanelScript(): string {
                 (page.confidence == null ? '' : ' · confidence ' + Number(page.confidence).toFixed(2)) +
                 (transform.composeDpi ? ' · composed at ' + Math.round(transform.composeDpi) + ' dpi' : '') +
               '</p>' +
+              image +
             '</div>';
           }).join('');
         }

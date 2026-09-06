@@ -160,6 +160,33 @@ describe('fleet admin', () => {
     expect(res.text).toContain('transform.effectiveMedia');
     expect(res.text).toContain("' (from ' + escapeHtml(transform.mediaSource || 'unknown') + ')'");
     expect(res.text).toContain('function renderFleetJobDetail()');
+
+    // A reviewer should be able to see the page, not only read about it.
+    expect(res.text).toContain("'/pages/' + page.pageNumber + '/thumbnail\"");
+  });
+
+  it('passes a thumbnail through as bytes rather than decoding it as text', async () => {
+    // A PNG signature plus bytes that are not valid UTF-8. Decoding this as text replaces them
+    // with U+FFFD, which produces a broken image and no error anywhere to explain it.
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe, 0x80, 0x01]);
+
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(png, {
+          status: 200,
+          headers: { 'content-type': 'image/png', 'cache-control': 'private, max-age=300' }
+        })
+    );
+
+    const app = createWebApp({ fetchImpl: fetchMock as unknown as typeof fetch });
+    const response = await request(app)
+      .get('/admin/agent-jobs/job-1/pages/2/thumbnail')
+      .set('authorization', 'Bearer operator-token')
+      .responseType('blob');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toBe('image/png');
+    expect(Buffer.from(response.body).equals(png)).toBe(true);
   });
 
   it('shows the API detail in the page, not just the error code', async () => {

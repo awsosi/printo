@@ -743,6 +743,36 @@ What the console still does not offer is authoring a *geometry* rule visually - 
 rectangle to set `inkWidthMm` and friends. Those are written as JSON, or derived automatically
 from a logged fallback, which covers the case that actually arises.
 
+### 10.7 Three loose ends closed
+
+Auditing for dead ends - schema or API that exists and nothing uses - found three, all now
+resolved rather than documented away.
+
+**Page thumbnails.** `fallback_events.thumbnails_ref` existed with nothing to point at, and
+section 11 confirms uploads are permitted with retention. The agent has already rendered every
+page to decide about it, so on a fallback it sends a small copy of the pages in question; the
+review queue shows them. Only on a fallback, and only the pages the picker asked about - a
+thumbnail of every page of every job would put a picture of everything the company prints on
+the server, which nothing needs. Stored as rows rather than in an object store so they inherit
+the cascade and the retention sweep that already exist; an orphaned image nobody deletes is
+worse than a slightly larger table.
+
+**Job events.** `agent_job_events` and `ReportEventAsync` existed and nothing produced an event.
+The agent already keeps this trail locally - which media layer was chosen, that the picker went
+unanswered, that the machine printed on cached rules - and now uploads it with the job, so a
+support question is answerable from the console instead of by reaching the workstation.
+
+Both are strictly supplementary: the job has already landed when they are sent, and losing
+either to a dropped connection must not make a reported job look unreported.
+
+**`label_templates` is dropped** (migration 0013). Section 6.3 describes a LabelTemplate
+library - per carrier and variant, how to detect the label and where its region sits. Every
+part of that is already a page rule in the published bundle: `when` is the detection,
+`then.transform.source` is the region, `then.transform.media` is the stock. Keeping both would
+mean two answers to "how do I recognise a DHL label", which is exactly the drift the shared
+conformance suite exists to prevent between the two engines. The library is a *view* of the
+rules grouped by carrier, not a second store.
+
 ### 10.6 "The effective value and its source, visible on every job"
 
 Media resolves through a five-layer precedence chain, and a rule usually names none of it. The

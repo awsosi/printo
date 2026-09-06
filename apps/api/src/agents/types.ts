@@ -169,6 +169,17 @@ export interface AgentJobPageRecord {
   transform: JsonObject | null;
 }
 
+/** A rendered page image kept for the review queue. */
+export interface AgentJobArtifactRecord {
+  id: string;
+  agentJobId: string;
+  pageNumber: number;
+  kind: 'thumbnail';
+  contentType: string;
+  bytes: Buffer;
+  createdAt: string;
+}
+
 /** One line of the accounting view: what a machine printed, for whom, and where it went. */
 export interface AccountingRow {
   agentId: string;

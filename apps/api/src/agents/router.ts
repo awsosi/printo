@@ -33,6 +33,15 @@ declare global {
 
 const PRINTER_ROLES: AgentPrinterRole[] = ['A4', 'THERMAL', 'ALIAS'];
 
+/**
+ * Ceiling for one page thumbnail.
+ *
+ * A 260 px PNG of a label is a few tens of kilobytes. 512 KB leaves generous room for a dense
+ * page while still refusing a full-resolution render, which is the thing the design says never
+ * crosses the network.
+ */
+const MAX_THUMBNAIL_BYTES = 512 * 1024;
+
 function isJsonObject(value: unknown): value is JsonObject {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -333,6 +342,50 @@ export function createAgentRouter(store: AgentStore): Router {
     return res.status(201).json({ job });
   });
 
+  /**
+   * Page thumbnails for the review queue.
+   *
+   * A fallback is only actionable if an administrator can see the page that caused it. The
+   * agent has already rendered every page to decide about it, so it sends a small copy rather
+   * than the server re-rendering a document it deliberately never receives.
+   *
+   * Uploaded per page, base64 in JSON, because these are tens of kilobytes and a multipart
+   * parser is a dependency and an attack surface for no benefit at this size.
+   */
+  router.post('/agents/me/jobs/:jobId/artifacts', requireAgent, async (req, res) => {
+    const pageNumber = Number(req.body?.pageNumber);
+    if (!Number.isInteger(pageNumber) || pageNumber < 1) {
+      return res.status(400).json({ error: 'INVALID_PAGE' });
+    }
+
+    const encoded = String(req.body?.png ?? '');
+    if (!encoded || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
+      return res.status(400).json({ error: 'INVALID_IMAGE' });
+    }
+
+    const bytes = Buffer.from(encoded, 'base64');
+    if (bytes.length === 0 || bytes.length > MAX_THUMBNAIL_BYTES) {
+      // A thumbnail is a thumbnail. Anything this size is a full-resolution page, which is
+      // exactly what the design says never crosses the network.
+      return res.status(413).json({ error: 'IMAGE_TOO_LARGE', detail: `${bytes.length} bytes` });
+    }
+
+    try {
+      await store.saveArtifact({
+        agentJobId: req.params.jobId,
+        pageNumber,
+        contentType: 'image/png',
+        bytes
+      });
+    } catch {
+      // The only realistic failure is a job id that does not exist, which the foreign key
+      // rejects. An agent reporting against a job the server never saw is a 404, not a 500.
+      return res.status(404).json({ error: 'JOB_NOT_FOUND' });
+    }
+
+    return res.status(202).json({ ok: true });
+  });
+
   router.post('/agents/me/jobs/:jobId/events', requireAgent, async (req, res) => {
     const level = req.body?.level;
     if (level !== 'info' && level !== 'warning' && level !== 'error') {
@@ -483,7 +536,32 @@ export function createAgentRouter(store: AgentStore): Router {
    */
   router.get('/admin/agent-jobs/:jobId', ...admin, async (req, res) => {
     const found = await store.getJob(req.params.jobId);
-    return found ? res.json(found) : res.status(404).json({ error: 'JOB_NOT_FOUND' });
+    if (!found) {
+      return res.status(404).json({ error: 'JOB_NOT_FOUND' });
+    }
+
+    // Page numbers rather than the images: a job detail request should not carry a megabyte of
+    // base64 the console may never display.
+    return res.json({ ...found, thumbnails: await store.listArtifacts(found.job.id) });
+  });
+
+  /** The rendered page itself, served as an image so a browser can put it in an `img` tag. */
+  router.get('/admin/agent-jobs/:jobId/pages/:pageNumber/thumbnail', ...admin, async (req, res) => {
+    const pageNumber = Number(req.params.pageNumber);
+    if (!Number.isInteger(pageNumber) || pageNumber < 1) {
+      return res.status(400).json({ error: 'INVALID_PAGE' });
+    }
+
+    const artifact = await store.getArtifact(req.params.jobId, pageNumber);
+    if (!artifact) {
+      return res.status(404).json({ error: 'THUMBNAIL_NOT_FOUND' });
+    }
+
+    res.setHeader('content-type', artifact.contentType);
+    // Immutable: a thumbnail is replaced by a new upload under the same URL only when the job
+    // is re-reported, and the console reloads the job detail when that happens.
+    res.setHeader('cache-control', 'private, max-age=300');
+    return res.send(artifact.bytes);
   });
 
   router.get('/admin/fallbacks', ...admin, async (req, res) => {

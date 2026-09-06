@@ -225,6 +225,13 @@ public interface IServerClient
         string code,
         JsonElement? detail = null,
         CancellationToken cancellation = default);
+
+    /// <summary>Uploads one rendered page image, for the review queue.</summary>
+    Task ReportThumbnailAsync(
+        string serverJobId,
+        int pageNumber,
+        byte[] png,
+        CancellationToken cancellation = default);
 }
 
 /// <summary>
@@ -435,6 +442,25 @@ public sealed class HttpServerClient : IServerClient, IDisposable
             HttpMethod.Post,
             $"agents/me/jobs/{Uri.EscapeDataString(serverJobId)}/events",
             new { level, code, detail },
+            authenticated: true,
+            cancellation).ConfigureAwait(false);
+
+        _ = await ReadJsonAsync(response, cancellation).ConfigureAwait(false);
+    }
+
+    public async Task ReportThumbnailAsync(
+        string serverJobId,
+        int pageNumber,
+        byte[] png,
+        CancellationToken cancellation = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(serverJobId);
+        ArgumentNullException.ThrowIfNull(png);
+
+        using var response = await SendAsync(
+            HttpMethod.Post,
+            $"agents/me/jobs/{Uri.EscapeDataString(serverJobId)}/artifacts",
+            new { pageNumber, png = Convert.ToBase64String(png) },
             authenticated: true,
             cancellation).ConfigureAwait(false);
 
