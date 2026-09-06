@@ -30,10 +30,10 @@ internal static class Program
             return 0;
         }
 
-        AgentConfiguration configuration;
+        AgentConfiguration fromFile;
         try
         {
-            configuration = AgentConfiguration.Load(configPath);
+            fromFile = AgentConfiguration.Load(configPath);
         }
         catch (Exception error) when (error is IOException or InvalidDataException or System.Text.Json.JsonException)
         {
@@ -44,9 +44,30 @@ internal static class Program
             return 2;
         }
 
+        // Group Policy and the MSI's own properties override the file. Applied here rather than
+        // inside `Load` so the file layer stays a plain, testable JSON read, and so `--config`
+        // on a bench still describes exactly what the file says plus what policy imposes.
+        var (configuration, sources) = PolicyConfiguration.Apply(fromFile, File.Exists(configPath));
+
+        if (args.Contains("--show-config", StringComparer.OrdinalIgnoreCase))
+        {
+            // The answer to "what is this machine actually set to, and why", without needing a
+            // remote session or a registry editor.
+            Console.WriteLine($"configuration file: {configPath} ({(File.Exists(configPath) ? "present" : "absent")})");
+            foreach (var setting in sources)
+            {
+                var managed = setting.IsManaged ? " (managed by Group Policy)" : string.Empty;
+                Console.WriteLine($"  {setting.Name} = {setting.Value}   [from {setting.Source}]{managed}");
+            }
+
+            Console.WriteLine($"  Printers = {configuration.Printers.Count}, HotFolders = {configuration.HotFolders.Count}");
+            return 0;
+        }
+
         var builder = Host.CreateApplicationBuilder(args);
 
         builder.Services.AddSingleton(configuration);
+        builder.Services.AddSingleton<IReadOnlyList<EffectiveSetting>>(sources);
         builder.Services.AddHostedService<AgentService>();
 
         builder.Logging.AddEventLog(settings =>

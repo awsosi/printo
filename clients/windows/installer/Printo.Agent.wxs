@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Printo agent installer.
+
+  Built by `installer/build.ps1`, which publishes the service and the tray self-contained and
+  hands this file the resulting directory. Self-contained on purpose: a domain fleet is far
+  easier to keep correct when the MSI carries its own runtime than when every workstation needs
+  a matching .NET version deployed first, and one missing prerequisite means a bench that
+  cannot print.
+
+  Unattended configuration goes into HKLM\SOFTWARE\Printo\Agent rather than into a config file
+  written by a custom action. Group Policy writes the identical values to
+  HKLM\SOFTWARE\Policies\Printo\Agent and the agent reads both layers, so the ADMX template and
+  the MSI properties describe the same settings and no custom action is needed at all - which
+  is worth a great deal, because a failed custom action is the most common way an MSI becomes
+  neither installable nor removable.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package Name="Printo Agent"
+           Manufacturer="Printo"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="7c1f9e10-5c4a-4d0b-9a2f-3f1c0d5b6e21"
+           Scope="perMachine"
+           Compressed="yes"
+           InstallerVersion="500">
+
+    <SummaryInformation Description="Printo virtual printer agent" Manufacturer="Printo" />
+
+    <!--
+      Upgrades replace in place. Scheduled after InstallExecute so the new files are staged
+      before the old ones go: a machine that loses power mid-upgrade comes back with one
+      working version rather than none.
+    -->
+    <MajorUpgrade
+      Schedule="afterInstallExecute"
+      DowngradeErrorMessage="A newer version of the Printo Agent is already installed." />
+
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Launch Condition="Installed OR VersionNT64" Message="The Printo Agent requires 64-bit Windows." />
+
+    <!-- Unattended configuration. Every one of these is optional. -->
+    <Property Id="SERVERURL" Secure="yes" />
+    <Property Id="DECISIONMODE" Secure="yes" />
+    <Property Id="CONFIDENCETHRESHOLD" Secure="yes" />
+    <Property Id="ENROLLMENTTOKEN" Secure="yes" Hidden="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Printo Agent" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="DataCompany" Name="Printo">
+        <Directory Id="DATAFOLDER" Name="agent" />
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Agent" Title="Printo Agent" Level="1" AllowAbsent="no">
+      <ComponentGroupRef Id="AgentPayload" />
+      <ComponentGroupRef Id="AgentRegistration" />
+    </Feature>
+
+    <ComponentGroup Id="AgentRegistration">
+
+      <!--
+        The service runs as LocalSystem so it survives sign-out and can watch machine-wide
+        directories. ErrorControl is `normal`, not critical: a workstation must still boot if
+        the agent fails to start.
+      -->
+      <Component Id="AgentService" Directory="INSTALLFOLDER" Guid="2b9a0c44-98f4-4b6e-9f1a-77e5f0a1c331">
+        <File Id="AgentServiceExe" Source="$(var.ServiceDir)\Printo.Agent.exe" KeyPath="yes" />
+
+        <ServiceInstall Id="PrintoAgentService"
+                        Name="PrintoAgent"
+                        DisplayName="Printo Agent"
+                        Description="Routes printed documents to the right physical printers."
+                        Type="ownProcess"
+                        Start="auto"
+                        ErrorControl="normal"
+                        Account="LocalSystem"
+                        Vital="yes">
+          <!-- Restart on failure twice, then stop and let the event log stand. -->
+          <util:ServiceConfig FirstFailureActionType="restart"
+                              SecondFailureActionType="restart"
+                              ThirdFailureActionType="none"
+                              RestartServiceDelayInSeconds="60" />
+        </ServiceInstall>
+
+        <ServiceControl Id="PrintoAgentControl"
+                        Name="PrintoAgent"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="yes" />
+      </Component>
+
+      <!--
+        The tray is per-user and starts at sign-in. HKLM rather than HKCU because a packing
+        bench is shared: the picker has to appear for every operator, not only for whoever
+        happened to be signed in when the MSI ran.
+      -->
+      <Component Id="TrayAutostart" Directory="INSTALLFOLDER" Guid="4d6c2f18-3a77-4e59-8c02-6b9d41a7e552">
+        <RegistryValue Root="HKLM"
+                       Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+                       Name="PrintoTray"
+                       Type="string"
+                       Value="&quot;[INSTALLFOLDER]Printo.Tray.exe&quot;"
+                       KeyPath="yes" />
+      </Component>
+
+      <!--
+        Machine data: the spool database, the cached rule bundle and the enrolment credential.
+        In ProgramData rather than the install directory because the MSI replaces the install
+        directory on upgrade, and a site's queued work and identity must survive that.
+
+        The ACL drops the inherited ProgramData rules, which grant every authenticated user
+        read - and the enrolment credential lives here.
+      -->
+      <Component Id="DataDirectory" Directory="DATAFOLDER" Guid="8f30b1a6-2d54-4c73-b8e1-9a4f6d2c0b18">
+        <CreateFolder>
+          <util:PermissionEx User="SYSTEM" GenericAll="yes" Inheritable="yes" />
+          <util:PermissionEx User="Administrators" GenericAll="yes" Inheritable="yes" />
+        </CreateFolder>
+        <RegistryValue Root="HKLM" Key="SOFTWARE\Printo\Agent" Name="DataDirectory"
+                       Type="string" Value="[DATAFOLDER]" KeyPath="yes" />
+      </Component>
+
+      <!--
+        The unattended settings, each written only when its property was supplied. An absent
+        property leaves whatever is already there alone: a repair or an upgrade run without
+        properties must not silently blank a working machine's server URL.
+      -->
+      <Component Id="ConfiguredServerUrl" Directory="INSTALLFOLDER" Guid="a3c81d92-6e45-4b17-9d3a-5c2e8f0b7a44"
+                 Condition="SERVERURL">
+        <RegistryValue Root="HKLM" Key="SOFTWARE\Printo\Agent" Name="ServerUrl"
+                       Type="string" Value="[SERVERURL]" KeyPath="yes" />
+      </Component>
+
+      <Component Id="ConfiguredDecisionMode" Directory="INSTALLFOLDER" Guid="c5e07b31-9f28-4a66-8b04-1d7a3e5c9f60"
+                 Condition="DECISIONMODE">
+        <RegistryValue Root="HKLM" Key="SOFTWARE\Printo\Agent" Name="DecisionMode"
+                       Type="string" Value="[DECISIONMODE]" KeyPath="yes" />
+      </Component>
+
+      <Component Id="ConfiguredThreshold" Directory="INSTALLFOLDER" Guid="e18d4a07-7c63-4f92-a5b8-2e6f0c4d8137"
+                 Condition="CONFIDENCETHRESHOLD">
+        <RegistryValue Root="HKLM" Key="SOFTWARE\Printo\Agent" Name="ConfidenceThreshold"
+                       Type="string" Value="[CONFIDENCETHRESHOLD]" KeyPath="yes" />
+      </Component>
+
+      <!--
+        The enrolment token is spent the first time the agent starts. Written to the machine key
+        rather than the policy key so an administrator can clear it afterwards without editing
+        a GPO.
+      -->
+      <Component Id="ConfiguredEnrollmentToken" Directory="INSTALLFOLDER" Guid="f92b6c50-4d81-4e35-9c77-8a1b3f6e2d09"
+                 Condition="ENROLLMENTTOKEN">
+        <RegistryValue Root="HKLM" Key="SOFTWARE\Printo\Agent" Name="EnrollmentToken"
+                       Type="string" Value="[ENROLLMENTTOKEN]" KeyPath="yes" />
+      </Component>
+
+    </ComponentGroup>
+  </Package>
+</Wix>

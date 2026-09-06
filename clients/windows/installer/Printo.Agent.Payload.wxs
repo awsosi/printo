@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Everything the two executables need: the .NET runtime they were published with, the managed
+  assemblies, and the native libraries the agent loads by hand - pdfium, ZXingCpp and the SQLite
+  provider.
+
+  Harvested with `<Files>` rather than listed. A self-contained publish is around 240 files and
+  changes with every runtime patch; a hand-written manifest would be wrong within a release, and
+  the failure mode of a missing native DLL is the agent starting cleanly and then failing on the
+  first document it renders.
+
+  `Printo.Agent.exe` is not here: it carries the service registration, so it has to be declared
+  as an explicit component, and WiX 5's `Files` element has no `Exclude` attribute. The build
+  script moves it to its own staging directory before this glob runs, which is more reliable
+  than a pattern that has to be kept in step with what the publish emits.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <ComponentGroup Id="AgentPayload" Directory="INSTALLFOLDER">
+      <Files Include="$(var.PublishDir)\**" />
+    </ComponentGroup>
+  </Fragment>
+</Wix>

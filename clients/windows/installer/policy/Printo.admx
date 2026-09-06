@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Group Policy template for the Printo agent.
+
+  Copy this file to the domain's central store (\\<domain>\SYSVOL\<domain>\Policies\PolicyDefinitions)
+  together with en-US\Printo.adml, and the settings appear under
+  Computer Configuration > Policies > Administrative Templates > Printo > Agent.
+
+  Everything here writes to SOFTWARE\Policies\Printo\Agent, which is the key the agent reads
+  first and marks as managed - the tray then shows the value as read-only, the way Windows does
+  for every other policy-controlled setting. An editable box that silently reverts at the next
+  policy refresh is worse than no box at all.
+
+  Deliberately absent: the printer map and the watched folders. Those are per-machine facts -
+  this bench has that thermal printer - and pushing them by GPO would mean one policy object per
+  workstation, which is not a policy, it is a spreadsheet. They live in agent.json, or are
+  configured centrally per agent from the fleet console.
+-->
+<policyDefinitions xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   revision="1.0"
+                   schemaVersion="1.0"
+                   xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+
+  <policyNamespaces>
+    <target prefix="printo" namespace="Printo.Policies.Agent" />
+    <using prefix="windows" namespace="Microsoft.Policies.Windows" />
+  </policyNamespaces>
+
+  <supportedOn>
+    <definitions>
+      <definition name="SUPPORTED_PrintoAgent_1" displayName="$(string.SUPPORTED_PrintoAgent_1)" />
+    </definitions>
+  </supportedOn>
+
+  <categories>
+    <category name="Printo" displayName="$(string.Printo)" />
+    <category name="Agent" displayName="$(string.Agent)">
+      <parentCategory ref="Printo" />
+    </category>
+  </categories>
+
+  <policies>
+
+    <policy name="ServerUrl"
+            class="Machine"
+            displayName="$(string.ServerUrl)"
+            explainText="$(string.ServerUrl_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            presentation="$(presentation.ServerUrl)">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_1" />
+      <elements>
+        <text id="ServerUrl_Text" valueName="ServerUrl" required="true" expandable="false" maxLength="512" />
+      </elements>
+    </policy>
+
+    <policy name="DecisionMode"
+            class="Machine"
+            displayName="$(string.DecisionMode)"
+            explainText="$(string.DecisionMode_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            presentation="$(presentation.DecisionMode)">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_1" />
+      <elements>
+        <enum id="DecisionMode_Enum" valueName="DecisionMode" required="true">
+          <item displayName="$(string.DecisionMode_Local)">
+            <value><string>local</string></value>
+          </item>
+          <item displayName="$(string.DecisionMode_Server)">
+            <value><string>server</string></value>
+          </item>
+          <item displayName="$(string.DecisionMode_Auto)">
+            <value><string>auto</string></value>
+          </item>
+        </enum>
+      </elements>
+    </policy>
+
+    <policy name="ConfidenceThreshold"
+            class="Machine"
+            displayName="$(string.ConfidenceThreshold)"
+            explainText="$(string.ConfidenceThreshold_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            presentation="$(presentation.ConfidenceThreshold)">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_1" />
+      <elements>
+        <!--
+          Text rather than a decimal element: ADMX decimals are integers only, and the agent's
+          threshold is 0..1. It parses and range-checks the string, and ignores anything outside
+          the range rather than coercing it - a threshold of 12 would escalate every page.
+        -->
+        <text id="ConfidenceThreshold_Text" valueName="ConfidenceThreshold" required="true" maxLength="8" />
+      </elements>
+    </policy>
+
+    <policy name="EnrollmentToken"
+            class="Machine"
+            displayName="$(string.EnrollmentToken)"
+            explainText="$(string.EnrollmentToken_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            presentation="$(presentation.EnrollmentToken)">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_1" />
+      <elements>
+        <text id="EnrollmentToken_Text" valueName="EnrollmentToken" required="true" maxLength="256" />
+      </elements>
+    </policy>
+
+    <policy name="OcrLanguage"
+            class="Machine"
+            displayName="$(string.OcrLanguage)"
+            explainText="$(string.OcrLanguage_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            presentation="$(presentation.OcrLanguage)">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_1" />
+      <elements>
+        <text id="OcrLanguage_Text" valueName="OcrLanguage" required="false" maxLength="32" />
+      </elements>
+    </policy>
+
+  </policies>
+</policyDefinitions>

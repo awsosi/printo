@@ -20,3 +20,7 @@ infra/traefik/certs/*
 
 # The live TLS store points at those certificates; only the example is tracked.
 infra/traefik/dynamic/tls.yml
+
+# MSI build output: publish staging and the packages themselves.
+clients/windows/installer/obj/
+clients/windows/installer/bin/

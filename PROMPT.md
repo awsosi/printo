@@ -120,8 +120,8 @@ defect.
 - [~] M4 — Agent runtime + fallback picker (all but virtual-printer ingress, which needs M1)
 - [~] M5 — Server integration (all but the worker's own engine adoption — plan §10.3)
 - [x] M6 — Admin UI (Fleet tab; driven in a real browser against a real database)
-- [ ] M7 — Packaging + delivery ← **next**
-- [ ] M8 — Hardening
+- [~] M7 — Packaging + delivery (all but an elevated install of the MSI — see below)
+- [ ] M8 — Hardening ← **next**
 
 ### Environment answers already given by the user (2026-09-05)
 
@@ -208,7 +208,9 @@ which capture tier works. Hot folders are the working intake path meanwhile.
 ```bash
 npm run lint && npm run typecheck                      # repo-wide, must stay green
 npx vitest run --root packages/routing-engine          # 130 tests incl. golden corpus
-dotnet test clients/windows/Printo.Agent.Tests         # 168 tests incl. corpus parity and soak
+dotnet test clients/windows/Printo.Agent.Tests         # 179 tests incl. corpus parity and soak
+npm run smoke:prod                                     # builds the production images, asserts the stack
+pwsh clients/windows/installer/build.ps1 -Version 0.1.0           # builds the agent MSI
 Printo.Tray.exe --picker <document.pdf> [pages]        # measure the picker, prints timing
 Printo.Agent.exe --console --config <agent.json>       # run the service in the foreground
 npx tsx packages/routing-engine/scripts/export-profiles.ts        # after editing profiles.ts

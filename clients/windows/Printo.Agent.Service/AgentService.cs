@@ -20,7 +20,8 @@ namespace Printo.Agent.Service;
 [SupportedOSPlatform("windows10.0.19041.0")]
 public sealed class AgentService(
     ILogger<AgentService> logger,
-    AgentConfiguration configuration) : BackgroundService
+    AgentConfiguration configuration,
+    IReadOnlyList<EffectiveSetting> settings) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -56,11 +57,28 @@ public sealed class AgentService(
         var catalog = BuildCatalog();
         var profiles = BuildProfiles();
 
+        foreach (var setting in settings)
+        {
+            // Logged at startup so the event log answers "what was this machine set to, and by
+            // what" without anyone having to reach the workstation.
+            logger.LogInformation(
+                "Config {Name} = {Value} (from {Source}){Managed}",
+                setting.Name,
+                setting.Value,
+                setting.Source,
+                setting.IsManaged ? " [managed by Group Policy]" : string.Empty);
+        }
+
         var sync = new FleetSync(
             configuration,
             Path.Combine(configuration.DataDirectory, "identity.json"),
             new BundleCache(Path.Combine(configuration.DataDirectory, "bundle.json")),
-            log: (code, detail) => logger.LogInformation("Fleet {Code}: {Detail}", code, detail));
+            log: (code, detail) => logger.LogInformation("Fleet {Code}: {Detail}", code, detail))
+        {
+            // A multi-use token in a GPO is how a fleet enrols unattended: each machine reads
+            // it once, exchanges it for its own credential, and never needs it again.
+            EnrolmentToken = PolicyConfiguration.EnrolmentToken(),
+        };
 
         using var client = sync.HasServer
             ? new HttpServerClient(configuration.ServerUrl, () => sync.CurrentIdentity.ApiKey)

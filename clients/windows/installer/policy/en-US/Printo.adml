@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                           revision="1.0"
+                           schemaVersion="1.0"
+                           xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+
+  <displayName>Printo Agent</displayName>
+  <description>Group Policy settings for the Printo virtual printer agent.</description>
+
+  <resources>
+    <stringTable>
+      <string id="SUPPORTED_PrintoAgent_1">Printo Agent 0.1 or later</string>
+
+      <string id="Printo">Printo</string>
+      <string id="Agent">Agent</string>
+
+      <string id="ServerUrl">Server address</string>
+      <string id="ServerUrl_Explain">Base address of the Printo server, for example https://printo.example.local/api/.
+
+The agent uses this to enrol, to download the routing rule bundle, and - in Server and Auto decision modes - to ask the server where each page should go.
+
+Only measured page features cross the network, never the document itself: the workstation stays the only place a customer's invoice is rendered.
+
+If this policy is Not Configured, the agent uses the address the MSI was installed with, or the address in agent.json. If none of those is set, the agent runs standalone on the routing rules it shipped with.</string>
+
+      <string id="DecisionMode">Decision mode</string>
+      <string id="DecisionMode_Explain">How the agent decides where each page goes.
+
+Local: everything is decided on the workstation from the cached rule bundle. Works with no server at all.
+
+Server: the page features are sent to the server, which returns a per-page plan. If the server cannot be reached, the document is held and the operator is asked rather than guessed at.
+
+Auto (recommended): local first. A confident answer never touches the network; anything below the confidence threshold is escalated to the server. If the server is unreachable, a confident local answer still prints and is recorded as having run on cached rules.
+
+If this policy is Not Configured, the agent uses Auto.</string>
+      <string id="DecisionMode_Local">Local - decide on the workstation</string>
+      <string id="DecisionMode_Server">Server - decide on the server</string>
+      <string id="DecisionMode_Auto">Auto - local first, escalate when uncertain (recommended)</string>
+
+      <string id="ConfidenceThreshold">Confidence threshold</string>
+      <string id="ConfidenceThreshold_Explain">How confident the agent must be to route a page without asking, between 0 and 1. The default is 0.75.
+
+In Auto mode this is the point at which a document is escalated to the server. In Local mode it is the point at which the operator is shown the picker.
+
+Lower it and fewer documents interrupt an operator, but more pages are routed on weaker evidence. Raise it and routing is more cautious, at the cost of more prompts. The fleet console reports, per fallback reason, how often operators simply agreed with what the engine had already proposed - that number is the evidence for changing this.
+
+A value outside 0 to 1 is ignored rather than clamped, and the agent falls back to the layer below.</string>
+
+      <string id="EnrollmentToken">Enrolment token</string>
+      <string id="EnrollmentToken_Explain">A token issued from the fleet console that lets a machine register itself with the server.
+
+Set this to a multi-use token to enrol a fleet unattended: each machine reads it once on first start, exchanges it for its own per-machine credential, and never needs it again.
+
+The token is not a long-lived secret - it only permits enrolment, it expires, and its use count is enforced by the server. The credential it buys is stored on the workstation with an ACL that excludes ordinary users.
+
+Clear this policy once the fleet has enrolled.</string>
+
+      <string id="OcrLanguage">OCR language</string>
+      <string id="OcrLanguage_Explain">Language tag for the Windows OCR recogniser, for example en-US or pl-PL.
+
+Some courier documents carry no text layer, so a rule has to read the page. If no recogniser is available the agent asks the operator rather than guessing, so this is about reducing prompts, not about correctness.
+
+If this policy is Not Configured, the agent uses the machine's own display language. The matching Windows OCR language pack must be installed for a language to be usable.</string>
+    </stringTable>
+
+    <presentationTable>
+      <presentation id="ServerUrl">
+        <textBox refId="ServerUrl_Text">
+          <label>Server address</label>
+          <defaultValue>https://printo.example.local/api/</defaultValue>
+        </textBox>
+      </presentation>
+
+      <presentation id="DecisionMode">
+        <dropdownList refId="DecisionMode_Enum" defaultItem="2">Decision mode</dropdownList>
+      </presentation>
+
+      <presentation id="ConfidenceThreshold">
+        <textBox refId="ConfidenceThreshold_Text">
+          <label>Threshold (0 to 1)</label>
+          <defaultValue>0.75</defaultValue>
+        </textBox>
+      </presentation>
+
+      <presentation id="EnrollmentToken">
+        <textBox refId="EnrollmentToken_Text">
+          <label>Token</label>
+        </textBox>
+      </presentation>
+
+      <presentation id="OcrLanguage">
+        <textBox refId="OcrLanguage_Text">
+          <label>Language tag</label>
+          <defaultValue>en-US</defaultValue>
+        </textBox>
+      </presentation>
+    </presentationTable>
+  </resources>
+</policyDefinitionResources>
