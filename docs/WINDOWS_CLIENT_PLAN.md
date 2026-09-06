@@ -743,6 +743,21 @@ What the console still does not offer is authoring a *geometry* rule visually - 
 rectangle to set `inkWidthMm` and friends. Those are written as JSON, or derived automatically
 from a logged fallback, which covers the case that actually arises.
 
+### 10.6 "The effective value and its source, visible on every job"
+
+Media resolves through a five-layer precedence chain, and a rule usually names none of it. The
+agent logged the resolved value and its layer to its own spool, so the answer to "why did that
+label print at that size" existed only on the workstation.
+
+Every printed page now reports the queue it reached, the media it printed on, the precedence
+layer that supplied that media, and the resolution it was composed at - alongside, not instead
+of, what the rule asked for. `GET /admin/agent-jobs/:id` returns it and the Fleet tab shows it
+per page.
+
+That also fixed a defect the change exposed: the reported printer queue was only filled in when
+a job went to exactly one printer, so it was null for every mixed document - the case the
+product exists for.
+
 ### 10.5 Picture matching
 
 The `image` predicate was in the schema, validated and traced, while nothing could populate a

@@ -2804,6 +2804,11 @@ export function createWebApp(options: CreateWebAppOptions = {}) {
     { method: 'get', path: '/admin/bundles/latest', upstreamPath: () => '/admin/bundles/latest' },
     { method: 'post', path: '/admin/bundles', upstreamPath: () => '/admin/bundles' },
     { method: 'get', path: '/admin/agent-jobs', upstreamPath: () => '/admin/agent-jobs' },
+    {
+      method: 'get',
+      path: '/admin/agent-jobs/:jobId',
+      upstreamPath: (req) => `/admin/agent-jobs/${req.params.jobId}`
+    },
     { method: 'get', path: '/admin/fallbacks', upstreamPath: () => '/admin/fallbacks' },
     { method: 'get', path: '/admin/fallbacks/summary', upstreamPath: () => '/admin/fallbacks/summary' },
     { method: 'get', path: '/admin/review-queue', upstreamPath: () => '/admin/review-queue' },

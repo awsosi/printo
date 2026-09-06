@@ -121,6 +121,18 @@ export function fleetPanelHtml(): string {
               <section class="card stack">
                 <div class="section-title">
                   <div class="stack">
+                    <h2>Recent jobs</h2>
+                    <p class="muted">Open one to see where each page went, and what decided its size.</p>
+                  </div>
+                  <span class="pill" id="fleetJobCount">0 jobs</span>
+                </div>
+                <div id="fleetJobList" class="status-table"></div>
+                <div id="fleetJobDetail" class="status-table"></div>
+              </section>
+
+              <section class="card stack">
+                <div class="section-title">
+                  <div class="stack">
                     <h2>Accounting</h2>
                     <p class="muted">Pages printed in the last 30 days, by machine, user and destination.</p>
                   </div>
@@ -159,7 +171,9 @@ export function fleetPanelScript(): string {
           summary: [],
           fallbacks: [],
           review: [],
-          accounting: null
+          accounting: null,
+          jobs: [],
+          jobDetail: null
         };
 
         function fleetSetStatus(id, message, tone) {
@@ -374,6 +388,70 @@ export function fleetPanelScript(): string {
           return encoded.slice(encoded.indexOf(',') + 1);
         }
 
+        function renderFleetJobs() {
+          const target = byId('fleetJobList');
+          byId('fleetJobCount').textContent = fleet.jobs.length + (fleet.jobs.length === 1 ? ' job' : ' jobs');
+
+          if (!fleet.jobs.length) {
+            target.innerHTML = '<div class="item muted">No job has been reported yet.</div>';
+            byId('fleetJobDetail').innerHTML = '';
+            return;
+          }
+
+          target.innerHTML = fleet.jobs.slice(0, 12).map(function (job) {
+            const tone = job.status === 'COMPLETED' ? 'ok' : job.status === 'FAILED' ? 'danger' : 'warn';
+            return '<div class="item">' +
+              '<div class="section-title">' +
+                '<strong>' + escapeHtml(job.fileName) + '</strong>' +
+                '<span class="pill ' + tone + '">' + escapeHtml(job.status) + '</span>' +
+              '</div>' +
+              '<p class="muted">' + escapeHtml(fleetAgo(job.createdAt)) +
+                ' · ' + job.pageCount + ' page(s)' +
+                ' · ' + escapeHtml(job.source) +
+                (job.userName ? ' · ' + escapeHtml(job.userName) : '') + '</p>' +
+              '<button type="button" class="secondary" data-job="' + escapeHtml(job.id) + '">Show the pages</button>' +
+            '</div>';
+          }).join('');
+        }
+
+        function renderFleetJobDetail() {
+          const target = byId('fleetJobDetail');
+          const detail = fleet.jobDetail;
+
+          if (!detail) {
+            target.innerHTML = '';
+            return;
+          }
+
+          if (!detail.pages.length) {
+            target.innerHTML = '<div class="item muted">This job reported no per-page detail.</div>';
+            return;
+          }
+
+          target.innerHTML = detail.pages.map(function (page) {
+            const transform = page.transform || {};
+            // The two fields that answer "why did it print at that size". Media comes through a
+            // five-layer precedence chain, so the value alone would not be an explanation.
+            const media = transform.effectiveMedia
+              ? escapeHtml(transform.effectiveMedia) + ' (from ' + escapeHtml(transform.mediaSource || 'unknown') + ')'
+              : 'not printed';
+
+            return '<div class="item">' +
+              '<div class="section-title">' +
+                '<strong>Page ' + page.pageNumber + '</strong>' +
+                '<span class="pill">' + escapeHtml(page.route || 'no route') + '</span>' +
+              '</div>' +
+              '<p class="muted">' + escapeHtml(page.printerQueue || 'no printer') + ' · ' + media + '</p>' +
+              '<p class="hint muted">' +
+                escapeHtml(page.ruleId || 'no rule matched') +
+                (page.carrier ? ' · ' + escapeHtml(page.carrier) : '') +
+                (page.confidence == null ? '' : ' · confidence ' + Number(page.confidence).toFixed(2)) +
+                (transform.composeDpi ? ' · composed at ' + Math.round(transform.composeDpi) + ' dpi' : '') +
+              '</p>' +
+            '</div>';
+          }).join('');
+        }
+
         function renderFleetAccounting() {
           const target = byId('fleetAccountingList');
           const note = byId('fleetReconciliation');
@@ -486,6 +564,15 @@ export function fleetPanelScript(): string {
             fleet.summary = [];
             fleet.fallbacks = [];
             renderFleetFallbacks();
+          }
+
+          try {
+            const jobs = await request('/admin/agent-jobs?limit=12', 'GET');
+            fleet.jobs = jobs.jobs || [];
+            renderFleetJobs();
+          } catch (error) {
+            fleet.jobs = [];
+            renderFleetJobs();
           }
 
           try {
@@ -721,6 +808,25 @@ export function fleetPanelScript(): string {
                 } catch (error) {
                   fleetSetStatus('fleetTokenResult', 'Could not change the agent status: ' + error.message, 'danger');
                 }
+              }
+            });
+          }
+
+          const jobList = byId('fleetJobList');
+          if (jobList) {
+            jobList.addEventListener('click', async function (event) {
+              const id = event.target.getAttribute && event.target.getAttribute('data-job');
+              if (!id) {
+                return;
+              }
+
+              try {
+                fleet.jobDetail = await request('/admin/agent-jobs/' + encodeURIComponent(id), 'GET');
+                renderFleetJobDetail();
+              } catch (error) {
+                fleet.jobDetail = null;
+                renderFleetJobDetail();
+                fleetSetStatus('fleetTokenResult', 'Could not load the job: ' + error.message, 'danger');
               }
             });
           }

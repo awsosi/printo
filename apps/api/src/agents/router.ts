@@ -474,6 +474,18 @@ export function createAgentRouter(store: AgentStore): Router {
     });
   });
 
+  /**
+   * One job, with what each page actually did.
+   *
+   * The transform on each page carries the media it printed on and the precedence layer that
+   * supplied it, which is what makes "why did it print at that size" answerable without a
+   * remote session on the workstation.
+   */
+  router.get('/admin/agent-jobs/:jobId', ...admin, async (req, res) => {
+    const found = await store.getJob(req.params.jobId);
+    return found ? res.json(found) : res.status(404).json({ error: 'JOB_NOT_FOUND' });
+  });
+
   router.get('/admin/fallbacks', ...admin, async (req, res) => {
     return res.json({
       fallbacks: await store.listFallbacks({

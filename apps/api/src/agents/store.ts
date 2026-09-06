@@ -5,6 +5,7 @@ import type {
   AccountingReconciliation,
   AccountingRow,
   AgentDecisionMode,
+  AgentJobPageRecord,
   AgentJobPageInput,
   AgentJobRecord,
   AgentPrinterRecord,
@@ -108,6 +109,9 @@ export interface AgentStore {
   recordFallback(agentJobId: string, event: FallbackEventInput): Promise<FallbackEventRecord>;
 
   listJobs(options?: { agentId?: string; limit?: number }): Promise<AgentJobRecord[]>;
+
+  /** One job with its per-page outcomes, for "why did this page print like that". */
+  getJob(agentJobId: string): Promise<{ job: AgentJobRecord; pages: AgentJobPageRecord[] } | null>;
   listFallbacks(options?: { limit?: number; reasonCode?: string }): Promise<FallbackEventRecord[]>;
   summariseFallbacks(): Promise<FallbackSummaryRow[]>;
 
@@ -585,6 +589,34 @@ export class PostgresAgentStore implements AgentStore {
         )
       : await this.pool.query('SELECT * FROM agent_jobs ORDER BY created_at DESC LIMIT $1', [limit]);
     return result.rows.map(mapJob);
+  }
+
+  async getJob(agentJobId: string): Promise<{ job: AgentJobRecord; pages: AgentJobPageRecord[] } | null> {
+    const found = await this.pool.query('SELECT * FROM agent_jobs WHERE id = $1', [agentJobId]);
+    if (!found.rowCount) {
+      return null;
+    }
+
+    const pages = await this.pool.query(
+      'SELECT * FROM agent_job_pages WHERE agent_job_id = $1 ORDER BY page_number',
+      [agentJobId]
+    );
+
+    return {
+      job: mapJob(found.rows[0]),
+      pages: pages.rows.map((row) => ({
+        id: row.id as string,
+        agentJobId: row.agent_job_id as string,
+        pageNumber: row.page_number as number,
+        pageClass: (row.page_class as string) ?? null,
+        carrier: (row.carrier as string) ?? null,
+        confidence: row.confidence === null ? null : Number(row.confidence),
+        ruleId: (row.rule_id as string) ?? null,
+        route: (row.route as string) ?? null,
+        printerQueue: (row.printer_queue as string) ?? null,
+        transform: (row.transform as JsonObject) ?? null
+      }))
+    };
   }
 
   async listFallbacks(options?: { limit?: number; reasonCode?: string }): Promise<FallbackEventRecord[]> {

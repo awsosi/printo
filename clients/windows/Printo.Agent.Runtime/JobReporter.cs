@@ -54,6 +54,11 @@ public sealed class JobReporter(IServerClient client, Action<string, string>? lo
     {
         var routes = result.Decision?.Pages.ToDictionary(page => page.PageNumber) ?? [];
 
+        // Keyed by page, not by printer count. The previous version only reported a queue when
+        // the whole job went to exactly one printer, which excluded every mixed document - the
+        // case the product exists for.
+        var printedBy = result.Printed.ToDictionary(outcome => outcome.PageNumber);
+
         return new JobReport
         {
             JobKey = job.JobKey,
@@ -78,20 +83,14 @@ public sealed class JobReporter(IServerClient client, Action<string, string>? lo
             Error = result.Error,
             Pages = routes.Values
                 .OrderBy(page => page.PageNumber)
-                .Select(page => ToPageReport(page, result))
+                .Select(page => ToPageReport(page, printedBy.GetValueOrDefault(page.PageNumber)))
                 .ToList(),
             Fallback = ToFallbackReport(result, answer),
         };
     }
 
-    private static JobPageReport ToPageReport(PageDecision page, JobProcessingResult result)
+    private static JobPageReport ToPageReport(PageDecision page, PrintedPageOutcome? printed)
     {
-        // The queue is recorded per route rather than per page: the printer a page reached is
-        // the one its route resolved to, and a job that printed to two queues has exactly two.
-        var queue = result.PagesPerPrinter.Count == 1
-            ? result.PagesPerPrinter.Keys.First()
-            : null;
-
         return new JobPageReport
         {
             PageNumber = page.PageNumber,
@@ -100,10 +99,39 @@ public sealed class JobReporter(IServerClient client, Action<string, string>? lo
             Confidence = page.Confidence,
             RuleId = page.RuleId,
             Route = page.Route,
-            PrinterQueue = queue,
-            Transform = page.Transform is null ? null : Serialize(page.Transform),
+            PrinterQueue = printed?.QueueName,
+            Transform = ToTransformReport(page, printed),
             Traces = page.Trace.Rules.Select(ToTraceReport).ToList(),
         };
+    }
+
+    /// <summary>
+    /// The transform the rule asked for, plus what it actually resolved to.
+    /// </summary>
+    /// <remarks>
+    /// Media travels through a five-layer precedence chain, so the rule's own `media` - often
+    /// absent - does not answer "why did it print at that size". Recording the resolved value
+    /// beside the layer that supplied it makes that answerable from the job alone, which is
+    /// what the definition of done asks for and what a support call actually needs.
+    /// </remarks>
+    private static JsonElement? ToTransformReport(PageDecision page, PrintedPageOutcome? printed)
+    {
+        if (page.Transform is null && printed is null)
+        {
+            return null;
+        }
+
+        var requested = page.Transform is null
+            ? null
+            : JsonSerializer.SerializeToNode(page.Transform, HttpServerClient.Json);
+
+        return Serialize(new
+        {
+            requested,
+            effectiveMedia = printed?.Media,
+            mediaSource = printed?.MediaSource,
+            composeDpi = printed?.Dpi,
+        });
     }
 
     private static JobPageTraceReport ToTraceReport(RuleTrace trace) => new()

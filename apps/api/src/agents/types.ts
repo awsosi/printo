@@ -148,6 +148,27 @@ export interface ReviewQueueRecord {
   resolvedAt: string | null;
 }
 
+/**
+ * One page of a reported job, as stored.
+ *
+ * `transform` carries what the rule asked for *and* what it resolved to - the media actually
+ * printed on, and which precedence layer supplied it. Media travels through a five-layer chain
+ * and a rule usually names none of it, so the resolved value without its source would not
+ * answer the only question anybody asks about it.
+ */
+export interface AgentJobPageRecord {
+  id: string;
+  agentJobId: string;
+  pageNumber: number;
+  pageClass: string | null;
+  carrier: string | null;
+  confidence: number | null;
+  ruleId: string | null;
+  route: string | null;
+  printerQueue: string | null;
+  transform: JsonObject | null;
+}
+
 /** One line of the accounting view: what a machine printed, for whom, and where it went. */
 export interface AccountingRow {
   agentId: string;

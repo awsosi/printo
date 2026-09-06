@@ -25,6 +25,8 @@ describe('fleet admin', () => {
     expect(res.text).toContain('id="fleetReviewList"');
     expect(res.text).toContain('id="fleetAccountingList"');
     expect(res.text).toContain('id="fleetReconciliation"');
+    expect(res.text).toContain('id="fleetJobList"');
+    expect(res.text).toContain('id="fleetJobDetail"');
 
     // And it is actually driven, not decorative.
     expect(res.text).toContain('function loadFleet()');
@@ -53,6 +55,8 @@ describe('fleet admin', () => {
       ['get', '/admin/fallbacks/summary'],
       ['get', '/admin/review-queue?status=OPEN'],
       ['get', '/admin/accounting'],
+      ['get', '/admin/agent-jobs?limit=12'],
+      ['get', '/admin/agent-jobs/job-1'],
       ['post', '/admin/bundles', { payload: { schemaVersion: 1, profiles: [] } }],
       ['patch', '/admin/agents/agent-1', { status: 'DISABLED' }],
       ['post', '/admin/agents/enrollment-tokens', { validForHours: 1 }],
@@ -146,6 +150,16 @@ describe('fleet admin', () => {
     // was cut at rather than at whatever pixel size the preview happened to use.
     expect(res.text).toContain('const FLEET_TEMPLATE_DPI = 150');
     expect(res.text).toContain('dpi: FLEET_TEMPLATE_DPI');
+  });
+
+  it('shows the media each page printed on and which layer chose it', async () => {
+    const res = await request(createWebApp()).get('/admin/config');
+
+    // The value alone is not an explanation: media comes through a five-layer precedence chain,
+    // so the page has to name the layer that supplied it.
+    expect(res.text).toContain('transform.effectiveMedia');
+    expect(res.text).toContain("' (from ' + escapeHtml(transform.mediaSource || 'unknown') + ')'");
+    expect(res.text).toContain('function renderFleetJobDetail()');
   });
 
   it('shows the API detail in the page, not just the error code', async () => {

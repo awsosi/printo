@@ -765,6 +765,91 @@ suite('agent API (postgres)', () => {
     ).toBe(404);
   });
 
+  it('keeps the effective media and its source visible on every page of a job', async () => {
+    const key = (await enroll(await newToken())).body.apiKey;
+
+    const reported = await request(app)
+      .post('/agents/me/jobs')
+      .set('x-printo-agent-key', key)
+      .send({
+        jobKey: 'mixed-media',
+        source: 'HotFolder',
+        fileName: 'OneClickPrint_MIXED.pdf',
+        documentSha256: 'mixed',
+        pageCount: 2,
+        status: 'COMPLETED',
+        pages: [
+          {
+            pageNumber: 1,
+            route: 'A4',
+            printerQueue: 'HP-A4',
+            ruleId: null,
+            confidence: 0.6,
+            transform: {
+              requested: null,
+              effectiveMedia: 'A4',
+              mediaSource: 'ProductDefault',
+              composeDpi: 300
+            }
+          },
+          {
+            pageNumber: 2,
+            route: 'THERMAL',
+            printerQueue: 'ZEBRA-01',
+            ruleId: 'fedex-label-embedded',
+            carrier: 'FEDEX',
+            confidence: 0.95,
+            transform: {
+              requested: { source: 'inkBox', padMm: 1, rotate: 'auto', fit: 'contain' },
+              effectiveMedia: '100x150mm',
+              mediaSource: 'AgentPrinter',
+              composeDpi: 203
+            }
+          }
+        ]
+      });
+
+    expect(reported.status).toBe(201);
+
+    const detail = await request(app)
+      .get(`/admin/agent-jobs/${reported.body.job.id}`)
+      .set('authorization', `Bearer ${adminToken}`);
+
+    expect(detail.status).toBe(200);
+    expect(detail.body.job.fileName).toBe('OneClickPrint_MIXED.pdf');
+    expect(detail.body.pages).toHaveLength(2);
+
+    // Both pages carry their printer. A mixed document is the ordinary case, and a report that
+    // named a queue only when the whole job went to one printer would name none here.
+    expect(detail.body.pages.map((page: { printerQueue: string }) => page.printerQueue)).toEqual([
+      'HP-A4',
+      'ZEBRA-01'
+    ]);
+
+    // And the answer to "why did it print at that size", per page: the resolved media *and* the
+    // precedence layer that supplied it. Two different layers in one job.
+    expect(detail.body.pages[0].transform).toMatchObject({
+      effectiveMedia: 'A4',
+      mediaSource: 'ProductDefault'
+    });
+    expect(detail.body.pages[1].transform).toMatchObject({
+      effectiveMedia: '100x150mm',
+      mediaSource: 'AgentPrinter',
+      composeDpi: 203
+    });
+
+    // The rule's own request is kept alongside the resolved value, not replaced by it.
+    expect(detail.body.pages[1].transform.requested.source).toBe('inkBox');
+
+    expect(
+      (
+        await request(app)
+          .get('/admin/agent-jobs/00000000-0000-0000-0000-000000000000')
+          .set('authorization', `Bearer ${adminToken}`)
+      ).status
+    ).toBe(404);
+  });
+
   it('accounts for what was printed, and says when it does not reconcile', async () => {
     const key = (await enroll(await newToken())).body.apiKey;
 

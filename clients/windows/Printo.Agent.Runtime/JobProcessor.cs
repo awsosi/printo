@@ -30,6 +30,18 @@ public sealed class JobProcessingResult
     public IReadOnlyDictionary<string, int> PagesPerPrinter { get; init; } =
         new Dictionary<string, int>(StringComparer.Ordinal);
 
+    /// <summary>
+    /// What each printed page actually did: the queue it reached, and the media it printed at
+    /// with the precedence layer that supplied it.
+    /// </summary>
+    /// <remarks>
+    /// Reported with the job so "why did it print at that size" is answerable from the console
+    /// rather than only from the workstation's own log. Media is resolved through a five-layer
+    /// chain, and an operator looking at a label that came out at the wrong size needs to know
+    /// whether the rule, the agent or the central profile decided it.
+    /// </remarks>
+    public IReadOnlyList<PrintedPageOutcome> Printed { get; init; } = [];
+
     /// <summary>Why a person is needed, when <see cref="Outcome"/> is NeedsUser.</summary>
     public FallbackPrompt? Prompt { get; init; }
 
@@ -43,6 +55,26 @@ public sealed class JobProcessingResult
     public bool Degraded { get; init; }
 
     public string? Error { get; init; }
+}
+
+/// <summary>One page as it actually reached a printer.</summary>
+public sealed class PrintedPageOutcome
+{
+    public int PageNumber { get; init; }
+
+    /// <summary>The role or alias the rule routed to.</summary>
+    public string Route { get; init; } = string.Empty;
+
+    public string QueueName { get; init; } = string.Empty;
+
+    /// <summary>The media it printed on, e.g. <c>100x150mm</c>.</summary>
+    public string Media { get; init; } = string.Empty;
+
+    /// <summary>Which precedence layer supplied that media.</summary>
+    public string MediaSource { get; init; } = string.Empty;
+
+    /// <summary>Composition resolution actually used, after the per-printer cap.</summary>
+    public double Dpi { get; init; }
 }
 
 /// <summary>Everything the fallback picker needs to ask its question.</summary>
@@ -549,6 +581,7 @@ public sealed class JobProcessor
             .ToList();
 
         var printed = new Dictionary<string, int>(StringComparer.Ordinal);
+        var outcomes = new List<PrintedPageOutcome>();
 
         foreach (var group in byRoute)
         {
@@ -596,12 +629,14 @@ public sealed class JobProcessor
                     var transform = profile.Apply(page.Transform);
                     var region = ResolveRegion(page, transform, source);
 
+                    var dpi = Math.Min(profile.Dpi ?? device.Capabilities.DpiX, profile.MaxComposeDpi);
+
                     var composed = PrintComposer.Compose(
                         source,
                         transform,
                         device.Capabilities.PhysicalMedia,
                         area,
-                        Math.Min(profile.Dpi ?? device.Capabilities.DpiX, profile.MaxComposeDpi),
+                        dpi,
                         region);
 
                     device.PrintPage(new PrintedPage
@@ -612,6 +647,16 @@ public sealed class JobProcessor
                     });
 
                     printed[profile.QueueName] = printed.GetValueOrDefault(profile.QueueName) + 1;
+
+                    outcomes.Add(new PrintedPageOutcome
+                    {
+                        PageNumber = page.PageNumber,
+                        Route = group.Key,
+                        QueueName = profile.QueueName,
+                        Media = MediaSizes.Format(media.Value),
+                        MediaSource = media.Layer.ToString(),
+                        Dpi = dpi,
+                    });
                 }
 
                 device.EndDocument();
@@ -633,6 +678,7 @@ public sealed class JobProcessor
             Outcome = JobOutcome.Printed,
             Decision = decision,
             PagesPerPrinter = printed,
+            Printed = outcomes,
             DecidedBy = resolved.DecidedBy,
             BundleVersion = resolved.BundleVersion,
             Degraded = resolved.Degraded,

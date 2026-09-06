@@ -104,6 +104,71 @@ public sealed class JobProcessorTests : IDisposable
     }
 
     [Fact]
+    public void RecordsTheMediaEachPagePrintedOnAndWhichLayerChoseIt()
+    {
+        var pdf = TestPdf.Build(
+            TestPdf.A4Document(),
+            TestPdf.FedExStyleLabelOnA4Landscape());
+
+        var job = Enqueue(pdf);
+        var result = new JobProcessor(spool, Catalog()).Process(job);
+
+        Assert.Equal(JobOutcome.Printed, result.Outcome);
+        Assert.Equal(2, result.Printed.Count);
+
+        // "Why did it print at that size" has to be answerable per page, from the job alone -
+        // media comes through a five-layer precedence chain and the rule usually names none of
+        // it, so the resolved value without its source would not answer the question.
+        var label = result.Printed.Single(page => page.Route == RoutingProfileRules.RouteThermal);
+        Assert.Equal(thermal.Name, label.QueueName);
+        Assert.Equal("100x150mm", label.Media);
+        Assert.Equal("AgentPrinter", label.MediaSource);
+        Assert.True(label.Dpi > 0);
+
+        // The A4 printer in this catalog names no media, so it falls through to the product
+        // default - two different layers in one job, which is exactly the case the field is for.
+        var document = result.Printed.Single(page => page.Route == RoutingProfileRules.RouteA4);
+        Assert.Equal(a4.Name, document.QueueName);
+        Assert.Equal("ProductDefault", document.MediaSource);
+        Assert.NotEqual(label.Media, document.Media);
+    }
+
+    [Fact]
+    public void ReportsThePrinterAndTheMediaForEveryPageOfAMixedDocument()
+    {
+        var pdf = TestPdf.Build(
+            TestPdf.A4Document(),
+            TestPdf.FedExStyleLabelOnA4Landscape());
+
+        var job = Enqueue(pdf);
+        var result = new JobProcessor(spool, Catalog()).Process(job);
+        var report = JobReporter.Build(job, result, null);
+
+        // A mixed document is the case this product exists for, and the earlier version left
+        // `printerQueue` null on every page whenever a job touched two printers.
+        Assert.All(report.Pages, page => Assert.False(string.IsNullOrEmpty(page.PrinterQueue)));
+        Assert.Equal(
+            new[] { a4.Name, thermal.Name }.OrderBy(name => name, StringComparer.Ordinal),
+            report.Pages.Select(page => page.PrinterQueue!).OrderBy(name => name, StringComparer.Ordinal));
+
+        foreach (var page in report.Pages)
+        {
+            var transform = page.Transform!.Value;
+            Assert.False(string.IsNullOrEmpty(transform.GetProperty("effectiveMedia").GetString()));
+            Assert.True(transform.GetProperty("composeDpi").GetDouble() > 0);
+
+            // The layer differs per page here, which is the point: the thermal printer names its
+            // media and the A4 one does not.
+            var source = transform.GetProperty("mediaSource").GetString();
+            Assert.Contains(source, new[] { "AgentPrinter", "ProductDefault" });
+        }
+
+        var thermalPage = report.Pages.Single(page => page.PrinterQueue == thermal.Name);
+        Assert.Equal("AgentPrinter", thermalPage.Transform!.Value.GetProperty("mediaSource").GetString());
+        Assert.Equal("100x150mm", thermalPage.Transform!.Value.GetProperty("effectiveMedia").GetString());
+    }
+
+    [Fact]
     public void RoutesLabelsToThermalAndDocumentsToA4()
     {
         var pdf = TestPdf.Build(
