@@ -1,11 +1,12 @@
 # Windows Client + Routing Engine — Understanding & Delivery Plan
 
 Status: `APPROVED — in delivery`
-Last updated: 2026-09-05
+Last updated: 2026-09-06
 
-**Progress:** M1 blocked on one elevated step (section 5.0). M2 complete. M3 complete except
+**Progress:** M1 answered — Tier 1 (IPP) works (section 5.0), and what it revealed about the
+print path (sections 5.0a and 5.0b) is now the open question. M2 complete. M3 complete except
 the hardware pass, which the customer has postponed. M4 complete except virtual-printer
-ingress, which is blocked on M1. See section 10.1.
+ingress, which is blocked on the rule-set decision in 5.0a, not on effort. See section 10.1.
 
 This document is the proposal for the next phase of `printo`: a Windows agent that replaces
 Print&Share on the workstation, plus the server-side work needed to make routing genuinely
@@ -342,6 +343,102 @@ path content means OCR, barcodes or picture matching, because text is gone.
 This does not invalidate the corpus work: 1266/1266 still holds for documents that reach the
 agent as files, which is the hot-folder path and the majority of the existing rule set's
 purpose. It means the printed path needs rules stated in terms that survive printing.
+
+What that costs, and one measurement that changes how the ink box must be handed to the
+recogniser, is section 5.0b.
+
+### 5.0b What each stage of the pipeline costs, measured on the same captures
+
+Section 5.0a established that the print path makes OCR load-bearing. The open question that
+followed was whether that is affordable, and it was left as an assumption in both directions -
+"OCR is expensive" and "OCR is fine" - so it is now measured. `CaptureCostTests` times every
+stage on all 22 captured pages, median of three runs, and separates the cost every page pays
+from the cost only an escalation pays.
+
+Measured on the development workstation (Win11, **Debug** build, `pl` recogniser), on an idle
+machine and repeated: two independent runs agree to within a few percent. A Release build and a
+faster machine both move these down, and running them while the rest of the test suite competes
+for the same cores roughly doubles every figure — the ratios between stages are the durable part.
+
+| Stage | When it is paid | min | median | p90 | max |
+|---|---|---:|---:|---:|---:|
+| `geometry` — page box, text layer, ink box | every page | 4.0 | **10.7** | 18.1 | 18.5 |
+| `barcodes` — zxing at 200 dpi, retried at 300 | every page | 162.6 | **216.1** | 254.7 | 263.9 |
+| `render-200` — rasterise only, for comparison | — | 3.7 | 13.4 | 22.6 | 23.8 |
+| `render-300` — rasterise only, for comparison | — | 5.1 | 20.4 | 27.5 | 31.8 |
+| `ocr-ink` — recognise the ink box | on escalation | 39.4 | **86.5** | 183.6 | 188.7 |
+| `ocr-page` — recognise the whole page | on escalation | 83.5 | 174.5 | 205.1 | 257.6 |
+| `template-ink` — match one template in the ink box | on escalation | 94.7 | **133.0** | 186.8 | 242.4 |
+| `template-page` — match one template over the page | on escalation | 183.6 | 199.1 | 216.7 | 253.2 |
+
+Per page that is **231 ms always paid**, plus about **87 ms** for each page that escalates to OCR.
+Cold, on the first job after a service start: geometry 40 ms, barcodes 470 ms, OCR 463 ms,
+template 305 ms — roughly a second and a half of one-time initialisation, paid by whoever prints
+first.
+
+**Three things follow, and none of them is the one that was assumed.**
+
+**1. OCR is not the expensive stage. Barcode decoding is, and it is the one running
+unconditionally.** `AgentService` builds the extractor with a `ZxingBarcodeDecoder`, so every
+page of every job is scanned for barcodes before a single rule is evaluated — 216 ms a page,
+against 87 ms for the OCR that only escalating pages pay. Rasterisation is not what costs:
+rendering the same page at 200 and 300 dpi is 34 ms of that 216, so about 180 ms is the scanning
+itself, and a shared raster would buy back very little. The lever is that barcodes are eager
+while OCR and picture matching are lazy. Making barcode decoding lazy — requested by the engine,
+for the pages a rule actually asks about, exactly as OCR and templates already are — takes the
+always-paid cost from 231 ms a page to about 11 ms, which is more than every OCR call in a
+typical job costs.
+
+Note also that this 525 ms is an upper bound for a reason worth keeping in view: **nothing
+decoded on any of the 22 pages**, because the anonymiser destroyed the barcodes (section 1.5a).
+The decoder therefore takes its failure path on every page — the 200 dpi pass finds nothing and
+the 300 dpi retry runs too. Real barcodes would usually settle it on the first pass. The exact
+saving cannot be measured until that gap is closed.
+
+**2. OCR of the ink box is cheaper than OCR of the page, and reads at least as much.** 87 ms
+against 174 ms, for the same or more text on every page. The ink box is already the measurement
+5.0a identified as the one that survives printing, and it is also the right OCR region.
+
+**3. The recogniser is orientation-sensitive, and the print path turns pages.** This surfaced as
+an apparent impossibility in the numbers: on several pages OCR of the ink box returned *fewer*
+characters than OCR of the whole page, and on one it returned none at all against 51 for the
+page — although the ink box contains all the ink and both render at 250 dpi.
+
+The cause is orientation, and `MeasuresWhatTurningTheInkBoxRecoversForTheRecogniser` measures it
+by recognising each ink box at all four quarter turns. The recovery is not marginal:
+
+| Page | ink box | 0° | 90° | 180° | 270° |
+|---|---|---:|---:|---:|---:|
+| vki189056401 p7 | 183.6x92.5 mm | 17 | **960** | 13 | 711 |
+| vki189056401 p3 | 183.6x92.0 mm | 4 | **954** | 34 | 686 |
+| vtw189048823 p2 | 183.9x92.0 mm | 30 | **905** | 25 | 609 |
+| vtw189036998 p1 | 150.6x101.6 mm | 0 | **322** | 53 | 208 |
+| vki189056401 p1 | 190.5x234.4 mm | **2192** | 148 | 1621 | 199 |
+| vtw189053882 p2 | 99.6x197.4 mm | **1179** | 5 | 833 | 3 |
+
+**Exactly 10 of the 22 pages read best turned — the same 10 the print path turned from landscape
+to portrait.** A page that yields 4 characters upright and 954 turned is not a page OCR failed
+on; it is a page nobody turned the right way up.
+
+**The turn does not have to be searched for.** Every document in this corpus is portrait-native
+content — labels are tall, invoices are tall — so ink measuring wider than it is tall is ink the
+print path turned. That predicate picks the best of the four turns on **22 of 22 pages**, and the
+test asserts it, because the difference is 100 ms a page against 692 ms for trying all four: the
+search costs seven times as much and finds the same answer.
+
+One honest limit: every turned page in this corpus was turned the same way, so 270° never wins
+and the corpus cannot distinguish "turn it 90°" from "turn it back the way it came". An
+implementation should treat 270° as the fallback when 90° yields nothing, which costs a second
+recognition only on the page where the first one failed.
+
+**What this settles for the decision in section 5.0a.** Content-based routing on the printed path
+is affordable: the seven-page job in this corpus pays about 1.6 s of always-paid cost today, and
+roughly 90 ms more for each page that escalates to OCR — against a print job the user is already
+waiting seconds for. Cost is not a reason to prefer one rule-set shape over the other. The
+efficiency work with the largest return is not avoiding OCR but making barcode decoding lazy,
+and that is worth doing whichever shape is chosen. And any rule set for this path must normalise
+the ink box for orientation *before* handing it to the recogniser, not only before comparing
+geometry.
 
 ### 5.1 Hot-folder mode (robustness rules)
 

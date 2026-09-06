@@ -23,21 +23,44 @@ public sealed class TrayPipeServer(int sessionId) : IDisposable
 {
     private readonly CancellationTokenSource cancellation = new();
 
+    /// <summary>Signalled once the first pipe instance exists and can be connected to.</summary>
+    private readonly ManualResetEventSlim listening = new(false);
+
     private Task? loop;
 
-    /// <summary>Starts listening. Returns immediately.</summary>
+    /// <summary>
+    /// Starts listening, and returns once the pipe actually exists.
+    /// </summary>
+    /// <remarks>
+    /// Waiting for the listener matters because <c>Start</c> returning has always been read by
+    /// its callers as "the tray can now be asked a question", and until this it did not mean
+    /// that: the listener was queued on the thread pool, so on a machine whose pool was busy the
+    /// pipe could take seconds to appear and a caller would fail to connect to a server it had
+    /// just started. The listener also runs on its own thread rather than a pooled one - a user
+    /// waiting on the fallback picker should not be queued behind unrelated background work.
+    ///
+    /// The wait is bounded and its expiry is not an error: a listener that is slow to come up
+    /// still comes up, and the caller's own connect timeout covers the rest.
+    /// </remarks>
     public void Start()
     {
-        loop = Task.Run(() => ListenAsync(cancellation.Token));
+        loop = Task.Factory.StartNew(
+            () => ListenAsync(cancellation.Token),
+            cancellation.Token,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default).Unwrap();
+
+        listening.Wait(TimeSpan.FromSeconds(5));
     }
 
     public void Dispose()
     {
         cancellation.Cancel();
 
+        var stopped = true;
         try
         {
-            loop?.Wait(TimeSpan.FromSeconds(2));
+            stopped = loop?.Wait(TimeSpan.FromSeconds(2)) ?? true;
         }
         catch (AggregateException)
         {
@@ -45,6 +68,13 @@ public sealed class TrayPipeServer(int sessionId) : IDisposable
         }
 
         cancellation.Dispose();
+
+        // Only once the listener has actually finished with it. A listener still running would
+        // signal a disposed event on its next time round the loop.
+        if (stopped)
+        {
+            listening.Dispose();
+        }
     }
 
     private async Task ListenAsync(CancellationToken token)
@@ -72,6 +102,9 @@ public sealed class TrayPipeServer(int sessionId) : IDisposable
                     inBufferSize: 16 * 1024,
                     outBufferSize: 16 * 1024,
                     pipeSecurity: security);
+
+                // The pipe exists from here on, so anyone who called Start may connect.
+                listening.Set();
 
                 await pipe.WaitForConnectionAsync(token);
 

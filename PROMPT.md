@@ -15,7 +15,8 @@
 > is met. Until then, keep it accurate: after each milestone, update
 > "Current position" below and strike through what is finished. Never leave it stale.
 >
-> **Last updated:** 2026-09-06, at commit `bfe0390` on `feat/windows-agent`.
+> **Last updated:** 2026-09-06, after the cost measurement described in section 6b, on
+> `feat/windows-agent`.
 
 ---
 
@@ -38,7 +39,7 @@ zoom, scaling and orientation per printer.
 
 | Document | What it gives you |
 |---|---|
-| `docs/WINDOWS_CLIENT_PLAN.md` | **The approved plan.** Corpus analysis, architecture, capture tiers, rule schema, fallback picker, milestones M1-M8, definition of done. This is the contract. **Sections 5.0 and 5.0a are the newest and most important: what the Windows print path does to a page, measured.** |
+| `docs/WINDOWS_CLIENT_PLAN.md` | **The approved plan.** Corpus analysis, architecture, capture tiers, rule schema, fallback picker, milestones M1-M8, definition of done. This is the contract. **Sections 5.0, 5.0a and 5.0b are the newest and most important: what the Windows print path does to a page, and what routing one costs — both measured.** |
 | `docs/ARCHITECTURE.md` | Existing service boundaries and topology |
 | `docs/PLAN.md` | Delivery state of the already-built server stack |
 | `README.md` | Repo commands, compose, current feature set |
@@ -205,10 +206,23 @@ Two ways to organise it, **not yet chosen by the user**:
 
 The assistant leaned toward (1) with (2) as the safe path. **Ask before choosing.**
 
-Also open, and asked but not answered: whether to measure OCR and picture-match cost per page on
-the seven captures *first*, so the efficiency question is settled with numbers. The user has
-stated twice that efficiency and reliability are both first-class, and that the stack must be
-elastic to input formats it cannot control.
+**The cost question is now answered, and it does not favour either shape.** Plan section 5.0b
+measures every stage on all 22 captured pages (`CaptureCostTests`, opt-in). On an idle machine:
+geometry 11 ms a page, OCR of the ink box 87 ms, one template match 133 ms — against **216 ms a
+page for barcode decoding, which runs on every page unconditionally** because `AgentService`
+builds the extractor with a `ZxingBarcodeDecoder`. Content-based routing is affordable; the
+seven-page job pays about 1.6 s of always-paid cost. **Cost is not a reason to choose between
+(1) and (2).**
+
+Two things did come out of it that any shape has to honour:
+
+- **Making barcode decoding lazy** — requested by the engine like OCR and templates already are
+  — takes the always-paid cost from 231 ms a page to about 11 ms. That is the single largest
+  efficiency win available, and it is worth more than every OCR call in a job.
+- **The recogniser is orientation-sensitive and the print path turns pages.** A page reading 4
+  characters upright reads 954 turned. The right turn is predicted by the ink box being wider
+  than tall on **22 of 22** pages, so it costs nothing to derive — but OCR regions must be
+  normalised for orientation *before* recognition, not only before geometry comparison.
 
 ### M1 — answered
 
@@ -296,12 +310,13 @@ which capture tier works. Hot folders are the working intake path meanwhile.
 ```bash
 npm run lint && npm run typecheck                      # repo-wide, must stay green
 npx vitest run --root packages/routing-engine          # 141 tests incl. golden corpus and picture matching
-dotnet test clients/windows/Printo.Agent.Tests         # 222 tests incl. corpus parity, soak, captures
+dotnet test clients/windows/Printo.Agent.Tests         # 224 tests incl. corpus parity, soak, captures
 npm run smoke:prod                                     # builds the production images, asserts the stack
 pwsh clients/windows/installer/build.ps1 -Version 0.1.0           # builds the agent MSI
 Printo.Tray.exe --picker <document.pdf> [pages]        # measure the picker, prints timing
 Printo.Tray.exe --settings                             # the settings window, standalone
 python tools/corpus/compare_captures.py tests/capture/session   # what printing did to each page
+PRINTO_MEASURE_COST=1 dotnet test clients/windows/Printo.Agent.Tests --filter CaptureCostTests                                                        # stage-by-stage cost; opt-in, ~2 min, run it idle
 Printo.Agent.exe --console --config <agent.json>       # run the service in the foreground
 npx tsx packages/routing-engine/scripts/export-profiles.ts        # after editing profiles.ts
 npx tsx packages/routing-engine/scripts/export-corpus-fixtures.ts # after changing the engine
@@ -342,7 +357,49 @@ three ways forward; it needs a decision, and nothing else depends on it.
 
 ## 6b. Session log
 
-### 2026-09-06
+### 2026-09-06 (later session) — the cost of routing a printed page
+
+Answered the question section 6a had left open: measure before choosing. `CaptureCostTests` times
+every stage on all 22 captured pages and is written up as plan section **5.0b**. It is opt-in
+behind `PRINTO_MEASURE_COST` because it is a benchmark — two minutes of CPU-saturating work — and
+benchmarks do not belong in a suite that is run for correctness.
+
+The headline is that the assumption behind the question was wrong. OCR is not the expensive
+stage: 87 ms for the ink box, against **216 ms a page for barcode decoding, which runs
+unconditionally on every page**. Making barcodes lazy — exactly as OCR and picture matching
+already are — is worth more than every OCR call in a job. Cost does not decide between the two
+rule-set shapes in 6a.
+
+A second finding came out of the numbers rather than being looked for. OCR of the ink box was
+returning *less* text than OCR of the whole page, which should be impossible. The cause is that
+the recogniser decides text orientation from the bitmap it is handed, and the print path turns 10
+of the 22 pages: one page yields 4 characters upright and 954 turned. The correct turn is
+predicted by the ink box measuring wider than tall on 22 of 22 pages, so it is free to derive —
+and a test now asserts that, because searching all four turns costs seven times as much and finds
+the same answer.
+
+Two test-suite defects were found and fixed on the way, both pre-existing and both exposed rather
+than caused by adding a test class:
+
+- **`TrayPipeServer.Start()` returned before its pipe existed.** It queued the listener on the
+  thread pool, so on a busy machine a caller could fail to connect to a server it had just
+  started. `TrayIpcTests` failed **5 runs out of 5** at baseline on this machine, which
+  contradicts the "222 green" this file previously claimed. `Start` now waits for the pipe and
+  the listener runs on its own thread rather than behind arbitrary pool work — a user waiting on
+  the picker should not queue behind background tasks. 0 failures in 5 runs after.
+- **The picker's 400 ms latency assertion could not be honestly measured in-suite.** PDFium
+  serialises every render in the process behind one global lock, and the rest of the suite
+  renders constantly, so the stopwatch mostly measured contention. Retrying does not fix a lock
+  held longer than the test runs. It is now a loose regression guard, with the real criterion
+  left where it means something — `Printo.Tray.exe --picker` on an idle machine, the 209-221 ms
+  already recorded.
+
+Suite: **224/224, green over six consecutive runs.** `npm run lint` and `npm run typecheck` clean.
+
+Still not done: virtual-printer ingress, still blocked on the 6a decision — which is now down to
+one question, since cost no longer bears on it.
+
+### 2026-09-06 (earlier session)
 
 Started from "I installed the MSI and no app came up". That turned out to be three defects and
 one wrong diagnosis, and then the M1 answer changed the shape of the project.
