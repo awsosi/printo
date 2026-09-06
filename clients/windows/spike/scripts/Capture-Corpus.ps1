@@ -68,7 +68,13 @@ if (-not (New-Object Security.Principal.WindowsPrincipal($identity)).IsInRole(
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $spikeRoot = Split-Path -Parent $here
-$repoRoot = Split-Path -Parent (Split-Path -Parent $spikeRoot)
+# scripts -> spike -> windows -> clients -> repository root. Counted wrong once, which put the
+# whole session under `clients\tests\` and made a run that had happened look like one that had
+# not, so it is asserted rather than trusted.
+$repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $spikeRoot))
+if (-not (Test-Path (Join-Path $repoRoot 'profiles'))) {
+    throw "computed repository root '$repoRoot' does not look like the printo checkout"
+}
 $project = Join-Path $spikeRoot 'Printo.Spike.Ipp\Printo.Spike.Ipp.csproj'
 $captureDir = Join-Path $repoRoot 'tests\capture\session'
 $logPath = Join-Path $captureDir 'ipp-session.jsonl'
@@ -142,7 +148,43 @@ $Documents = @($Documents) + @($probe)
 
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw 'dotnet is not on PATH.' }
 
+<#
+  Recover from a previous run that did not finish.
+
+  `finally` covers a failure and a Ctrl+C. It does not cover the window being closed, and that
+  run left the machine with this script's queue as the default printer and an orphaned listener
+  holding port 39631 - which would also have stopped the next run from starting. Undoing that is
+  this script's job, not the operator's.
+
+  The breadcrumb is written before the default printer is touched, so recovery knows what to put
+  back even though the run that changed it is gone.
+#>
+$breadcrumb = Join-Path $env:ProgramData 'Printo\capture-corpus-state.json'
+
+if (Test-Path $breadcrumb) {
+    Write-Host '==> a previous run did not finish; undoing it'
+    try {
+        $previous = Get-Content $breadcrumb -Raw | ConvertFrom-Json
+        if ($previous.previousDefault) {
+            $restore = Get-CimInstance Win32_Printer -Filter "Name='$($previous.previousDefault)'" -ErrorAction Stop
+            Invoke-CimMethod -InputObject $restore -MethodName SetDefaultPrinter -ErrorAction Stop | Out-Null
+            Write-Host "    default printer put back to $($previous.previousDefault)"
+        }
+    } catch {
+        Write-Warning "could not undo the previous run's default printer: $($_.Exception.Message)"
+    }
+    Remove-Item $breadcrumb -Force -ErrorAction SilentlyContinue
+}
+
+# An orphaned listener still owns port 39631, so a new one cannot bind and the run would fail
+# with a message about the listener not answering - which says nothing about the real cause.
+Get-Process printo-spike-ipp -ErrorAction SilentlyContinue | ForEach-Object {
+    Write-Host "==> stopping an orphaned listener from an earlier run (pid $($_.Id))"
+    Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+}
+
 if (Get-Printer -Name $printerName -ErrorAction SilentlyContinue) {
+    Write-Host '==> removing a leftover queue from an earlier run'
     Remove-Printer -Name $printerName -ErrorAction SilentlyContinue
 }
 
@@ -181,8 +223,33 @@ try {
     Add-Printer -Name $printerName -IppURL $ippUrl
 
     # So that Ctrl+P then Enter - the production keystroke - goes straight to the spike.
+    #
+    # Deliberately not fatal. This is a convenience: without it the operator picks the printer
+    # in Chrome's dialog and the capture is just as valid. An earlier version threw here - a
+    # CimInstance has no InvokeMethod, that is a WMI ManagementObject - and took the whole run
+    # down with it before Chrome ever opened, for a nicety.
     Write-Host "==> making $printerName the default printer (was: $previousDefault)"
-    (Get-CimInstance Win32_Printer -Filter "Name='$printerName'").InvokeMethod('SetDefaultPrinter', $null) | Out-Null
+
+    # Written before the change, so that a run killed at any point after this can be undone by
+    # the next one even though its own `finally` never got to run.
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $breadcrumb) | Out-Null
+    @{ previousDefault = $previousDefault; startedAt = (Get-Date).ToString('o') } |
+        ConvertTo-Json | Set-Content -Path $breadcrumb -Encoding utf8
+
+    $defaultSet = $false
+    try {
+        $queue = Get-CimInstance Win32_Printer -Filter "Name='$printerName'" -ErrorAction Stop
+        Invoke-CimMethod -InputObject $queue -MethodName SetDefaultPrinter -ErrorAction Stop | Out-Null
+        $defaultSet = ((Get-CimInstance Win32_Printer -Filter 'Default=True').Name -eq $printerName)
+    } catch {
+        Write-Warning "could not set the default printer: $($_.Exception.Message)"
+    }
+
+    if ($defaultSet) {
+        Write-Host '    done - Ctrl+P then Enter will go straight to it'
+    } else {
+        Write-Warning "the default printer is unchanged; choose '$printerName' in Chrome's print dialog"
+    }
 
     $index = 0
     foreach ($document in $Documents) {
@@ -204,6 +271,16 @@ try {
             '--new-window',
             $document
         )
+
+        # Said out loud, because "Chrome did not open" was the single most confusing symptom of
+        # the first attempt and nothing on screen distinguished it from "Chrome opened and you
+        # did not print".
+        Start-Sleep -Seconds 2
+        if ($browser -and $browser.HasExited) {
+            Write-Warning "Chrome exited immediately (code $($browser.ExitCode)). Open the file by hand and print it."
+        } elseif ($browser) {
+            Write-Host "  Chrome is up (pid $($browser.Id)). Waiting for the job..."
+        }
 
         $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
         $arrived = $false
@@ -245,12 +322,19 @@ finally {
     Write-Host '==> cleaning up'
 
     if ($previousDefault) {
-        $restore = Get-CimInstance Win32_Printer -Filter "Name='$previousDefault'" -ErrorAction SilentlyContinue
-        if ($restore) {
-            $restore.InvokeMethod('SetDefaultPrinter', $null) | Out-Null
+        try {
+            $restore = Get-CimInstance Win32_Printer -Filter "Name='$previousDefault'" -ErrorAction Stop
+            Invoke-CimMethod -InputObject $restore -MethodName SetDefaultPrinter -ErrorAction Stop | Out-Null
             Write-Host "    default printer restored to $previousDefault"
+        } catch {
+            # Said loudly: leaving someone's default pointing at a queue this script is about
+            # to delete would break printing on the machine until they noticed and fixed it.
+            Write-Warning "COULD NOT RESTORE the default printer to '$previousDefault' - set it by hand in Settings > Printers."
         }
     }
+
+    # Only once the machine is actually back as it was.
+    Remove-Item $breadcrumb -Force -ErrorAction SilentlyContinue
 
     if (Get-Printer -Name $printerName -ErrorAction SilentlyContinue) {
         Remove-Printer -Name $printerName -ErrorAction SilentlyContinue

@@ -79,6 +79,13 @@ if (Get-Printer -Name $printerName -ErrorAction SilentlyContinue) {
     Remove-Printer -Name $printerName -ErrorAction SilentlyContinue
 }
 
+# And an orphaned listener still owns the port, so the new one cannot bind - which surfaces as
+# "the listener did not answer", a message that points nowhere near the actual cause.
+Get-Process printo-spike-ipp -ErrorAction SilentlyContinue | ForEach-Object {
+    Write-Host "==> stopping an orphaned listener from an earlier run (pid $($_.Id))"
+    Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+}
+
 # Started fresh each run so "what arrived" is unambiguous rather than mixed with an older pass.
 if (Test-Path $captureDir) { Remove-Item -Recurse -Force $captureDir }
 New-Item -ItemType Directory -Force -Path $captureDir | Out-Null
