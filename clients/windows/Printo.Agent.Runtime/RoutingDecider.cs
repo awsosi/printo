@@ -2,6 +2,26 @@ using Printo.Agent.Core.Routing;
 
 namespace Printo.Agent.Runtime;
 
+/// <summary>
+/// How many rounds of "measure this and ask me again" a decision may take.
+/// </summary>
+/// <remarks>
+/// The engine is lazy by design: it evaluates on what it has and reports what it still needs,
+/// rather than measuring everything up front. A page can legitimately take a few turns of that -
+/// OCR to settle whether a 4x6in region is a return label, then a barcode to settle whether an
+/// unrecognised one is a label at all - and serving them in sequence is what keeps the laziness
+/// worth having. Gathering every measurement any rule might want in one round would put a 216 ms
+/// barcode decode on pages that never reach a barcode rule.
+///
+/// Bounded because the alternative is not. Each round strictly adds features, so a correct rule
+/// set settles in two or three; a rule that asks for something it has already been given would
+/// otherwise loop forever, rendering, on somebody's workstation.
+/// </remarks>
+internal static class FeatureRounds
+{
+    public const int Max = 4;
+}
+
 /// <summary>How a document's routing was resolved, or why it was not.</summary>
 public enum DecisionStatus
 {
@@ -14,7 +34,17 @@ public enum DecisionStatus
     /// <summary>A rule needs OCR and this machine has no recogniser.</summary>
     OcrUnavailable,
 
-    /// <summary>The rule set asked for OCR twice. A defect in the rules, not a user question.</summary>
+    /// <summary>
+    /// The rule set kept asking for features. A defect in the rules, not a user question.
+    /// </summary>
+    /// <remarks>
+    /// Named for the original contract, which allowed exactly one extra round. It now allows a
+    /// few: a page can legitimately need OCR to settle one rule and then a barcode to settle a
+    /// later one, and serving those in sequence costs less than gathering every measurement any
+    /// rule might want up front - a barcode decode is 216 ms and most pages that need OCR never
+    /// reach a barcode rule at all. The cap is what stops a mistaken rule turning into an
+    /// endless render loop on somebody's workstation.
+    /// </remarks>
     RulesAskedOcrTwice,
 
     /// <summary>The decision needed the server and the server could not be reached.</summary>
@@ -135,39 +165,46 @@ public sealed class LocalDecider(Func<RuleBundle> bundle) : IRoutingDecider
         }
 
         var options = rules.ToEngineOptions();
-        var first = RoutingEngine.EvaluateDocument(profile, features, options);
-        if (!first.NeedsFeatures)
-        {
-            return RoutingDecision.Decided(first.Document!, profile, "local", rules.Version);
-        }
+        var current = features;
 
-        var enriched = ocr.Fill(features, first.Ocr, first.Templates, first.Barcodes);
-        if (enriched is null)
+        for (var round = 0; round <= FeatureRounds.Max; round++)
         {
-            return new RoutingDecision
+            var evaluation = RoutingEngine.EvaluateDocument(profile, current, options);
+            if (!evaluation.NeedsFeatures)
             {
-                Status = DecisionStatus.OcrUnavailable,
-                Profile = profile,
-                DecidedBy = "local",
-                BundleVersion = rules.Version,
-                Detail = "a rule needed OCR and no recogniser is available on this machine",
-            };
-        }
+                return RoutingDecision.Decided(evaluation.Document!, profile, "local", rules.Version);
+            }
 
-        var second = RoutingEngine.EvaluateDocument(profile, enriched, options);
-        if (second.NeedsFeatures)
-        {
-            return new RoutingDecision
+            if (round == FeatureRounds.Max)
             {
-                Status = DecisionStatus.RulesAskedOcrTwice,
-                Profile = profile,
-                DecidedBy = "local",
-                BundleVersion = rules.Version,
-                Detail = "the rule set asked for OCR twice; the second pass must be decidable",
-            };
+                break;
+            }
+
+            var enriched = ocr.Fill(current, evaluation.Ocr, evaluation.Templates, evaluation.Barcodes);
+            if (enriched is null)
+            {
+                return new RoutingDecision
+                {
+                    Status = DecisionStatus.OcrUnavailable,
+                    Profile = profile,
+                    DecidedBy = "local",
+                    BundleVersion = rules.Version,
+                    Detail = "a rule needed OCR and no recogniser is available on this machine",
+                };
+            }
+
+            current = enriched;
         }
 
-        return RoutingDecision.Decided(second.Document!, profile, "local", rules.Version);
+        return new RoutingDecision
+        {
+            Status = DecisionStatus.RulesAskedOcrTwice,
+            Profile = profile,
+            DecidedBy = "local",
+            BundleVersion = rules.Version,
+            Detail =
+                $"the rule set still wanted features after {FeatureRounds.Max} rounds; it must settle",
+        };
     }
 }
 
@@ -227,20 +264,33 @@ public sealed class ServerDecider(IServerClient client, Action<string, string>? 
                     response.Decision!, profile ?? Fallback(rules), "server", response.BundleVersion);
             }
 
-            var enriched = ocr.Fill(features, response.Ocr, response.Templates, response.Barcodes);
-            if (enriched is null)
+            var current = features;
+            var second = response;
+
+            for (var round = 0; round < FeatureRounds.Max; round++)
             {
-                return new RoutingDecision
+                var enriched = ocr.Fill(current, second.Ocr, second.Templates, second.Barcodes);
+                if (enriched is null)
                 {
-                    Status = DecisionStatus.OcrUnavailable,
-                    Profile = profile,
-                    DecidedBy = "server",
-                    BundleVersion = response.BundleVersion,
-                    Detail = "the server asked for OCR and no recogniser is available on this machine",
-                };
+                    return new RoutingDecision
+                    {
+                        Status = DecisionStatus.OcrUnavailable,
+                        Profile = profile,
+                        DecidedBy = "server",
+                        BundleVersion = second.BundleVersion,
+                        Detail = "the server asked for OCR and no recogniser is available on this machine",
+                    };
+                }
+
+                current = enriched;
+                second = client.DecideAsync(current, secondPass: round + 1 >= FeatureRounds.Max)
+                    .GetAwaiter().GetResult();
+                if (second.Status != ServerDecisionStatus.NeedsOcr)
+                {
+                    break;
+                }
             }
 
-            var second = client.DecideAsync(enriched, secondPass: true).GetAwaiter().GetResult();
             if (second.Status != ServerDecisionStatus.Decided)
             {
                 return new RoutingDecision
@@ -249,7 +299,8 @@ public sealed class ServerDecider(IServerClient client, Action<string, string>? 
                     Profile = profile,
                     DecidedBy = "server",
                     BundleVersion = second.BundleVersion,
-                    Detail = "the server asked for OCR twice; the second pass must be decidable",
+                    Detail =
+                        $"the server still wanted features after {FeatureRounds.Max} rounds; it must settle",
                 };
             }
 

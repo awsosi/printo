@@ -85,6 +85,28 @@ export interface GeometryPredicate {
   inkYMm?: RangeMm;
   /** Ink height / ink width. A 4x6in label is 1.5, the DHL label ~1.97. */
   inkAspect?: RangeMm;
+  /**
+   * Shorter edge of the ink box, whichever way round it sits.
+   *
+   * The measurement that survives printing. Content is placed on the new sheet at 1:1 but a
+   * landscape page is turned to portrait (plan section 5.0a), so a label that measured
+   * 101.6x150.6 mm on disk measures 150.6x101.6 mm printed - the same rectangle, turned.
+   * `inkWidthMm` and `inkAspect` therefore describe the document on one path and its transpose
+   * on the other, while the short and long edges describe it on both.
+   *
+   * On this corpus the short edge separates the classes outright: labels and courier sheets at
+   * 92-102 mm, invoices and return notes at 190+.
+   */
+  inkShortEdgeMm?: RangeMm;
+  /** Longer edge of the ink box, whichever way round it sits. See `inkShortEdgeMm`. */
+  inkLongEdgeMm?: RangeMm;
+  /**
+   * Long edge / short edge, so always >= 1 however the page was turned.
+   *
+   * `inkAspect` is height/width and flips to its reciprocal when the print path turns a page:
+   * a 4x6in label reads 1.48 as a file and 0.68 printed. This reads 1.48 either way.
+   */
+  inkAspectNormalised?: RangeMm;
   /** Fraction of the page covered in ink, 0..1. */
   inkCoverage?: RangeMm;
   /** True when the page itself is label stock rather than a sheet carrying a label. */

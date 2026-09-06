@@ -331,7 +331,12 @@ public sealed class JobProcessorTests : IDisposable
             Expectations = new DocumentExpectations { ThermalPagesPerDocument = new RangeMm { Min = 1 } },
         };
 
-        var processor = new JobProcessor(spool, Catalog()) { Profiles = [profile] };
+        // A recogniser is needed even to get this far: a 4x6in region is checked for the FedEx
+        // return marking before anything else can claim it, and a machine with no recogniser
+        // would raise OCR_UNAVAILABLE instead - a different question for the user, and not the
+        // one this test is about. Nothing in the recognised text names a carrier or a return.
+        var ocr = new StubOcr("Sendungsnummer 0034 5566 7788 Empfaenger");
+        var processor = new JobProcessor(spool, Catalog(), ocr: ocr) { Profiles = [profile] };
         var result = processor.Process(job);
 
         Assert.Equal(JobOutcome.NeedsUser, result.Outcome);

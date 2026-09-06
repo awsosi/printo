@@ -3,10 +3,11 @@
 Status: `APPROVED — in delivery`
 Last updated: 2026-09-06
 
-**Progress:** M1 answered — Tier 1 (IPP) works (section 5.0), and what it revealed about the
-print path (sections 5.0a and 5.0b) is now the open question. M2 complete. M3 complete except
-the hardware pass, which the customer has postponed. M4 complete except virtual-printer
-ingress, which is blocked on the rule-set decision in 5.0a, not on effort. See section 10.1.
+**Progress:** M1 answered — Tier 1 (IPP) works (section 5.0). What it revealed about the print
+path (5.0a), what routing one costs (5.0b) and the single rule set that now serves both paths
+(5.0c) are all settled and built. M2 complete. M3 complete except the hardware pass, which the
+customer has postponed. M4 complete except virtual-printer ingress, which is now blocked on
+nothing but effort. See section 10.1.
 
 This document is the proposal for the next phase of `printo`: a Windows agent that replaces
 Print&Share on the workstation, plus the server-side work needed to make routing genuinely
@@ -440,6 +441,84 @@ which has since been done. And any rule set for this path must normalise
 the ink box for orientation *before* handing it to the recogniser, not only before comparing
 geometry.
 
+### 5.0c One rule set for both paths — what was built
+
+The choice in 5.0a was put to the customer with the cost measured, and **option 1 was chosen on
+2026-09-06**: one rule set, keyed on the orientation-normalised ink box plus content, with
+page-frame predicates demoted to corroboration.
+
+**The ordering is what makes it work, and it is worth stating plainly.** Page-frame rules were
+not deleted; they were kept as *fast paths*. They run first, cost nothing, and settle the file
+path before anything is rasterized. A printed page falls straight through them — its page frame
+describes the queue's media, so none of them match — and lands on the content rules below, where
+OCR earns its place. That is why unifying the two paths did not make the corpus more expensive to
+route: the 435 outgoing FedEx labels are still claimed by geometry on the file path and never
+reach an OCR rule.
+
+**Three new geometry predicates**, derived from the existing ink box at no extra measurement
+cost, and implemented in both engines:
+
+| Predicate | What it is | Why |
+|---|---|---|
+| `inkShortEdgeMm` | shorter edge, whichever way the ink sits | Separates the classes outright on both paths: labels and courier sheets at 92-102 mm, invoices and return notes at 190+. |
+| `inkLongEdgeMm` | longer edge | The companion measure. |
+| `inkAspectNormalised` | long / short, so always >= 1 | `inkAspect` is height/width and flips to its reciprocal when a page is turned: a 4x6in label reads 1.48 as a file and 0.68 printed. This reads 1.48 either way. |
+
+**Two new rules carry the printed path**, and one existing pair was freed from the page frame:
+
+- `dhl-waybill-sheet-ocr` and `dhl-label-embedded` no longer require an A4-landscape sheet. The
+  first is the rule the whole product turns on — courier sheet against parcel label, separable
+  only by content — and the second now also catches a DHL label printed off its own stock and a
+  UPS label printed off its carrier sheet, both of which arrive as a tall 99x196 mm region on
+  plain A4.
+- `fedex-return-label-ocr` separates a return label from an outgoing one once printing has taken
+  the page size away. They are the same rectangle — 100.8x151.6 mm against 101.1x149.9 mm — so
+  only content can do it.
+- `fedex-label-region` claims what is left of the FedEx family, **gated on the resolved carrier
+  as well as the shape**. Without that gate it claims any 4x6in region above the confidence
+  threshold, which silently routes an unknown carrier's label to thermal and defeats the generic
+  rule below it — a new carrier must still work on day one, but below the threshold, so the user
+  confirms and the admin gets a review-queue entry (confirmed decision 7).
+
+**The phrase the return rule keys on is not the phrase printed on the page**, and that is a
+measurement, not a preference. `RETURN DEPT` reads correctly off the label and appears on exactly
+3 of the 1266 corpus pages — the three return labels. But the recogniser reads a label in visual
+line order, and this label's columns interleave, so it comes back as
+`PO: RETURN OJX058644430 REF: RETURN 808292H2ND03227236 DEPT:`. A rule keyed on the phrase would
+have passed against the text layer and failed on every real print job. `REF:` and `PO:` keep
+their value adjacent and are just as selective; bare `RETURN` is not, appearing on 467 pages,
+because DHL outgoing labels carry `Ref No: Return` for return *shipments* and must still print on
+thermal stock.
+
+**OCR is now given the page the right way up.** The recogniser decides which way a bitmap's text
+runs from the bitmap it is handed, so `WindowsOcrEngine.Recognise` turns a region whose ink is
+wider than tall before recognising it, and turns the line boxes back afterwards. Section 5.0b has
+the numbers: 10 of the 22 captured pages read better turned, one yielding 4 characters upright
+against 954 turned.
+
+**A decision may now take a few rounds of "measure this and ask me again", not exactly one.** A
+printed 4x6in region needs OCR to settle whether it is a return label and then, if nothing claims
+it, a barcode to settle whether it is a label at all. Serving those in sequence is what keeps the
+laziness worth having — gathering everything any rule might want up front would put a 216 ms
+barcode decode on pages that never reach a barcode rule. The number of rounds is bounded
+(`FeatureRounds.Max`), because the alternative is a mistaken rule rendering forever on somebody's
+workstation.
+
+#### How it is proven
+
+`CaptureRoutingTests.RoutesEachCapturedDocumentTheSameWayAsTheFileItWasPrintedFrom` routes each
+captured job **and the corpus file it was printed from**, through the real recogniser and the
+real decoder, and compares them page for page. The file path is the one proven at 1266/1266
+against reviewed ground truth in both text-layer modes, so agreement with it is the strongest
+available evidence that the printed copy is right.
+
+**All 21 pages of the 6 paired documents now agree, including 9 thermal pages.** Before this
+work, every page of every one of them landed on A4 — silently. That test replaces one that
+asserted exactly that failure.
+
+The corpus is unchanged at **1266/1266 in both text-layer modes**, and two conformance fixtures
+pin the return-versus-outgoing decision on both engines from recognised text alone.
+
 ### 5.1 Hot-folder mode (robustness rules)
 
 - Watch N configurable directories; per-directory extension list + include/exclude filename
@@ -488,6 +567,13 @@ the job as a defective rule set.
 
 That takes the cost every page pays from 231 ms to about 11 ms, which is worth more than every
 OCR call in a typical job.
+
+**A decision may take a few rounds of this, not exactly one.** A printed 4x6in region needs OCR
+to settle whether it is a return label, and then, if nothing claims it, a barcode to settle
+whether it is a label at all. Serving those in sequence is what keeps the laziness worth having;
+gathering everything any rule might want in one round would put a 216 ms decode on pages that
+never reach a barcode rule. The count is bounded (`FeatureRounds.Max`) because the alternative is
+a mistaken rule rendering forever on somebody's workstation.
 
 ### 6.2 Rule schema (sketch)
 

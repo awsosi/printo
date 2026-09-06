@@ -278,6 +278,74 @@ public sealed class OcrTests
             string.Join(Environment.NewLine, failures));
     }
 
+    /// <summary>
+    /// A region that arrives lying down is read turned, and reported the right way up.
+    /// </summary>
+    /// <remarks>
+    /// The recogniser is handed a rotated bitmap for these, so every line's box comes back in
+    /// the rotated raster's coordinates and has to be turned back before a rule sees it. Getting
+    /// that inverse wrong is quiet and nasty: the text matches, the routing looks right, and a
+    /// `withinRect` rule silently reads the mirror image of the region its author drew.
+    ///
+    /// Asserted against a real captured job - a FedEx label the print path turned onto a
+    /// portrait A4 sheet - rather than a synthetic page, because the rotation only happens on
+    /// input shaped the way the spooler actually delivers it.
+    /// </remarks>
+    [Fact]
+    [SupportedOSPlatform("windows10.0.19041.0")]
+    public void ReportsLinesFromATurnedRegionInThePagesOwnCoordinates()
+    {
+        var engine = TryEngine();
+        if (engine is null || RepositoryPaths.Captures is not { } captures)
+        {
+            return;
+        }
+
+        var path = Path.Combine(captures, "chrome-ipp-vtw189036998.pdf");
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        using var pdf = PdfDocument.Load(File.ReadAllBytes(path));
+        using var page = pdf.OpenPage(0);
+
+        var box = PageRenderer.MeasureInkBox(page);
+        Assert.NotNull(box);
+
+        // The page the print path turned: ink wider than tall on a portrait sheet.
+        Assert.True(box!.WidthMm > box.HeightMm, $"expected landscape ink, got {box.WidthMm}x{box.HeightMm}mm");
+
+        var region = new RectMm
+        {
+            XMm = box.XMm,
+            YMm = box.YMm,
+            WidthMm = box.WidthMm,
+            HeightMm = box.HeightMm,
+        };
+
+        var result = engine.Recognise(page, region);
+
+        // Turning it is what makes it readable at all: upright this page returns nothing.
+        Assert.NotEmpty(result.Text);
+        Assert.NotEmpty(result.Lines);
+
+        // Every line must land inside the region it was read from, within a millimetre.
+        foreach (var line in result.Lines)
+        {
+            Assert.InRange(line.XMm, region.XMm - 1, region.Right + 1);
+            Assert.InRange(line.YMm, region.YMm - 1, region.Bottom + 1);
+            Assert.InRange(line.Right, region.XMm - 1, region.Right + 1);
+            Assert.InRange(line.Bottom, region.YMm - 1, region.Bottom + 1);
+        }
+
+        // And they must spread across the region rather than collapsing into one corner, which
+        // is what a half-applied inverse looks like.
+        Assert.True(
+            result.Lines.Max(line => line.Right) - result.Lines.Min(line => line.XMm) > region.WidthMm / 3,
+            "recognised lines do not spread across the region; the rotation was not undone");
+    }
+
     private static string Preview(string text)
     {
         var flat = Regex.Replace(text, @"\s+", " ").Trim();

@@ -1,6 +1,8 @@
 using System.Globalization;
+using System.Runtime.Versioning;
 using System.Text.Json;
 using Printo.Agent.Core.Routing;
+using Printo.Agent.Ocr;
 using Printo.Agent.Render;
 using Xunit;
 using Xunit.Abstractions;
@@ -38,7 +40,8 @@ public sealed record CaptureFixture
 ///
 /// What survives is the artwork's physical size. Content is placed at 1:1 rather than scaled to
 /// the new sheet, so an ink box that measured 101.6 x 156.0 mm on disk measures 156.4 x 102.0 mm
-/// printed: the same rectangle, turned. That is the fact any fix has to be built on.
+/// printed: the same rectangle, turned. The rule set is built on that fact - see plan section
+/// 5.0b and the header of <c>profiles.ts</c>.
 /// </remarks>
 public sealed class CaptureRoutingTests(ITestOutputHelper output)
 {
@@ -62,6 +65,7 @@ public sealed class CaptureRoutingTests(ITestOutputHelper output)
 
     [Theory]
     [MemberData(nameof(Captures))]
+    [SupportedOSPlatform("windows10.0.19041.0")]
     public void EveryCapturedPageIsMeasuredAndRouted(string capture)
     {
         if (string.IsNullOrEmpty(capture) || RepositoryPaths.Captures is not { } directory)
@@ -69,26 +73,29 @@ public sealed class CaptureRoutingTests(ITestOutputHelper output)
             return;
         }
 
-        var document = Extract(Path.Combine(directory, capture), capture);
-        var evaluation = RoutingEngine.EvaluateDocument(BuiltinProfiles.OneClickPrint, document);
-        Assert.NotNull(evaluation.Document);
+        var routed = Route(Path.Combine(directory, capture), capture);
+        if (routed is null)
+        {
+            return;
+        }
 
         output.WriteLine(capture);
-        var decisions = evaluation.Document!.Pages.ToDictionary(page => page.PageNumber);
-        foreach (var page in document.Pages)
+        var decisions = routed.Decision.Pages.ToDictionary(page => page.PageNumber);
+        foreach (var page in routed.Features.Pages)
         {
             var decision = decisions.GetValueOrDefault(page.PageNumber);
             output.WriteLine(
                 "  " + Describe(page) + "  ->  "
                     + (decision is null
-                        ? "(needs features)"
+                        ? "(undecided)"
                         : $"{decision.Route,-7} {decision.RuleId ?? "(no rule)"}"));
         }
 
-        // Nothing is asserted about *where* pages go here - that is the subject of the two tests
+        // Nothing is asserted about *where* pages go here - that is the subject of the test
         // below. This one exists so that every capture is exercised end to end through PDFium,
-        // the extractor and the engine, and a fixture that crashes any of them fails loudly.
-        Assert.Equal(document.Pages.Count, evaluation.Document.Pages.Count);
+        // the extractor, the recogniser and the engine, and a fixture that crashes any of them
+        // fails loudly.
+        Assert.Equal(routed.Features.Pages.Count, routed.Decision.Pages.Count);
     }
 
     /// <summary>
@@ -115,7 +122,14 @@ public sealed class CaptureRoutingTests(ITestOutputHelper output)
         var withText = new List<string>();
         foreach (var fixture in Manifest())
         {
-            var document = Extract(Path.Combine(directory, fixture.Capture), fixture.Capture);
+            var path = Path.Combine(directory, fixture.Capture);
+            if (!File.Exists(path))
+            {
+                continue;
+            }
+
+            using var pdf = PdfDocument.Load(File.ReadAllBytes(path));
+            var document = new PageFeatureExtractor().Extract(pdf, fixture.Capture, sourceApp: "Chrome");
             foreach (var page in document.Pages.Where(page => !string.IsNullOrWhiteSpace(page.Text)))
             {
                 withText.Add($"{fixture.Capture} p{page.PageNumber}: {page.Text}");
@@ -126,43 +140,177 @@ public sealed class CaptureRoutingTests(ITestOutputHelper output)
     }
 
     /// <summary>
-    /// The defect: rules calibrated on source files do not recognise the same documents printed.
+    /// A document routes the same way whichever path it arrives by.
     /// </summary>
     /// <remarks>
-    /// Asserted rather than papered over, so the fix has something to turn green. Expect this to
-    /// be rewritten - not deleted - when matching is made orientation-independent: the same
-    /// documents should then route their labels to thermal by whichever path they arrive on.
+    /// This is what "one rule set for both paths" has to mean, and it is asserted against the
+    /// strongest ground truth available: the same document, routed as the file it was printed
+    /// from. The file path is the one proven at 1266/1266 against reviewed ground truth in both
+    /// text-layer modes, so if the printed copy of a document agrees with its own source page
+    /// for page, the printed copy is right.
+    ///
+    /// It replaces a test that asserted the opposite - that the corpus-calibrated rules found no
+    /// label in any captured document, which was true, measured, and the defect this milestone
+    /// existed to fix. Six of these seven documents contain an outgoing carrier label and every
+    /// page of every one of them used to land on A4, silently.
     /// </remarks>
     [Fact]
-    public void CorpusCalibratedRulesFindNoLabelInAnyCapturedDocument()
+    [SupportedOSPlatform("windows10.0.19041.0")]
+    public void RoutesEachCapturedDocumentTheSameWayAsTheFileItWasPrintedFrom()
     {
-        if (RepositoryPaths.Captures is not { } directory)
+        if (RepositoryPaths.Captures is not { } directory || RepositoryPaths.CorpusPdfs is not { } corpus)
         {
             return;
         }
 
-        var thermal = new List<string>();
+        var mismatches = new List<string>();
+        var comparedDocuments = 0;
+        var comparedPages = 0;
+        var thermalPages = 0;
+
         foreach (var fixture in Manifest())
         {
-            var document = Extract(Path.Combine(directory, fixture.Capture), fixture.Capture);
-            var evaluation = RoutingEngine.EvaluateDocument(BuiltinProfiles.OneClickPrint, document);
-            foreach (var decision in evaluation.Document?.Pages ?? [])
+            if (fixture.Source is null)
             {
-                if (decision.Route == RoutingProfileRules.RouteThermal)
+                continue;
+            }
+
+            var sourcePath = FindSource(corpus, fixture.Source);
+            var capturePath = Path.Combine(directory, fixture.Capture);
+            if (sourcePath is null || !File.Exists(capturePath))
+            {
+                continue;
+            }
+
+            var printed = Route(capturePath, fixture.Capture);
+            var onDisk = Route(sourcePath, fixture.Source);
+            if (printed is null || onDisk is null)
+            {
+                return;
+            }
+
+            comparedDocuments++;
+            var expected = onDisk.Decision.Pages.ToDictionary(page => page.PageNumber, page => page.Route);
+            var actual = printed.Decision.Pages.ToDictionary(page => page.PageNumber, page => page.Route);
+
+            output.WriteLine($"{fixture.Capture} <- {fixture.Source}");
+            foreach (var pageNumber in expected.Keys.Order())
+            {
+                var want = expected[pageNumber];
+                var got = actual.GetValueOrDefault(pageNumber);
+                comparedPages++;
+                if (want == RoutingProfileRules.RouteThermal)
                 {
-                    thermal.Add($"{fixture.Capture} p{decision.PageNumber} via {decision.RuleId}");
+                    thermalPages++;
+                }
+
+                output.WriteLine($"  p{pageNumber,-2} file {want,-7} printed {got ?? "(missing)"}");
+                if (!string.Equals(want, got, StringComparison.Ordinal))
+                {
+                    var rule = printed.Decision.Pages
+                        .FirstOrDefault(page => page.PageNumber == pageNumber)?.RuleId;
+                    mismatches.Add(
+                        $"{fixture.Capture} p{pageNumber}: file says {want}, printed says "
+                            + $"{got ?? "(missing)"} via {rule ?? "(no rule)"}");
                 }
             }
         }
 
-        foreach (var line in thermal)
+        Assert.True(comparedDocuments > 0, "no captured document could be paired with its source");
+
+        // The test would pass vacuously if the sources routed everything to A4, which is exactly
+        // the defect it replaces. Six of the seven documents carry an outgoing label.
+        Assert.True(
+            thermalPages >= 6,
+            $"expected at least 6 thermal pages across the sources, found {thermalPages}");
+
+        Assert.True(
+            mismatches.Count == 0,
+            $"{mismatches.Count} of {comparedPages} pages routed differently once printed:"
+                + Environment.NewLine
+                + string.Join(Environment.NewLine, mismatches));
+    }
+
+    /// <summary>One document taken through the engine exactly as the agent takes it.</summary>
+    private sealed record RoutedDocument(DocumentFeatures Features, DocumentDecision Decision);
+
+    /// <summary>
+    /// Extracts, evaluates, answers whatever the engine asks for, and evaluates once more.
+    /// </summary>
+    /// <remarks>
+    /// The agent's own two-phase loop, with the real recogniser and the real decoder rather than
+    /// stubs - these documents are the reason OCR is load-bearing, so a stub would test nothing.
+    /// Exactly one extra round is served, which is the engine's contract: a second request is a
+    /// defect in the rule set, not something to loop on.
+    /// </remarks>
+    [SupportedOSPlatform("windows10.0.19041.0")]
+    private static RoutedDocument? Route(string path, string name)
+    {
+        var ocr = OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041)
+            ? WindowsOcrEngine.TryCreate()
+            : null;
+        if (ocr is null)
         {
-            output.WriteLine("thermal: " + line);
+            // No recogniser on this machine: the rules that separate a courier sheet from a
+            // parcel label cannot run, and asserting anything here would assert the stub.
+            return null;
         }
 
-        // Six of these seven documents contain an outgoing carrier label. None is found.
-        Assert.Empty(thermal);
+        var decoder = new ZxingBarcodeDecoder();
+        using var pdf = PdfDocument.Load(File.ReadAllBytes(path));
+
+        var features = new PageFeatureExtractor().Extract(pdf, name, sourceApp: "Chrome");
+        var evaluation = RoutingEngine.EvaluateDocument(BuiltinProfiles.OneClickPrint, features);
+
+        if (evaluation.NeedsFeatures)
+        {
+            features = Fill(pdf, features, evaluation, ocr, decoder);
+            evaluation = RoutingEngine.EvaluateDocument(BuiltinProfiles.OneClickPrint, features);
+        }
+
+        Assert.False(
+            evaluation.NeedsFeatures,
+            $"{name}: the rule set asked for features twice; the second pass must be decidable");
+
+        return new RoutedDocument(features, evaluation.Document!);
     }
+
+    [SupportedOSPlatform("windows10.0.19041.0")]
+    private static DocumentFeatures Fill(
+        PdfDocument pdf,
+        DocumentFeatures features,
+        DocumentEvaluation evaluation,
+        IOcrEngine ocr,
+        IBarcodeDecoder decoder)
+    {
+        var pages = features.Pages.ToList();
+
+        foreach (var group in evaluation.Ocr.GroupBy(request => request.PageNumber))
+        {
+            var index = pages.FindIndex(page => page.PageNumber == group.Key);
+            using var source = pdf.OpenPage(group.Key - 1);
+            pages[index] = PageFeatureExtractor.WithOcr(pages[index], source, group, ocr);
+        }
+
+        foreach (var request in evaluation.Barcodes)
+        {
+            var index = pages.FindIndex(page => page.PageNumber == request.PageNumber);
+            using var source = pdf.OpenPage(request.PageNumber - 1);
+            pages[index] = PageFeatureExtractor.WithBarcodes(pages[index], source, decoder);
+        }
+
+        return new DocumentFeatures
+        {
+            FileName = features.FileName,
+            SourceApp = features.SourceApp,
+            PageCount = features.PageCount,
+            Pages = pages,
+        };
+    }
+
+    /// <summary>Finds a source document by name under the corpus root, whichever day it is in.</summary>
+    private static string? FindSource(string corpus, string fileName) =>
+        Directory.EnumerateFiles(corpus, fileName, SearchOption.AllDirectories).FirstOrDefault();
 
     private static IReadOnlyList<CaptureFixture> Manifest()
     {
@@ -181,22 +329,6 @@ public sealed class CaptureRoutingTests(ITestOutputHelper output)
         return JsonSerializer.Deserialize<List<CaptureFixture>>(
             File.ReadAllText(path),
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
-    }
-
-    /// <summary>
-    /// Every feature of every page, eagerly - barcodes included.
-    /// </summary>
-    /// <remarks>
-    /// These tests evaluate the engine directly, with no host to answer a request for a feature
-    /// it has not been given, so the pages are extracted the way the corpus tooling extracts
-    /// them rather than the way the agent does. The agent leaves barcodes to
-    /// <see cref="PageFeatureExtractor.WithBarcodes"/> and decodes only what a rule asks about;
-    /// here that would come back as "needs features" and measure nothing.
-    /// </remarks>
-    private static DocumentFeatures Extract(string path, string name)
-    {
-        using var pdf = PdfDocument.Load(File.ReadAllBytes(path));
-        return new PageFeatureExtractor(new ZxingBarcodeDecoder()).Extract(pdf, name, sourceApp: "Chrome");
     }
 
     private static string Describe(PageFeatures page) => string.Create(

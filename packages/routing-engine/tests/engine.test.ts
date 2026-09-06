@@ -131,7 +131,7 @@ describe('traces', () => {
     // The trace names the predicate that failed *and* the number that failed it, which is
     // what turns "routing failed" into a rule an admin can fix in one edit.
     expect(failure?.kind).toBe('geometry');
-    expect(String(failure?.detail)).toContain('inkAspect 1.7..2.2');
+    expect(String(failure?.detail)).toContain('inkAspectNormalised 1.7..2.2');
     expect(failure?.measured).toBe(1.48);
   });
 
@@ -201,6 +201,17 @@ describe('fallbacks', () => {
         pageHeightMm: 297,
         orientation: 'portrait',
         inkBox: { xMm: 12, yMm: 12, widthMm: 100, heightMm: 152, aspect: 1.52, coverage: 0.07 },
+        // A 4x6in region is checked for the return marking before it can be treated as an
+        // outgoing label, so the ink box has been recognised by the time the generic rule is
+        // reached. Nothing in it names a carrier, which is what keeps this page generic.
+        ocrRegions: [
+          {
+            key: '12.0,12.0,100.0,152.0',
+            rect: { xMm: 12, yMm: 12, widthMm: 100, heightMm: 152 },
+            text: 'Sendungsnummer 0034 5566 7788 Empfaenger',
+            lines: []
+          }
+        ],
         barcodes: [
           { symbology: 'Code128', value: 'X123456789', xMm: 20, yMm: 120, widthMm: 60, heightMm: 12 }
         ]

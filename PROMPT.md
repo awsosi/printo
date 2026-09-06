@@ -6,9 +6,10 @@
 > earlier session.
 >
 > **Start here:** section 6 is where the project stands. Section 6a was the decision blocking
-> the next milestone; it was **settled on 2026-09-06** — one rule set for both paths — and the
-> evidence behind it is in the same section. Section 6b is a log of what the last sessions
-> changed and why, including corrections worth carrying forward.
+> the next milestone; it was settled on 2026-09-06 — one rule set for both paths — and **it is
+> now built and proven** (plan section 5.0c). **Nothing blocks virtual-printer ingress but
+> effort.** Section 6b is a log of what the last sessions changed and why, including corrections
+> worth carrying forward.
 >
 > **Lifecycle of this file:** delete it when every milestone in
 > `docs/WINDOWS_CLIENT_PLAN.md` section 10 is complete and the Definition of Done in section 12
@@ -130,8 +131,8 @@ defect.
       calibration page (plan section 10.8)
 - [x] M2 — Corpus + engine core (complete; two gaps listed below)
 - [x] M3 — Print output (complete except the hardware pass, postponed by the user)
-- [~] M4 — Agent runtime + fallback picker (all but virtual-printer ingress, which is now
-      unblocked by M1 and blocked instead by the decision in section 6a)
+- [~] M4 — Agent runtime + fallback picker (all but virtual-printer ingress — **now unblocked:
+      M1 is answered and the rule set that survives printing is built and proven, 5.0c**)
 - [~] M5 — Server integration (all but the worker's own engine adoption — plan §10.3)
 - [x] M6 — Admin UI (Fleet tab; driven in a real browser against a real database)
 - [~] M7 — Packaging + delivery (all but an elevated install of the MSI — see below)
@@ -147,11 +148,16 @@ defect.
 | CI | **Leave `.github/workflows/ci.yml` alone.** Do not add a Windows job. Keep the existing ubuntu pipeline green. |
 | Dev stack | Docker Desktop compose locally; compose stays the mandatory server form factor. |
 
-### 6a. THE OPEN DECISION — read this before writing any code
+### 6a. THE DECISION THAT WAS BLOCKING — settled and built
 
 **M1 is answered and it changed the problem.** The virtual printer works, but the Windows print
-path transforms every page on its way through, and the shipped rule set does not survive the
-transformation. Nothing about virtual-printer ingress should be built until this is decided.
+path transforms every page on its way through, and the rule set as shipped did not survive the
+transformation.
+
+**This is now resolved.** One rule set serves both paths, and the seven captured jobs route
+identically to the corpus files they were printed from — 21 of 21 pages, 9 of them thermal, where
+previously every page landed on A4 silently. Plan section 5.0c is the write-up; the rest of this
+section is the evidence that led there, kept because the numbers still matter.
 
 Full evidence: `docs/WINDOWS_CLIENT_PLAN.md` sections 5.0 and 5.0a. Fixtures: `tests/capture/`.
 Tests that pin it: `CaptureRoutingTests`. Reproduce with `Capture-Corpus.ps1` and
@@ -306,15 +312,16 @@ Verified:
 - **Service host:** run for real — accepts a drop, spools a copy, archives the original,
   routes, and records the failure with backoff when no printer is mapped.
 
-Still missing from M4: **virtual-printer ingress**, which cannot be built until M1 answers
-which capture tier works. Hot folders are the working intake path meanwhile.
+Still missing from M4: **virtual-printer ingress**. M1 answered which tier works (Tier 1, IPP)
+and the routing that survives printing is now built, so this is the next thing to do and nothing
+stands in front of it. Hot folders are the working intake path meanwhile.
 
 ### Verification commands
 
 ```bash
 npm run lint && npm run typecheck                      # repo-wide, must stay green
-npx vitest run --root packages/routing-engine          # 141 tests incl. golden corpus and picture matching
-dotnet test clients/windows/Printo.Agent.Tests         # 224 tests incl. corpus parity, soak, captures
+npx vitest run --root packages/routing-engine          # 146 tests incl. golden corpus and picture matching
+dotnet test clients/windows/Printo.Agent.Tests         # 227 tests incl. corpus parity, soak, captures
 npm run smoke:prod                                     # builds the production images, asserts the stack
 pwsh clients/windows/installer/build.ps1 -Version 0.1.0           # builds the agent MSI
 Printo.Tray.exe --picker <document.pdf> [pages]        # measure the picker, prints timing
@@ -361,7 +368,38 @@ three ways forward; it needs a decision, and nothing else depends on it.
 
 ## 6b. Session log
 
-### 2026-09-06 (later session) — the cost of routing a printed page
+### 2026-09-06 (later session) — one rule set for both paths
+
+The blocking decision in 6a was put to the user with the cost measured, and option 1 was chosen:
+one rule set keyed on the orientation-normalised ink box plus content. It is built. Plan section
+**5.0c** is the write-up; the short version:
+
+- **Page-frame rules were kept as fast paths, not deleted.** They run first, settle the file path
+  before anything is rasterized, and a printed page falls straight through them to the content
+  rules. That is why unifying the paths did not make the corpus more expensive to route.
+- **Three derived geometry predicates** — `inkShortEdgeMm`, `inkLongEdgeMm`,
+  `inkAspectNormalised` — in both engines. `inkAspect` flips to its reciprocal when a page is
+  turned; these do not.
+- **OCR is given the page the right way up**, and the line boxes are turned back afterwards.
+- **A decision may take a few bounded rounds** of "measure this and ask me again" instead of
+  exactly one, because a printed 4x6in region needs OCR to rule out a return label and then, only
+  if nothing claims it, a barcode.
+
+Proven by routing each captured job **and the corpus file it was printed from** and comparing
+page for page: **21 of 21 pages agree across 6 documents, 9 of them thermal.** Before this, every
+page of all of them landed on A4 silently. The corpus is unchanged at 1266/1266 in both
+text-layer modes.
+
+Two things worth carrying forward, both cases of a test that would have passed and a product that
+would have failed:
+
+- The return-label rule keys on `REF:`/`PO:`, **not** the `RETURN DEPT` printed on the page. The
+  recogniser reads a label's interleaved columns in visual order and splits those two words
+  apart. Measured before the rule was written.
+- `'REF:\s*RETURN'` in a TypeScript string is `REF:s*RETURN`. Lint caught it; no test would
+  have, because the captures contain no return label. Two conformance fixtures now cover it.
+
+### 2026-09-06 (earlier that day) — the cost of routing a printed page
 
 Answered the question section 6a had left open: measure before choosing. `CaptureCostTests` times
 every stage on all 22 captured pages and is written up as plan section **5.0b**. It is opt-in

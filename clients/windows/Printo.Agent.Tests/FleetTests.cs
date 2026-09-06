@@ -403,7 +403,10 @@ public sealed class FleetTests : IDisposable
                 });
             }
 
-            Assert.Contains("secondPass\":true", body.Replace(" ", string.Empty));
+            // Not flagged as the final round, because it is not one: `secondPass` now means
+            // "last chance", and the agent sets it only when its own round budget is about to
+            // run out. That the agent actually answered is asserted below, through the filler.
+            Assert.Contains("secondPass\":false", body.Replace(" ", string.Empty));
             return ScriptedServer.Json(new
             {
                 status = "decided",
@@ -429,6 +432,17 @@ public sealed class FleetTests : IDisposable
         Assert.Equal(2, server.Requests.Count);
     }
 
+    /// <summary>
+    /// A server that never stops asking is cut off rather than looped on.
+    /// </summary>
+    /// <remarks>
+    /// The engine is lazy, and a page can legitimately take a few turns of "measure this and ask
+    /// me again" - OCR to settle whether a 4x6in region is a return label, then a barcode to
+    /// settle whether an unrecognised one is a label at all. What must not happen is an
+    /// unbounded one: a rule asking for something it has already been given would render on a
+    /// workstation forever. This server asks for the same rectangle every time, and the agent
+    /// stops after its own bounded number of rounds.
+    /// </remarks>
     [Fact]
     public void ServerModeRefusesToLoopWhenTheRulesAskForOcrTwice()
     {
@@ -444,7 +458,9 @@ public sealed class FleetTests : IDisposable
         var decision = decider.Decide(LabelDocument(), new RecordingOcrFiller());
 
         Assert.Equal(DecisionStatus.RulesAskedOcrTwice, decision.Status);
-        Assert.Equal(2, server.Requests.Count);
+
+        // Bounded, and the bound is small: the first decide plus one per round served.
+        Assert.InRange(server.Requests.Count, 2, 6);
     }
 
     [Fact]

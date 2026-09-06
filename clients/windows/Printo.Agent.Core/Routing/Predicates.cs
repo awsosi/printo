@@ -544,6 +544,18 @@ public static class PredicateEvaluator
         AddRange("inkXMm", condition.InkXMm, page.InkBox?.XMm);
         AddRange("inkYMm", condition.InkYMm, page.InkBox?.YMm);
         AddRange("inkAspect", condition.InkAspect, page.InkBox?.Aspect);
+
+        // Orientation-independent measures. The print path turns landscape pages to portrait, so
+        // the width and height of the same artwork swap between the two input paths; the short
+        // and long edges do not. See GeometryCondition.InkShortEdgeMm.
+        double? shortEdge = page.InkBox is { } box ? Math.Min(box.WidthMm, box.HeightMm) : null;
+        double? longEdge = page.InkBox is { } sides ? Math.Max(sides.WidthMm, sides.HeightMm) : null;
+        AddRange("inkShortEdgeMm", condition.InkShortEdgeMm, shortEdge);
+        AddRange("inkLongEdgeMm", condition.InkLongEdgeMm, longEdge);
+        AddRange(
+            "inkAspectNormalised",
+            condition.InkAspectNormalised,
+            shortEdge is > 0 && longEdge is not null ? longEdge / shortEdge : null);
         AddRange("inkCoverage", condition.InkCoverage, page.InkBox?.Coverage);
 
         if (condition.PageIsLabelStock is not null)

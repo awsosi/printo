@@ -67,13 +67,40 @@ public sealed class WindowsOcrEngine : IOcrEngine
     public static IReadOnlyList<string> AvailableLanguages() =>
         OcrEngine.AvailableRecognizerLanguages.Select(language => language.LanguageTag).ToList();
 
+    /// <summary>
+    /// Recognises a region of the page, turning it upright first when it is lying down.
+    /// </summary>
+    /// <remarks>
+    /// The recogniser decides which way a bitmap's text runs from the bitmap it is given, and
+    /// gets it wrong on a label that arrives turned. Plan section 5.0b measured that across the
+    /// 22 captured pages: one label yields 4 characters upright and 954 turned, another 0
+    /// against 322, and 10 of the 22 read better turned - exactly the 10 the print path turned
+    /// from landscape to portrait.
+    ///
+    /// The turn is derived, not searched for. Every document in this corpus is portrait-native
+    /// content - labels are tall, invoices are tall - so ink measuring wider than it is tall is
+    /// ink that was turned, and turning it back is the one quarter turn worth trying. That
+    /// predicted the best of the four turns on 22 of 22 pages, and searching all four costs
+    /// seven times as much (692 ms a page against 100 ms) to find the same answer.
+    ///
+    /// The other turn is tried only when the first yields nothing at all. Every turned page in
+    /// the corpus was turned the same way, so the corpus cannot distinguish "turn it 90" from
+    /// "turn it back the way it came"; a page turned the other way costs one extra recognition
+    /// rather than being unreadable.
+    /// </remarks>
     public OcrRegion Recognise(PdfPage page, RectMm region)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(region);
 
-        var raster = PageRenderer.RenderRegion(page, region, RecognitionDpi);
-        var lines = RecogniseRaster(raster, region, RecognitionDpi);
+        var upright = PageRenderer.RenderRegion(page, region, RecognitionDpi);
+        var lying = region.WidthMm > region.HeightMm;
+
+        var lines = lying ? Read(upright, region, 90) : Read(upright, region, 0);
+        if (lines.Count == 0)
+        {
+            lines = lying ? Read(upright, region, 270) : Read(upright, region, 180);
+        }
 
         return new OcrRegion
         {
@@ -84,20 +111,84 @@ public sealed class WindowsOcrEngine : IOcrEngine
         };
     }
 
-    /// <summary>Recognises a raster, mapping results back into page millimetres.</summary>
+    /// <summary>Recognises a raster as it stands, mapping results back into page millimetres.</summary>
+    /// <remarks>
+    /// No rotation: this is the raw recogniser, used where the caller has already decided which
+    /// way up the pixels are. <see cref="Recognise(PdfPage, RectMm)"/> is the one that turns a
+    /// region upright first.
+    /// </remarks>
     public IReadOnlyList<TextLine> RecogniseRaster(RasterImage raster, RectMm origin, double dpi)
     {
         ArgumentNullException.ThrowIfNull(raster);
         ArgumentNullException.ThrowIfNull(origin);
 
+        var mmPerPixel = 25.4 / dpi;
+        return RecogniseBoxes(raster)
+            .Select(box => new TextLine
+            {
+                Text = box.Text,
+                XMm = Math.Round(origin.XMm + (box.Left * mmPerPixel), 2),
+                YMm = Math.Round(origin.YMm + (box.Top * mmPerPixel), 2),
+                WidthMm = Math.Round((box.Right - box.Left) * mmPerPixel, 2),
+                HeightMm = Math.Round((box.Bottom - box.Top) * mmPerPixel, 2),
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Recognises one quarter turn of a raster, reporting lines in the page's own coordinates.
+    /// </summary>
+    /// <remarks>
+    /// The rotation is undone on the way out. A rule that draws a rectangle over the top third
+    /// of a label means the top third of the label, whichever way the sheet it arrived on was
+    /// turned, so a line has to come back in the coordinates the rule was written in rather than
+    /// the recogniser's.
+    /// </remarks>
+    private IReadOnlyList<TextLine> Read(RasterImage upright, RectMm region, int degrees)
+    {
+        var raster = upright.Rotate(degrees);
+        var mmPerPixel = 25.4 / RecognitionDpi;
+        var lines = new List<TextLine>();
+
+        foreach (var box in RecogniseBoxes(raster))
+        {
+            // Back into the upright raster's pixels. Rotate(90) maps (x,y) to (H-1-y, x) and
+            // Rotate(270) maps it to (y, W-1-x); these are those inverted, with the box's edges
+            // swapping roles because a quarter turn exchanges the axes.
+            var (left, top, right, bottom) = degrees switch
+            {
+                90 => (box.Top, upright.Height - 1 - box.Right,
+                       box.Bottom, upright.Height - 1 - box.Left),
+                180 => (upright.Width - 1 - box.Right, upright.Height - 1 - box.Bottom,
+                        upright.Width - 1 - box.Left, upright.Height - 1 - box.Top),
+                270 => (upright.Width - 1 - box.Bottom, box.Left,
+                        upright.Width - 1 - box.Top, box.Right),
+                _ => (box.Left, box.Top, box.Right, box.Bottom),
+            };
+
+            lines.Add(new TextLine
+            {
+                Text = box.Text,
+                XMm = Math.Round(region.XMm + (left * mmPerPixel), 2),
+                YMm = Math.Round(region.YMm + (top * mmPerPixel), 2),
+                WidthMm = Math.Round((right - left) * mmPerPixel, 2),
+                HeightMm = Math.Round((bottom - top) * mmPerPixel, 2),
+            });
+        }
+
+        return lines;
+    }
+
+    /// <summary>Recognises a raster, reporting each line's box in that raster's own pixels.</summary>
+    private IReadOnlyList<(string Text, double Left, double Top, double Right, double Bottom)>
+        RecogniseBoxes(RasterImage raster)
+    {
         using var bitmap = ToSoftwareBitmap(raster);
 
         // The engine is async-only; the agent's render and print paths are synchronous, and a
         // page is milliseconds, so it is awaited here rather than colouring the whole pipeline.
         var result = engine.RecognizeAsync(bitmap).AsTask().GetAwaiter().GetResult();
-
-        var mmPerPixel = 25.4 / dpi;
-        var lines = new List<TextLine>(result.Lines.Count);
+        var boxes = new List<(string, double, double, double, double)>(result.Lines.Count);
 
         foreach (var line in result.Lines)
         {
@@ -125,17 +216,10 @@ public sealed class WindowsOcrEngine : IOcrEngine
                 continue;
             }
 
-            lines.Add(new TextLine
-            {
-                Text = line.Text,
-                XMm = Math.Round(origin.XMm + (left * mmPerPixel), 2),
-                YMm = Math.Round(origin.YMm + (top * mmPerPixel), 2),
-                WidthMm = Math.Round((right - left) * mmPerPixel, 2),
-                HeightMm = Math.Round((bottom - top) * mmPerPixel, 2),
-            });
+            boxes.Add((line.Text, left, top, right, bottom));
         }
 
-        return lines;
+        return boxes;
     }
 
     /// <summary>

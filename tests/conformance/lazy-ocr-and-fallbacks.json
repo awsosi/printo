@@ -313,7 +313,7 @@
     },
     {
       "name": "An unknown carrier with a label-shaped region and a barcode prompts rather than guessing",
-      "rationale": "Generic fallback: a new carrier works on day one, below the confidence threshold, so the user confirms and the admin gets a review-queue entry.",
+      "rationale": "Generic fallback: a new carrier works on day one, below the confidence threshold, so the user confirms and the admin gets a review-queue entry. The ink box is recognised on the way past, because a 4x6in region has to be checked for the return marking before it can be treated as an outgoing label; nothing in it names a carrier, which is the point.",
       "profile": "builtin:OneClickPrint",
       "document": {
         "fileName": "OneClickPrint_TEST.pdf",
@@ -343,6 +343,19 @@
                 "yMm": 120,
                 "widthMm": 60,
                 "heightMm": 12
+              }
+            ],
+            "ocrRegions": [
+              {
+                "key": "12.0,12.0,100.0,152.0",
+                "rect": {
+                  "xMm": 12,
+                  "yMm": 12,
+                  "widthMm": 100,
+                  "heightMm": 152
+                },
+                "text": "Sendungsnummer 0034 5566 7788\nEmpfaenger\nPaketaufkleber",
+                "lines": []
               }
             ]
           }
@@ -384,7 +397,20 @@
               "heightMm": 152,
               "aspect": 1.52,
               "coverage": 0.07
-            }
+            },
+            "ocrRegions": [
+              {
+                "key": "12.0,12.0,100.0,152.0",
+                "rect": {
+                  "xMm": 12,
+                  "yMm": 12,
+                  "widthMm": 100,
+                  "heightMm": 152
+                },
+                "text": "Sendungsnummer 0034 5566 7788\nEmpfaenger\nPaketaufkleber",
+                "lines": []
+              }
+            ]
           }
         ]
       },
@@ -419,7 +445,20 @@
               "aspect": 1.52,
               "coverage": 0.07
             },
-            "barcodes": []
+            "barcodes": [],
+            "ocrRegions": [
+              {
+                "key": "12.0,12.0,100.0,152.0",
+                "rect": {
+                  "xMm": 12,
+                  "yMm": 12,
+                  "widthMm": 100,
+                  "heightMm": 152
+                },
+                "text": "Sendungsnummer 0034 5566 7788\nEmpfaenger\nPaketaufkleber",
+                "lines": []
+              }
+            ]
           }
         ]
       },
@@ -430,6 +469,109 @@
             "route": "A4",
             "ruleId": null,
             "carrier": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "A printed FedEx return label is told apart from an outgoing one by what is read on it",
+      "rationale": "Printing turns the page and replaces its medium, so the Letter sheet the fast-path rule keys on is gone: ink 150.6x101.6mm on plain A4, the same rectangle as an outgoing label, turned. Only the recognised text separates them, and the keyed phrase is 'REF:'/'PO:' rather than the 'RETURN DEPT' printed on the page - the recogniser reads the label's interleaved columns in visual order and splits those two words apart.",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.0,
+            "pageHeightMm": 297.0,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "inkBox": {
+              "xMm": 54.0,
+              "yMm": 72.0,
+              "widthMm": 150.6,
+              "heightMm": 101.6,
+              "aspect": 0.675,
+              "coverage": 0.06
+            },
+            "barcodes": [],
+            "ocrRegions": [
+              {
+                "key": "54.0,72.0,150.6,101.6",
+                "rect": {
+                  "xMm": 54.0,
+                  "yMm": 72.0,
+                  "widthMm": 150.6,
+                  "heightMm": 101.6
+                },
+                "text": "ORIGIN ID:REPR 30075371423400 LUKAS TOMASZ AALTO WAREHOUSE ACTWGT: 6.40 KG BILL SENDER INV: PO: RETURN OJX058644430 REF: RETURN 808292H2ND03227236 DEPT: TRK# 8037 2219 9923 INTL ECONOMY CLR",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "A4",
+            "ruleId": "fedex-return-label-ocr"
+          }
+        ]
+      }
+    },
+    {
+      "name": "The same shape without the return marking is an outgoing label and goes to thermal",
+      "rationale": "The other half: identical geometry, and the whole decision rests on content. This is the page that used to land silently on A4 - six of the seven captured documents carry one.",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.0,
+            "pageHeightMm": 297.0,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "inkBox": {
+              "xMm": 54.0,
+              "yMm": 72.0,
+              "widthMm": 150.6,
+              "heightMm": 101.6,
+              "aspect": 0.675,
+              "coverage": 0.06
+            },
+            "barcodes": [],
+            "ocrRegions": [
+              {
+                "key": "54.0,72.0,150.6,101.6",
+                "rect": {
+                  "xMm": 54.0,
+                  "yMm": 72.0,
+                  "widthMm": 150.6,
+                  "heightMm": 101.6
+                },
+                "text": "ORIGIN ID:JSRG 74010337832 ANDRZEJ VANDENBERG WAREHOUSE LESNA ACTWGT: 0.40 KG BILL SENDER FedEx TRK# 9520 7972 1329 INTL ECONOMY CLR ETD CLR WAW",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "fedex-label-region",
+            "carrier": "FEDEX"
           }
         ]
       }

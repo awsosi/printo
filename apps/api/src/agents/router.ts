@@ -222,6 +222,10 @@ export function createAgentRouter(store: AgentStore): Router {
       ? { carrierSignatures: rules.payload.carrierSignatures }
       : {};
 
+    // The agent sets this on its final round. The engine is lazy by design and a page can
+    // legitimately take a few turns - OCR to settle whether a 4x6in region is a return label,
+    // then a barcode to settle whether an unrecognised one is a label at all - so the server
+    // does not count rounds itself. The agent bounds them; this is how it says "last chance".
     const secondPass = Boolean(req.body?.secondPass);
     const evaluation = evaluateDocument(profile, features, options);
 
@@ -229,7 +233,7 @@ export function createAgentRouter(store: AgentStore): Router {
       if (secondPass) {
         return res.status(422).json({
           error: 'RULES_ASK_OCR_TWICE',
-          detail: 'the rule set asked for OCR twice; the second pass must be decidable',
+          detail: 'the rule set still wanted features on the final round; it must settle',
           bundleVersion: rules.version
         });
       }

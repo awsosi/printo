@@ -462,6 +462,22 @@ function evaluateGeometry(
   addRange('inkXMm', predicate.inkXMm, page.inkBox?.xMm ?? null);
   addRange('inkYMm', predicate.inkYMm, page.inkBox?.yMm ?? null);
   addRange('inkAspect', predicate.inkAspect, page.inkBox?.aspect ?? null);
+
+  // Orientation-independent measures. The print path turns landscape pages to portrait, so the
+  // width and height of the same artwork swap between the two input paths; the short and long
+  // edges do not. See `GeometryPredicate.inkShortEdgeMm`.
+  const shortEdge = page.inkBox
+    ? Math.min(page.inkBox.widthMm, page.inkBox.heightMm)
+    : null;
+  const longEdge = page.inkBox ? Math.max(page.inkBox.widthMm, page.inkBox.heightMm) : null;
+  addRange('inkShortEdgeMm', predicate.inkShortEdgeMm, shortEdge);
+  addRange('inkLongEdgeMm', predicate.inkLongEdgeMm, longEdge);
+  addRange(
+    'inkAspectNormalised',
+    predicate.inkAspectNormalised,
+    shortEdge !== null && longEdge !== null && shortEdge > 0 ? longEdge / shortEdge : null
+  );
+
   addRange('inkCoverage', predicate.inkCoverage, page.inkBox?.coverage ?? null);
 
   if (predicate.pageIsLabelStock !== undefined) {

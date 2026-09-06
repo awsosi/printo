@@ -112,6 +112,9 @@ const GEOMETRY_RANGES = [
   'inkXMm',
   'inkYMm',
   'inkAspect',
+  'inkShortEdgeMm',
+  'inkLongEdgeMm',
+  'inkAspectNormalised',
   'inkCoverage'
 ] as const;
 
