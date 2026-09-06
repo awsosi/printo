@@ -90,7 +90,13 @@ public sealed class AgentService(
             : new JobReporter(client, (code, detail) => logger.LogWarning("Report {Code}: {Detail}", code, detail));
 
         var processor = new JobProcessor(
-            spool, catalog, new PageFeatureExtractor(new ZxingBarcodeDecoder()), ocr, decider);
+            spool, catalog, new PageFeatureExtractor(new ZxingBarcodeDecoder()), ocr, decider)
+        {
+            // Read from the bundle at construction. A republished bundle takes effect on the
+            // next service start; templates change far less often than rules, and re-reading
+            // them per job would decode every PNG on every page.
+            Templates = sync.CurrentBundle.Templates,
+        };
 
         var prompter = new TrayPrompter(WindowsSessions.InteractiveSessions);
 

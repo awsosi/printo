@@ -78,7 +78,18 @@ public sealed class RoutingDecision
 /// </remarks>
 public interface IOcrFiller
 {
-    DocumentFeatures? Fill(DocumentFeatures features, IReadOnlyList<OcrRequest> requests);
+    /// <summary>
+    /// Supplies the features the engine asked for.
+    /// </summary>
+    /// <returns>
+    /// The enriched document, or <c>null</c> when this machine cannot supply what was asked -
+    /// no recogniser for an OCR request, which is a routing question for a person rather than
+    /// a failure.
+    /// </returns>
+    DocumentFeatures? Fill(
+        DocumentFeatures features,
+        IReadOnlyList<OcrRequest> requests,
+        IReadOnlyList<TemplateRequest> templates);
 }
 
 /// <summary>Decides where a document's pages go.</summary>
@@ -129,7 +140,7 @@ public sealed class LocalDecider(Func<RuleBundle> bundle) : IRoutingDecider
             return RoutingDecision.Decided(first.Document!, profile, "local", rules.Version);
         }
 
-        var enriched = ocr.Fill(features, first.Ocr);
+        var enriched = ocr.Fill(features, first.Ocr, first.Templates);
         if (enriched is null)
         {
             return new RoutingDecision
@@ -215,7 +226,7 @@ public sealed class ServerDecider(IServerClient client, Action<string, string>? 
                     response.Decision!, profile ?? Fallback(rules), "server", response.BundleVersion);
             }
 
-            var enriched = ocr.Fill(features, response.Ocr);
+            var enriched = ocr.Fill(features, response.Ocr, response.Templates);
             if (enriched is null)
             {
                 return new RoutingDecision

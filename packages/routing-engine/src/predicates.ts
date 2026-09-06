@@ -27,7 +27,7 @@ import type {
   RectSpec,
   TextPredicate
 } from './rules.js';
-import type { CarrierResolution, OcrRequest, PredicateTrace } from './trace.js';
+import type { CarrierResolution, OcrRequest, PredicateTrace, TemplateRequest } from './trace.js';
 
 /**
  * A page whose own media is small enough to be label stock rather than a sheet carrying a
@@ -49,6 +49,8 @@ export interface EvaluationContext {
   ocrRequests: OcrRequest[];
   /** Keys of OCR regions that were actually consulted. */
   ocrRectsUsed: Set<string>;
+  /** Filled by `image` predicates whose template the host has not matched yet. */
+  templateRequests: TemplateRequest[];
 }
 
 /** Collapses whitespace so a rule written as one phrase survives line breaks. */
@@ -341,12 +343,26 @@ function evaluateImage(
   const relevant = matches.filter((match) => match.template === predicate.template);
 
   if (relevant.length === 0) {
+    // Not "no match" - *not attempted*. The host records a result for every template it tries,
+    // whatever it scored, so those two cases stay distinguishable. Collapsing them would make
+    // a template that scores 0.2 indistinguishable from one nobody looked for, and the engine
+    // would either loop asking for it or silently treat "unseen" as "absent".
+    const rect = predicate.searchRect ? resolveRect(predicate.searchRect, page) : pageRect(page);
+    if (rect) {
+      context.templateRequests.push({
+        pageNumber: page.pageNumber,
+        template: predicate.template,
+        rect,
+        ruleId: context.ruleId
+      });
+    }
+
     return leaf(
       'image',
       path,
       false,
       `template ${predicate.template} >= ${predicate.threshold}`,
-      matches.length === 0 ? 'no template matching performed' : 'template not matched'
+      rect ? 'template match pending' : 'searchRect unresolved'
     );
   }
 

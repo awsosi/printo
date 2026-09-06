@@ -28,4 +28,10 @@
     <PackageReference Include="ZXingCpp" Version="0.5.3" />
   </ItemGroup>
 
+
+  <!-- The coarse-search factor is implementation, but its arithmetic is worth asserting. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Printo.Agent.Tests" />
+  </ItemGroup>
+
 </Project>

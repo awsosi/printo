@@ -54,13 +54,38 @@ export const BUNDLE_SCHEMA_VERSION = 1;
  * a new courier can be taught to the fleet by publishing a bundle rather than by shipping a
  * new agent build.
  */
+/**
+ * A reference image an `image` predicate matches against.
+ *
+ * Carried in the bundle rather than fetched separately so a workstation that has synced its
+ * rules can evaluate them offline. That is the whole premise of the local decision mode, and a
+ * template hosted behind a URL would quietly break it the first time the network went down.
+ *
+ * Kept small deliberately - a logo crop at 100-200 px is enough for normalised
+ * cross-correlation, and a bundle is downloaded by every agent in the fleet.
+ */
+export interface BundleTemplate {
+  /** Name an `image` predicate refers to. */
+  name: string;
+  /** PNG, base64, without a data: prefix. */
+  png: string;
+  /** Resolution the reference was captured at, so the matcher can scale the page to suit. */
+  dpi: number;
+  /** What it is a picture of, for the rule editor. */
+  description?: string;
+}
+
 export interface RuleBundlePayload {
   schemaVersion: number;
   profiles: RoutingProfileRules[];
   carrierSignatures?: CarrierSignatureSet[];
+  templates?: BundleTemplate[];
   /** ISO-8601. Informational: the version number is what agents compare. */
   generatedAt?: string;
 }
+
+/** Roughly 1 MB of PNG per template, before base64. Every agent downloads every template. */
+const MAX_TEMPLATE_BASE64 = 1_400_000;
 
 const PREDICATE_KEYS = [
   'all',
@@ -625,14 +650,98 @@ export function parseBundlePayload(value: unknown): RuleBundlePayload {
     );
   }
 
-  return {
+  let templates: BundleTemplate[] | undefined;
+  if (value.templates !== undefined && value.templates !== null) {
+    isArray(value.templates, 'bundle.templates');
+    templates = value.templates.map((entry, index) =>
+      parseTemplate(entry, `bundle.templates[${index}]`)
+    );
+
+    const names = new Set<string>();
+    for (const template of templates) {
+      if (names.has(template.name)) {
+        // `image` predicates refer to templates by name, so two with the same name makes every
+        // rule using it ambiguous.
+        throw new WireFormatError('bundle.templates', `duplicate template name '${template.name}'`);
+      }
+      names.add(template.name);
+    }
+  }
+
+  const parsed = {
     schemaVersion,
     profiles: value.profiles.map((profile, index) =>
       parseProfile(profile, `bundle.profiles[${index}]`)
     ),
     carrierSignatures,
+    templates,
     generatedAt: optionalString(value.generatedAt, 'bundle.generatedAt')
   };
+
+  // Every template an `image` rule names has to be in the bundle, or that rule can never match
+  // and the agent would ask for a template nobody can supply on every single page.
+  const available = new Set((templates ?? []).map((template) => template.name));
+  for (const [index, profile] of parsed.profiles.entries()) {
+    for (const [ruleIndex, rule] of profile.pageRules.entries()) {
+      for (const name of templateNames(rule.when)) {
+        if (!available.has(name)) {
+          throw new WireFormatError(
+            `bundle.profiles[${index}].pageRules[${ruleIndex}].when`,
+            `refers to template '${name}', which the bundle does not carry`
+          );
+        }
+      }
+    }
+  }
+
+  return parsed;
+}
+
+function parseTemplate(value: unknown, path: string): BundleTemplate {
+  isObject(value, path);
+
+  const png = requireString(value.png, `${path}.png`);
+  if (png.startsWith('data:')) {
+    throw new WireFormatError(`${path}.png`, 'expected bare base64, not a data: URI');
+  }
+  if (png.length > MAX_TEMPLATE_BASE64) {
+    throw new WireFormatError(
+      `${path}.png`,
+      `is ${png.length} base64 characters; the limit is ${MAX_TEMPLATE_BASE64}`
+    );
+  }
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(png)) {
+    throw new WireFormatError(`${path}.png`, 'is not valid base64');
+  }
+
+  const dpi = requireNumber(value.dpi, `${path}.dpi`);
+  if (dpi < 50 || dpi > 1200) {
+    throw new WireFormatError(`${path}.dpi`, 'expected a resolution between 50 and 1200');
+  }
+
+  return {
+    name: requireString(value.name, `${path}.name`),
+    png,
+    dpi,
+    description: optionalString(value.description, `${path}.description`)
+  };
+}
+
+/** Every template name an `image` predicate anywhere in a condition refers to. */
+function templateNames(predicate: Predicate): string[] {
+  if ('image' in predicate) {
+    return [predicate.image.template];
+  }
+  if ('all' in predicate) {
+    return predicate.all.flatMap(templateNames);
+  }
+  if ('any' in predicate) {
+    return predicate.any.flatMap(templateNames);
+  }
+  if ('not' in predicate) {
+    return templateNames(predicate.not);
+  }
+  return [];
 }
 
 // -----------------------------------------------------------------------------------------

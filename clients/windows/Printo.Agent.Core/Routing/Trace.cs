@@ -177,17 +177,43 @@ public sealed class OcrRequest
 /// evaluation returns the regions it needs, the host fills them in, and evaluation repeats.
 /// Two passes is the maximum.
 /// </summary>
+/// <summary>
+/// A template match the host must perform before the rule can be evaluated.
+/// </summary>
+/// <remarks>
+/// The same laziness as OCR, for the same reason: rasterizing every page against every template
+/// in the bundle would cost more than the routing decision is worth, and most pages are settled
+/// by geometry and text long before any rule asks for a picture.
+/// </remarks>
+public sealed class TemplateRequest
+{
+    public int PageNumber { get; init; }
+
+    /// <summary>Template name, as declared in the bundle.</summary>
+    public string Template { get; init; } = string.Empty;
+
+    /// <summary>Where to look. Resolved from the rule's <c>searchRect</c>, or the whole page.</summary>
+    public RectMm Rect { get; init; } = new();
+
+    /// <summary>The rule that asked, for logging.</summary>
+    public string RuleId { get; init; } = string.Empty;
+}
+
 public sealed class PageEvaluation
 {
     public PageDecision? Decision { get; init; }
 
     public IReadOnlyList<OcrRequest> Ocr { get; init; } = [];
 
+    public IReadOnlyList<TemplateRequest> Templates { get; init; } = [];
+
     public bool NeedsFeatures => Decision is null;
 
     public static PageEvaluation Decided(PageDecision decision) => new() { Decision = decision };
 
-    public static PageEvaluation NeedsOcr(IReadOnlyList<OcrRequest> requests) => new() { Ocr = requests };
+    public static PageEvaluation NeedsOcr(
+        IReadOnlyList<OcrRequest> requests, IReadOnlyList<TemplateRequest>? templates = null) =>
+        new() { Ocr = requests, Templates = templates ?? [] };
 }
 
 public sealed class DocumentDecision
@@ -205,9 +231,13 @@ public sealed class DocumentEvaluation
 
     public IReadOnlyList<OcrRequest> Ocr { get; init; } = [];
 
+    public IReadOnlyList<TemplateRequest> Templates { get; init; } = [];
+
     public bool NeedsFeatures => Document is null;
 
     public static DocumentEvaluation Decided(DocumentDecision decision) => new() { Document = decision };
 
-    public static DocumentEvaluation NeedsOcr(IReadOnlyList<OcrRequest> requests) => new() { Ocr = requests };
+    public static DocumentEvaluation NeedsOcr(
+        IReadOnlyList<OcrRequest> requests, IReadOnlyList<TemplateRequest>? templates = null) =>
+        new() { Ocr = requests, Templates = templates ?? [] };
 }

@@ -41,6 +41,12 @@ internal sealed class ConformanceFixture
     /// </summary>
     public IReadOnlyList<ExpectedOcrRequest>? ExpectNeedsOcr { get; init; }
 
+    /// <summary>
+    /// When set, the engine must stop and ask for exactly these template matches on the first
+    /// pass. Pins the same laziness contract as <see cref="ExpectNeedsOcr"/>, for picture rules.
+    /// </summary>
+    public IReadOnlyList<ExpectedTemplateRequest>? ExpectNeedsTemplates { get; init; }
+
     /// <summary>Raw <c>{ pages: [...], document: {...} }</c> expectations.</summary>
     public JsonElement Expect { get; init; }
 
@@ -70,6 +76,15 @@ internal sealed class ExpectedOcrRequest
     public int PageNumber { get; init; }
 
     public string Key { get; init; } = string.Empty;
+
+    public string? RuleId { get; init; }
+}
+
+internal sealed class ExpectedTemplateRequest
+{
+    public int PageNumber { get; init; }
+
+    public string Template { get; init; } = string.Empty;
 
     public string? RuleId { get; init; }
 }

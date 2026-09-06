@@ -65,6 +65,9 @@ public sealed class ServerDecisionResponse
 
     public IReadOnlyList<OcrRequest> Ocr { get; init; } = [];
 
+    /// <summary>Templates the server wants matched; only this machine holds the pixels.</summary>
+    public IReadOnlyList<TemplateRequest> Templates { get; init; } = [];
+
     public long? BundleVersion { get; init; }
 }
 
@@ -392,6 +395,9 @@ public sealed class HttpServerClient : IServerClient, IDisposable
             {
                 Status = ServerDecisionStatus.NeedsOcr,
                 Ocr = body.GetProperty("ocr").Deserialize<List<OcrRequest>>(Json) ?? [],
+                Templates = body.TryGetProperty("templates", out var wanted)
+                    ? wanted.Deserialize<List<TemplateRequest>>(Json) ?? []
+                    : [],
                 BundleVersion = version,
             },
             "no-profile" => new ServerDecisionResponse

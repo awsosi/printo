@@ -743,7 +743,10 @@ public sealed class FleetTests : IDisposable
     {
         public static NoOcr Instance { get; } = new();
 
-        public DocumentFeatures? Fill(DocumentFeatures features, IReadOnlyList<OcrRequest> requests) => null;
+        public DocumentFeatures? Fill(
+            DocumentFeatures features,
+            IReadOnlyList<OcrRequest> requests,
+            IReadOnlyList<TemplateRequest> templates) => null;
     }
 
     /// <summary>Counts the rounds of OCR the engine or the server asked for.</summary>
@@ -751,7 +754,10 @@ public sealed class FleetTests : IDisposable
     {
         public int Calls { get; private set; }
 
-        public DocumentFeatures? Fill(DocumentFeatures features, IReadOnlyList<OcrRequest> requests)
+        public DocumentFeatures? Fill(
+            DocumentFeatures features,
+            IReadOnlyList<OcrRequest> requests,
+            IReadOnlyList<TemplateRequest> templates)
         {
             Calls++;
             return features;

@@ -160,6 +160,63 @@ describe('rule bundle validation', () => {
     );
   });
 
+  it('validates templates, and refuses a rule naming one the bundle does not carry', () => {
+    // A 1x1 PNG. Enough to exercise the shape checks without a fixture file.
+    const png =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+    const withTemplate = {
+      schemaVersion: BUNDLE_SCHEMA_VERSION,
+      profiles: [
+        {
+          profile: 'PictureMatch',
+          version: 1,
+          pageRules: [
+            {
+              id: 'logo',
+              name: 'Logo',
+              when: { image: { template: 'carrier-logo', threshold: 0.8 } },
+              then: { route: 'THERMAL' }
+            }
+          ],
+          fallback: { route: 'A4', onUnknown: 'route' }
+        }
+      ],
+      templates: [{ name: 'carrier-logo', png, dpi: 150 }]
+    };
+
+    expect(parseBundlePayload(withTemplate).templates).toHaveLength(1);
+
+    // A rule naming a template nobody shipped can never match, and the agent would ask for it
+    // on every page of every document forever.
+    const orphaned = JSON.parse(JSON.stringify(withTemplate));
+    orphaned.templates = [];
+    expectRejected(orphaned, 'bundle.profiles[0].pageRules[0].when', 'does not carry');
+
+    // The same, nested inside a composite - the check has to walk the whole condition.
+    const nested = JSON.parse(JSON.stringify(withTemplate));
+    nested.profiles[0].pageRules[0].when = {
+      all: [{ geometry: { orientation: 'portrait' } }, { not: { image: { template: 'ghost', threshold: 0.5 } } }]
+    };
+    expectRejected(nested, 'bundle.profiles[0].pageRules[0].when', "template 'ghost'");
+
+    const dataUri = JSON.parse(JSON.stringify(withTemplate));
+    dataUri.templates[0].png = `data:image/png;base64,${png}`;
+    expectRejected(dataUri, 'bundle.templates[0].png', 'not a data: URI');
+
+    const notBase64 = JSON.parse(JSON.stringify(withTemplate));
+    notBase64.templates[0].png = 'not base64!!';
+    expectRejected(notBase64, 'bundle.templates[0].png', 'not valid base64');
+
+    const absurdDpi = JSON.parse(JSON.stringify(withTemplate));
+    absurdDpi.templates[0].dpi = 4;
+    expectRejected(absurdDpi, 'bundle.templates[0].dpi');
+
+    const duplicated = JSON.parse(JSON.stringify(withTemplate));
+    duplicated.templates.push({ name: 'carrier-logo', png, dpi: 150 });
+    expectRejected(duplicated, 'bundle.templates', 'duplicate template name');
+  });
+
   it('parses every predicate form the schema defines', () => {
     const forms: unknown[] = [
       { text: { contains: 'x', withinRect: 'inkBox' } },

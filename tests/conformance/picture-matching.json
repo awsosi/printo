@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "name": "A picture rule stops and asks for the template rather than rasterizing speculatively",
+      "rationale": "Laziness is what makes picture matching affordable on a workstation. If the engine matched every template in the bundle against every page up front, a five-page document would cost five full-page correlations before any rule had a chance to settle it on geometry.",
+      "profile": {
+        "profile": "PictureMatch",
+        "version": 1,
+        "pageRules": [
+          {
+            "id": "carrier-logo",
+            "name": "Carrier logo",
+            "when": { "image": { "template": "carrier-logo", "threshold": 0.8 } },
+            "then": { "route": "THERMAL", "confidence": 0.95 }
+          }
+        ],
+        "fallback": { "route": "A4", "onUnknown": "route" }
+      },
+      "document": {
+        "fileName": "sample.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "inkBox": { "xMm": 40, "yMm": 60, "widthMm": 20, "heightMm": 26, "aspect": 1.3, "coverage": 0.01 },
+            "barcodes": []
+          }
+        ]
+      },
+      "expectNeedsTemplates": [{ "pageNumber": 1, "template": "carrier-logo", "ruleId": "carrier-logo" }]
+    },
+    {
+      "name": "A rule earlier in the list settles the page without any template being asked for",
+      "rationale": "Rules are tried in order and the first match wins, so a picture rule behind a geometry rule costs nothing on the pages the geometry rule already claims. This is the property that makes it safe to put an expensive predicate in a profile at all.",
+      "profile": {
+        "profile": "PictureMatch",
+        "version": 1,
+        "pageRules": [
+          {
+            "id": "label-stock",
+            "name": "Already on label stock",
+            "when": { "geometry": { "pageIsLabelStock": true } },
+            "then": { "route": "THERMAL", "confidence": 0.99 }
+          },
+          {
+            "id": "carrier-logo",
+            "name": "Carrier logo",
+            "when": { "image": { "template": "carrier-logo", "threshold": 0.8 } },
+            "then": { "route": "THERMAL", "confidence": 0.95 }
+          }
+        ],
+        "fallback": { "route": "A4", "onUnknown": "route" }
+      },
+      "document": {
+        "fileName": "sample.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 100,
+            "pageHeightMm": 150,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "inkBox": { "xMm": 2, "yMm": 2, "widthMm": 96, "heightMm": 146, "aspect": 1.52, "coverage": 0.3 },
+            "barcodes": []
+          }
+        ]
+      },
+      "expect": { "pages": [{ "pageNumber": 1, "route": "THERMAL", "ruleId": "label-stock" }] }
+    },
+    {
+      "name": "A supplied match above the threshold routes the page",
+      "rationale": "The second pass, with the host's answer in place. Scores are recorded whatever they are, so this is also what proves the engine reads the score rather than merely the presence of a match.",
+      "profile": {
+        "profile": "PictureMatch",
+        "version": 1,
+        "pageRules": [
+          {
+            "id": "carrier-logo",
+            "name": "Carrier logo",
+            "when": { "image": { "template": "carrier-logo", "threshold": 0.8 } },
+            "then": {
+              "route": "THERMAL",
+              "confidence": 0.95,
+              "transform": { "source": "inkBox", "padMm": 1, "rotate": "auto", "fit": "contain" }
+            }
+          }
+        ],
+        "fallback": { "route": "A4", "onUnknown": "route" }
+      },
+      "document": {
+        "fileName": "sample.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "inkBox": { "xMm": 40, "yMm": 60, "widthMm": 20, "heightMm": 26, "aspect": 1.3, "coverage": 0.01 },
+            "barcodes": [],
+            "templateMatches": [
+              { "template": "carrier-logo", "score": 0.94, "xMm": 39, "yMm": 59, "widthMm": 22, "heightMm": 28 }
+            ]
+          }
+        ]
+      },
+      "expect": { "pages": [{ "pageNumber": 1, "route": "THERMAL", "ruleId": "carrier-logo" }] }
+    },
+    {
+      "name": "A match below the threshold leaves the page alone and is not asked for again",
+      "rationale": "The distinction that makes the protocol terminate: a recorded low score is an answer, not a missing feature. Treating it as missing would make the engine ask a second time and the job would fail as a rule set that asked twice - blaming the rules for a picture that simply is not on the page.",
+      "profile": {
+        "profile": "PictureMatch",
+        "version": 1,
+        "pageRules": [
+          {
+            "id": "carrier-logo",
+            "name": "Carrier logo",
+            "when": { "image": { "template": "carrier-logo", "threshold": 0.8 } },
+            "then": { "route": "THERMAL", "confidence": 0.95 }
+          }
+        ],
+        "fallback": { "route": "A4", "onUnknown": "route" }
+      },
+      "document": {
+        "fileName": "sample.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210,
+            "pageHeightMm": 297,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "inkBox": { "xMm": 15, "yMm": 15, "widthMm": 180, "heightMm": 240, "aspect": 1.33, "coverage": 0.21 },
+            "barcodes": [],
+            "templateMatches": [{ "template": "carrier-logo", "score": 0.31 }]
+          }
+        ]
+      },
+      "expect": { "pages": [{ "pageNumber": 1, "route": "A4", "ruleId": null }] }
+    }
+  ]
+}

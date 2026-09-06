@@ -25,7 +25,8 @@ import type {
   OcrRequest,
   PageDecision,
   PageEvaluation,
-  RuleTrace
+  RuleTrace,
+  TemplateRequest
 } from './trace.js';
 
 export interface EngineOptions {
@@ -137,7 +138,8 @@ export function evaluatePage(
     carrier,
     ruleId: '',
     ocrRequests: [],
-    ocrRectsUsed: new Set<string>()
+    ocrRectsUsed: new Set<string>(),
+    templateRequests: []
   };
 
   const ruleTraces: RuleTrace[] = [];
@@ -152,8 +154,14 @@ export function evaluatePage(
     context.ruleId = rule.id;
     const predicate = evaluatePredicate(rule.when, context);
 
-    if (context.ocrRequests.length > 0) {
-      return { status: 'needs-features', ocr: dedupeOcr(context.ocrRequests) };
+    if (context.ocrRequests.length > 0 || context.templateRequests.length > 0) {
+      // Both kinds go back in one round rather than one request at a time: a rule that wants
+      // OCR *and* a template would otherwise cost two extra passes over the document.
+      return {
+        status: 'needs-features',
+        ocr: dedupeOcr(context.ocrRequests),
+        templates: dedupeTemplates(context.templateRequests)
+      };
     }
 
     ruleTraces.push({
@@ -283,6 +291,20 @@ function dedupeOcr(requests: OcrRequest[]): OcrRequest[] {
   return unique;
 }
 
+/** One request per page and template; a rule set asking twice costs one match, not two. */
+function dedupeTemplates(requests: TemplateRequest[]): TemplateRequest[] {
+  const seen = new Set<string>();
+  const unique: TemplateRequest[] = [];
+  for (const request of requests) {
+    const key = `${request.pageNumber}:${request.template}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(request);
+    }
+  }
+  return unique;
+}
+
 /**
  * Evaluates a whole document, applying the document-level expectations that turn
  * "no page qualified" into an explicit, actionable fallback instead of a silent A4 job.
@@ -293,21 +315,27 @@ export function evaluateDocument(
   options: EngineOptions = {}
 ):
   | { status: 'decided'; document: DocumentDecision }
-  | { status: 'needs-features'; ocr: OcrRequest[] } {
+  | { status: 'needs-features'; ocr: OcrRequest[]; templates: TemplateRequest[] } {
   const decisions: PageDecision[] = [];
   const pending: OcrRequest[] = [];
+  const pendingTemplates: TemplateRequest[] = [];
 
   for (const page of document.pages) {
     const evaluation = evaluatePage(profile, page, document, options);
     if (evaluation.status === 'needs-features') {
       pending.push(...evaluation.ocr);
+      pendingTemplates.push(...evaluation.templates);
       continue;
     }
     decisions.push(evaluation.decision);
   }
 
-  if (pending.length > 0) {
-    return { status: 'needs-features', ocr: dedupeOcr(pending) };
+  if (pending.length > 0 || pendingTemplates.length > 0) {
+    return {
+      status: 'needs-features',
+      ocr: dedupeOcr(pending),
+      templates: dedupeTemplates(pendingTemplates)
+    };
   }
 
   const result: DocumentDecision = { profile: profile.profile, pages: decisions };

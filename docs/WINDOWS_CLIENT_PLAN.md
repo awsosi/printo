@@ -654,7 +654,7 @@ Nothing ships on "it looked right".
 | # | State | Evidence |
 |---|---|---|
 | **M1** | **Blocked** | Both spikes build and self-test; binding a real queue needs one elevated `Add-Printer`. Neither capture question is answered yet — section 5.0. |
-| **M2** | **Complete** | 1266/1266 corpus pages routed correctly in **both** text-layer modes; 67 conformance fixtures pass on the TypeScript **and** C# engines; 0 pages attributed to GLS. The agent extracts its own features (geometry, ink box, text, barcodes, OCR) and `FeatureParityTests` proves they match the calibrated extractor — identical routing over 117 real pages, exact geometry, identical barcode decoding. Caveat unchanged: barcode predicates cannot be validated against real barcodes on this corpus (section 1.5a), and picture matching has no extractor yet. |
+| **M2** | **Complete** | 1266/1266 corpus pages routed correctly in **both** text-layer modes; 67 conformance fixtures pass on the TypeScript **and** C# engines; 0 pages attributed to GLS. The agent extracts its own features (geometry, ink box, text, barcodes, OCR) and `FeatureParityTests` proves they match the calibrated extractor — identical routing over 117 real pages, exact geometry, identical barcode decoding. Caveat unchanged: barcode predicates cannot be validated against real barcodes on this corpus (section 1.5a), and picture matching is now implemented (section 10.5). |
 | **M3** | **Complete but for hardware** | PDFium render with a true region crop, the transform maths, whole-sheet composition against the *printable* area, GDI output, raw ZPL, printer profiles with calibration, printer discovery, and a recording device. Six render-diff cases against checked-in reference images. Printable geometry is read from a real installed driver in a test. **Not done:** the physical matrix on CITIZEN / 4BARCODE / ZEBRA and on A4 lasers — postponed by the customer to a joint session (section 10.2). |
 | **M4** | **Complete but for capture** | Durable spool (idempotent intake, single-winner claim, lease-based recovery, backoff, poison queue), hot folders, job processor, work loop, fallback picker, Windows service host, tray and service/tray IPC. Soak: 30 documents across three worker lifetimes, nothing lost or duplicated. Picker measured on screen in 209-221 ms *in the foreground*. **Not done:** virtual-printer ingress, which is blocked on M1. |
 | **M5** | **Complete but for the worker** | Fleet schema (13 tables) and API, verified by running all 12 migrations from empty against real Postgres. Agent enrolment with a per-machine key, bundle sync with checksum verification and a 304 fast path, heartbeat, printer reporting, and job/trace/fallback reporting. All three decision modes implemented and tested, including server-unreachable behaviour for each. Bundles are validated at publish time against the shared schema, so a rule set neither engine could execute is a 400 rather than a fleet-wide outage. Retention runs on an advisory-locked schedule instead of only on a button. 20 API tests against Postgres, 168 C# tests, 130 routing-engine tests. **Not done:** the worker's own adoption of the shared engine — see section 10.3. |
@@ -740,6 +740,38 @@ naming the exact failing path. What does *not* exist is uploading a sample PDF a
 rectangle over it in the browser to author the rule visually. The fallback path covers the
 common case - a document that already failed produces its own rule - and authoring from a
 sample is JSON today.
+
+### 10.5 Picture matching
+
+The `image` predicate was in the schema, validated and traced, while nothing could populate a
+template match - so a rule using it validated cleanly and could never fire. That is worse than
+an absent feature, because it looks configured.
+
+It now works, through the same lazy two-phase protocol OCR uses: the engine reports which
+templates it needs matched on which pages, the host - the only side holding the pixels - runs
+the match, and evaluation repeats. Both engines implement the request side; only the agent
+implements the matcher, which is exactly the OCR arrangement.
+
+- **Normalised cross-correlation**, so a logo printed lightly on one head and heavily on another
+  scores the same. A pixel-difference metric would reject the lighter one.
+- **Scale is physical.** A template carries the dpi it was captured at, the page is rendered to
+  match, and an 18 mm logo is looked for at 18 mm.
+- **Coarse-to-fine.** Exhaustive NCC of a 40x48 template over an A4 page at 150 dpi is about
+  4 billion operations and took **35 seconds** when the first implementation derived its scale
+  factor from the template size alone. Deriving it from the *cost* instead - both images shrink
+  in both axes, so work falls as the fourth power - brings the same search, finding the same
+  peak at the same pixel, to well under a tenth of a second.
+- **A result is recorded even when it scores badly, and even when the bundle is missing the
+  picture.** Otherwise the engine cannot tell "scored 0.2" from "nobody looked", asks again on
+  the second pass, and the job fails as a rule set that asked twice - blaming the rules for a
+  missing image.
+
+Four conformance fixtures pin the protocol on both engines; four end-to-end tests take a real
+PDF through PDFium, a PNG cut from a rendering of it, the engine's request, the matcher and the
+printer.
+
+**Still missing:** a tool for cropping a template out of a sample PDF. The reference image has
+to be produced by hand and pasted into the bundle as base64.
 
 Each milestone is committed and pushed to `github.com/awsosi/printo` as it completes.
 

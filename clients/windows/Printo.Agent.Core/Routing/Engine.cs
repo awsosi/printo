@@ -164,9 +164,12 @@ public static class RoutingEngine
             context.RuleId = rule.Id;
             var predicate = PredicateEvaluator.Evaluate(rule.When, context);
 
-            if (context.OcrRequests.Count > 0)
+            if (context.OcrRequests.Count > 0 || context.TemplateRequests.Count > 0)
             {
-                return PageEvaluation.NeedsOcr(Dedupe(context.OcrRequests));
+                // Both kinds go back in one round rather than one request at a time: a rule
+                // that wants OCR *and* a template would otherwise cost two extra passes.
+                return PageEvaluation.NeedsOcr(
+                    Dedupe(context.OcrRequests), DedupeTemplates(context.TemplateRequests));
             }
 
             ruleTraces.Add(new RuleTrace
@@ -334,6 +337,7 @@ public static class RoutingEngine
     {
         var decisions = new List<PageDecision>();
         var pending = new List<OcrRequest>();
+        var pendingTemplates = new List<TemplateRequest>();
 
         foreach (var page in document.Pages)
         {
@@ -341,15 +345,16 @@ public static class RoutingEngine
             if (evaluation.NeedsFeatures)
             {
                 pending.AddRange(evaluation.Ocr);
+                pendingTemplates.AddRange(evaluation.Templates);
                 continue;
             }
 
             decisions.Add(evaluation.Decision!);
         }
 
-        if (pending.Count > 0)
+        if (pending.Count > 0 || pendingTemplates.Count > 0)
         {
-            return DocumentEvaluation.NeedsOcr(Dedupe(pending));
+            return DocumentEvaluation.NeedsOcr(Dedupe(pending), DedupeTemplates(pendingTemplates));
         }
 
         DocumentFallbackOutcome? fallback = null;
@@ -402,6 +407,22 @@ public static class RoutingEngine
         foreach (var request in requests)
         {
             if (seen.Add($"{request.PageNumber}:{request.Key}"))
+            {
+                unique.Add(request);
+            }
+        }
+
+        return unique;
+    }
+
+    /// <summary>One request per page and template; a rule asking twice costs one match.</summary>
+    private static List<TemplateRequest> DedupeTemplates(IReadOnlyList<TemplateRequest> requests)
+    {
+        var seen = new HashSet<string>();
+        var unique = new List<TemplateRequest>();
+        foreach (var request in requests)
+        {
+            if (seen.Add($"{request.PageNumber}:{request.Template}"))
             {
                 unique.Add(request);
             }

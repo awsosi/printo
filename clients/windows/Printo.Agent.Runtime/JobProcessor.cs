@@ -128,6 +128,10 @@ public sealed class JobProcessor
     private IRoutingDecider Decider =>
         decider ??= new LocalDecider(() => new RuleBundle { Profiles = Profiles });
 
+    /// <summary>Reference images that image rules match against, supplied from the rule bundle.</summary>
+    public IReadOnlyDictionary<string, BundleTemplate> Templates { get; init; } =
+        new Dictionary<string, BundleTemplate>(StringComparer.Ordinal);
+
     /// <summary>Processes a claimed job.</summary>
     /// <param name="job">The claimed job.</param>
     /// <param name="userSelectedThermalPages">
@@ -154,7 +158,7 @@ public sealed class JobProcessor
         var features = extractor.Extract(document, job.FileName);
         spool.SetPageCount(job.Id, features.PageCount);
 
-        var resolved = Decider.Decide(features, new PageOcrFiller(document, ocr));
+        var resolved = Decider.Decide(features, new PageOcrFiller(document, ocr, Templates));
 
         switch (resolved.Status)
         {
@@ -283,16 +287,26 @@ public sealed class JobProcessor
     /// The same filler serves the local engine and the server one: only the workstation holds
     /// the pixels, so a server that answers `needs-features` is answered from here too.
     /// </remarks>
-    private sealed class PageOcrFiller(PdfDocument document, IOcrEngine? ocr) : IOcrFiller
+    private sealed class PageOcrFiller(
+        PdfDocument document,
+        IOcrEngine? ocr,
+        IReadOnlyDictionary<string, BundleTemplate> templates) : IOcrFiller
     {
-        public DocumentFeatures? Fill(DocumentFeatures features, IReadOnlyList<OcrRequest> requests)
+        public DocumentFeatures? Fill(
+            DocumentFeatures features,
+            IReadOnlyList<OcrRequest> requests,
+            IReadOnlyList<TemplateRequest> templateRequests)
         {
-            if (ocr is null)
+            if (ocr is null && requests.Count > 0)
             {
+                // Only an OCR request this machine cannot serve is unanswerable. A template
+                // request is always answerable: the bundle either carries the picture or it
+                // does not, and either way the answer is a score.
                 return null;
             }
 
             var pages = features.Pages.ToList();
+
             foreach (var group in requests.GroupBy(request => request.PageNumber))
             {
                 var index = pages.FindIndex(page => page.PageNumber == group.Key);
@@ -302,7 +316,19 @@ public sealed class JobProcessor
                 }
 
                 using var source = document.OpenPage(group.Key - 1);
-                pages[index] = PageFeatureExtractor.WithOcr(pages[index], source, group, ocr);
+                pages[index] = PageFeatureExtractor.WithOcr(pages[index], source, group, ocr!);
+            }
+
+            foreach (var group in templateRequests.GroupBy(request => request.PageNumber))
+            {
+                var index = pages.FindIndex(page => page.PageNumber == group.Key);
+                if (index < 0)
+                {
+                    continue;
+                }
+
+                using var source = document.OpenPage(group.Key - 1);
+                pages[index] = WithTemplates(pages[index], source, group, templates);
             }
 
             return new DocumentFeatures
@@ -311,6 +337,73 @@ public sealed class JobProcessor
                 SourceApp = features.SourceApp,
                 PageCount = features.PageCount,
                 Pages = pages,
+            };
+        }
+
+        /// <summary>
+        /// Runs the requested template matches and records every result, whatever it scored.
+        /// </summary>
+        /// <remarks>
+        /// A result is recorded even when the bundle does not carry the picture, at score zero.
+        /// Without it the engine would see "no match for this template" on the second pass
+        /// exactly as on the first, ask again, and the job would fail as a rule set that asked
+        /// twice - blaming the rules for a missing image.
+        /// </remarks>
+        private static PageFeatures WithTemplates(
+            PageFeatures page,
+            PdfPage source,
+            IEnumerable<TemplateRequest> requests,
+            IReadOnlyDictionary<string, BundleTemplate> available)
+        {
+            var matches = page.TemplateMatches?.ToList() ?? [];
+
+            foreach (var request in requests)
+            {
+                if (!available.TryGetValue(request.Template, out var template))
+                {
+                    matches.Add(new TemplateMatch { Template = request.Template, Score = 0 });
+                    continue;
+                }
+
+                TemplateMatchResult? found;
+                try
+                {
+                    found = TemplateMatcher.Match(source, request.Rect, template.Png, template.Dpi);
+                }
+                catch (Exception error) when (error is InvalidDataException or ArgumentException)
+                {
+                    // A corrupt or absurd template is a bundle problem, not a routing question.
+                    // Scoring it zero lets the rule fail cleanly and the trace say why.
+                    found = null;
+                }
+
+                matches.Add(found is null
+                    ? new TemplateMatch { Template = request.Template, Score = 0 }
+                    : new TemplateMatch
+                    {
+                        Template = request.Template,
+                        Score = found.Score,
+                        XMm = found.Rect.XMm,
+                        YMm = found.Rect.YMm,
+                        WidthMm = found.Rect.WidthMm,
+                        HeightMm = found.Rect.HeightMm,
+                    });
+            }
+
+            return new PageFeatures
+            {
+                PageNumber = page.PageNumber,
+                PageCount = page.PageCount,
+                PageWidthMm = page.PageWidthMm,
+                PageHeightMm = page.PageHeightMm,
+                Orientation = page.Orientation,
+                Rotation = page.Rotation,
+                Text = page.Text,
+                TextLines = page.TextLines,
+                InkBox = page.InkBox,
+                Barcodes = page.Barcodes,
+                OcrRegions = page.OcrRegions,
+                TemplateMatches = matches,
             };
         }
     }

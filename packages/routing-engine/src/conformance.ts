@@ -41,6 +41,11 @@ export interface ConformanceFixture {
    * Used to pin the lazy-evaluation contract, not just the final answer.
    */
   expectNeedsOcr?: Array<{ pageNumber: number; key: string; ruleId?: string }>;
+  /**
+   * When set, the engine must stop and ask for exactly these template matches on the first
+   * pass. Pins the same laziness contract as `expectNeedsOcr`, for picture rules.
+   */
+  expectNeedsTemplates?: Array<{ pageNumber: number; template: string; ruleId?: string }>;
   expect?: {
     pages?: ExpectedPageOutcome[];
     document?: ExpectedDocumentOutcome;

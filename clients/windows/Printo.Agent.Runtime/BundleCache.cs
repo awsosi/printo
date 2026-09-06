@@ -5,7 +5,25 @@ using Printo.Agent.Core.Routing;
 
 namespace Printo.Agent.Runtime;
 
-/// <summary>A rule bundle as the agent holds it: profiles, carrier signatures, version.</summary>
+/// <summary>A reference image an <c>image</c> predicate matches against.</summary>
+/// <remarks>
+/// Carried in the bundle rather than fetched separately so a workstation that has synced its
+/// rules can evaluate them offline. That is the whole premise of the local decision mode, and a
+/// template behind a URL would quietly break it the first time the network went down.
+/// </remarks>
+public sealed class BundleTemplate
+{
+    /// <summary>Name an <c>image</c> predicate refers to.</summary>
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>PNG bytes, decoded from the bundle's base64.</summary>
+    public byte[] Png { get; init; } = [];
+
+    /// <summary>Resolution the reference was captured at, so the page can be rendered to suit.</summary>
+    public double Dpi { get; init; } = 150;
+}
+
+/// <summary>A rule bundle as the agent holds it: profiles, signatures, templates, version.</summary>
 public sealed class RuleBundle
 {
     public long? Version { get; init; }
@@ -13,6 +31,10 @@ public sealed class RuleBundle
     public required IReadOnlyList<RoutingProfileRules> Profiles { get; init; }
 
     public IReadOnlyList<CarrierSignatureSet>? CarrierSignatures { get; init; }
+
+    /// <summary>Reference images, by name.</summary>
+    public IReadOnlyDictionary<string, BundleTemplate> Templates { get; init; } =
+        new Dictionary<string, BundleTemplate>(StringComparer.Ordinal);
 
     /// <summary>True when these are the profiles compiled into the agent, not a synced bundle.</summary>
     public bool IsBuiltin => Version is null;
@@ -151,11 +173,46 @@ public sealed class BundleCache(string path)
             signatures = carriers.Deserialize<List<CarrierSignatureSet>>(RoutingJson.Options);
         }
 
+        var templates = new Dictionary<string, BundleTemplate>(StringComparer.Ordinal);
+        if (payload.TryGetProperty("templates", out var declared) && declared.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var entry in declared.EnumerateArray())
+            {
+                if (!entry.TryGetProperty("name", out var name)
+                    || !entry.TryGetProperty("png", out var png)
+                    || name.GetString() is not { Length: > 0 } templateName
+                    || png.GetString() is not { Length: > 0 } encoded)
+                {
+                    throw new InvalidDataException("a bundle template is missing its name or image");
+                }
+
+                byte[] bytes;
+                try
+                {
+                    bytes = Convert.FromBase64String(encoded);
+                }
+                catch (FormatException error)
+                {
+                    throw new InvalidDataException($"template '{templateName}' is not valid base64", error);
+                }
+
+                templates[templateName] = new BundleTemplate
+                {
+                    Name = templateName,
+                    Png = bytes,
+                    Dpi = entry.TryGetProperty("dpi", out var dpi) && dpi.ValueKind == JsonValueKind.Number
+                        ? dpi.GetDouble()
+                        : 150,
+                };
+            }
+        }
+
         return new RuleBundle
         {
             Version = cached.Version,
             Profiles = parsed,
             CarrierSignatures = signatures is { Count: > 0 } ? signatures : null,
+            Templates = templates,
         };
     }
 

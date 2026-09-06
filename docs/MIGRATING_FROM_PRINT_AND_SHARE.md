@@ -14,7 +14,7 @@ working, so the decision to switch is one you make after seeing the evidence, no
 | Print&Share | Printo | Notes |
 |---|---|---|
 | Server-side routing profiles | **Rule bundle**, published from the fleet console | One versioned document for the whole fleet, validated before it reaches a machine |
-| Picture / snippet match | `image` predicate | **Schema only — see §5.** |
+| Picture / snippet match | `image` predicate | Normalised cross-correlation against a reference image carried in the bundle |
 | Text match | `text` predicate | Plus `withinRect`, so a rule can say "the words that decide this live *here*" |
 | OCR match | `ocr` predicate | Run only for the rectangles a rule asks for, never speculatively |
 | — | `barcode` predicate | New. Symbology, value, count, and position |
@@ -130,17 +130,48 @@ through the fallback queue, produces rules fitted to what you actually print.
 - **Media, offsets, zoom and copies are configurable centrally and overridable per agent and per
   printer**, with the effective value and its source recorded on every job.
 
-## 5. What Printo does not do yet
+## 5. Picture matching
+
+The closest thing to a direct Print&Share equivalent, and it works the same way in spirit: a
+reference image, a threshold, and an optional search area.
+
+```jsonc
+// In the bundle, alongside `profiles`:
+"templates": [
+  { "name": "dhl-logo", "png": "<base64 PNG>", "dpi": 150, "description": "MyDHL header logo" }
+]
+```
+
+```jsonc
+// In a rule:
+{ "image": { "template": "dhl-logo", "threshold": 0.8, "searchRect": { "unit": "pageFraction", "x": 0, "y": 0, "w": 1, "h": 0.3 } } }
+```
+
+Four things worth knowing before porting a snippet rule:
+
+- **The score is normalised cross-correlation**, so it is invariant to brightness and contrast.
+  The same logo printed lightly on one thermal head and heavily on another scores the same,
+  which a plain pixel difference would not.
+- **Scale is physical, not pixel.** The template's `dpi` says what resolution it was captured
+  at, and the page is rendered to match, so a logo occupying 18 mm on the reference is looked
+  for at 18 mm on the page. A template captured at the wrong dpi will not match.
+- **It is lazy.** A page settled by an earlier geometry or text rule is never rasterized for a
+  picture match at all. Put the cheap rules first.
+- **Give it a `searchRect` when you can.** The whole page is searched otherwise, which works —
+  a full A4 page at 150 dpi takes well under a tenth of a second — but narrowing it is both
+  faster and less likely to match something else that happens to look similar.
+
+Thresholds: 0.8 is a reasonable starting point. The trace records the score actually reached,
+so a rule that is not firing tells you whether it missed by 0.01 or by 0.5.
+
+## 6. What Printo does not do yet
 
 Stated plainly, because the gap that matters most is the one closest to a Print&Share feature
 you may rely on:
 
-- **Picture matching is not implemented.** The `image` predicate exists in the schema, is
-  validated, and is carried through traces — but nothing populates template matches, so a rule
-  using it never matches. If your Print&Share profiles lean on snippet matching, expect to
-  express those rules with `geometry` plus `carrier`, `text` or `barcode` instead. On the sample
-  corpus that combination routes all 1266 pages correctly, so this is a real gap rather than a
-  blocking one — but it is a gap.
+- **There is no tool for cutting a template out of a sample PDF.** Picture matching itself
+  works — see §6 — but the reference image has to be produced by hand and pasted into the bundle
+  as base64. Deriving a rule from a logged fallback is one click; cropping a logo is not.
 - **The visual rule editor does not exist.** Rules are authored as JSON in the console, which
   validates them and names the exact path of anything either engine could not execute. Deriving
   a rule from a logged fallback is one click; drawing a rectangle on a sample PDF is not

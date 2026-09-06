@@ -114,9 +114,26 @@ export interface OcrRequest {
  * synchronous, the worker is not — evaluation returns `needs-features`, the host fills the
  * requested regions in, and evaluation is repeated. Two passes is the maximum.
  */
+/**
+ * A template match the host must perform before the rule can be evaluated.
+ *
+ * The same laziness as OCR, for the same reason: rasterizing every page against every template
+ * in the bundle would cost more than the routing decision is worth, and most pages are settled
+ * by geometry and text long before any rule asks for a picture.
+ */
+export interface TemplateRequest {
+  pageNumber: number;
+  /** Template name, as declared in the bundle. */
+  template: string;
+  /** Where to look. Resolved from the rule's `searchRect`, or the whole page. */
+  rect: RectMm;
+  /** The rule that asked, for logging. */
+  ruleId: string;
+}
+
 export type PageEvaluation =
   | { status: 'decided'; decision: PageDecision }
-  | { status: 'needs-features'; ocr: OcrRequest[] };
+  | { status: 'needs-features'; ocr: OcrRequest[]; templates: TemplateRequest[] };
 
 /** Document-level result. */
 export interface DocumentDecision {

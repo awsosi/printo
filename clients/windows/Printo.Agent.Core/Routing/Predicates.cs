@@ -28,6 +28,9 @@ public sealed class EvaluationContext
 
     /// <summary>Keys of OCR regions that were actually consulted.</summary>
     public HashSet<string> OcrRectsUsed { get; } = [];
+
+    /// <summary>Filled by <c>image</c> predicates whose template the host has not matched yet.</summary>
+    public List<TemplateRequest> TemplateRequests { get; } = [];
 }
 
 public static class PredicateEvaluator
@@ -431,12 +434,31 @@ public static class PredicateEvaluator
 
         if (relevant.Count == 0)
         {
+            // Not "no match" - *not attempted*. The host records a result for every template it
+            // tries, whatever it scored, so those two cases stay distinguishable. Collapsing
+            // them would make a template scoring 0.2 indistinguishable from one nobody looked
+            // for, and the engine would either loop asking for it or read "unseen" as "absent".
+            var searchRect = condition.SearchRect is null
+                ? Geometry.PageRect(page)
+                : ResolveRect(condition.SearchRect, page);
+
+            if (searchRect is not null)
+            {
+                context.TemplateRequests.Add(new TemplateRequest
+                {
+                    PageNumber = page.PageNumber,
+                    Template = condition.Template,
+                    Rect = searchRect,
+                    RuleId = context.RuleId,
+                });
+            }
+
             return Leaf(
                 "image",
                 path,
                 false,
                 $"template {condition.Template} >= {condition.Threshold}",
-                matches.Count == 0 ? "no template matching performed" : "template not matched");
+                searchRect is not null ? "template match pending" : "searchRect unresolved");
         }
 
         var best = relevant.MaxBy(match => match.Score)!;

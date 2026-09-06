@@ -66,6 +66,30 @@ public sealed class ConformanceTests
         var profile = fixture.ResolveProfile();
         var evaluation = RoutingEngine.EvaluateDocument(profile, fixture.Document);
 
+        if (fixture.ExpectNeedsTemplates is { Count: > 0 })
+        {
+            Assert.True(evaluation.NeedsFeatures, $"{where}: expected the engine to request a template match");
+            var actualTemplates = evaluation.Templates
+                .Select(request => $"{request.PageNumber}:{request.Template}")
+                .OrderBy(value => value, StringComparer.Ordinal)
+                .ToList();
+            var expectedTemplates = fixture.ExpectNeedsTemplates
+                .Select(request => $"{request.PageNumber}:{request.Template}")
+                .OrderBy(value => value, StringComparer.Ordinal)
+                .ToList();
+            Assert.Equal(expectedTemplates, actualTemplates);
+
+            foreach (var request in fixture.ExpectNeedsTemplates.Where(entry => entry.RuleId is not null))
+            {
+                var match = evaluation.Templates.FirstOrDefault(entry =>
+                    entry.PageNumber == request.PageNumber && entry.Template == request.Template);
+                Assert.NotNull(match);
+                Assert.Equal(request.RuleId, match!.RuleId);
+            }
+
+            return;
+        }
+
         if (fixture.ExpectNeedsOcr is { Count: > 0 })
         {
             Assert.True(evaluation.NeedsFeatures, $"{where}: expected the engine to request OCR");

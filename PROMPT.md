@@ -164,8 +164,11 @@ Two honest gaps, both recorded in plan section 1.5:
 1. **Barcode predicates are unvalidated against real barcodes.** The anonymiser destroyed
    them — only 4 of 1266 pages decode. Implemented and unit-tested, but unproven on real data.
    Needs either a few non-anonymised PDFs or an anonymiser that re-encodes valid barcodes.
-2. **Template/picture matching has no extractor.** The `image` predicate is specified, wired
-   and traced, but nothing populates `templateMatches` yet. Needed for Print&Share parity (M6).
+2. **Picture matching has no authoring tool.** The matching itself works end to end - normalised
+   cross-correlation against a template carried in the bundle, requested lazily through the same
+   two-phase protocol as OCR (plan section 10.5). What is missing is a way to crop a reference
+   image out of a sample PDF in the console; today it is produced by hand and pasted in as
+   base64.
 
 ### M3 — what landed, and what is deliberately not claimed
 
@@ -207,8 +210,8 @@ which capture tier works. Hot folders are the working intake path meanwhile.
 
 ```bash
 npm run lint && npm run typecheck                      # repo-wide, must stay green
-npx vitest run --root packages/routing-engine          # 130 tests incl. golden corpus
-dotnet test clients/windows/Printo.Agent.Tests         # 179 tests incl. corpus parity and soak
+npx vitest run --root packages/routing-engine          # 141 tests incl. golden corpus
+dotnet test clients/windows/Printo.Agent.Tests         # 191 tests incl. corpus parity and soak
 npm run smoke:prod                                     # builds the production images, asserts the stack
 pwsh clients/windows/installer/build.ps1 -Version 0.1.0           # builds the agent MSI
 Printo.Tray.exe --picker <document.pdf> [pages]        # measure the picker, prints timing
