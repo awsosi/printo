@@ -6,7 +6,9 @@ import {
   matchProfile,
   parseBundlePayload,
   parseDocumentFeatures,
+  proposeRuleFromFallback,
   WireFormatError,
+  type DocumentDecision,
   type EngineOptions,
   type RuleBundlePayload
 } from '@printo/routing-engine';
@@ -490,6 +492,57 @@ export function createAgentRouter(store: AgentStore): Router {
     const filter =
       status === 'OPEN' || status === 'RESOLVED' || status === 'DISMISSED' ? status : undefined;
     return res.json({ items: await store.listReviewQueue(filter) });
+  });
+
+  /**
+   * Derives a rule from a logged fallback, and stores it on the review item.
+   *
+   * This is the loop the whole fallback pipeline exists to close: a page an operator had to
+   * classify by hand carries, in its trace, the exact measurements the engine made of it, and
+   * a rule that would have matched those measurements is derivable from them.
+   *
+   * It stores a *proposal*, and stops. Publishing stays a separate, deliberate act: pushing a
+   * machine-written rule to thirty workstations on one click is how a fleet starts printing
+   * invoices on label stock at four in the afternoon.
+   */
+  router.post('/admin/review-queue/:id/propose-rule', ...admin, async (req, res) => {
+    const found = await store.getReviewItem(req.params.id);
+    if (!found) {
+      return res.status(404).json({ error: 'REVIEW_ITEM_NOT_FOUND' });
+    }
+
+    const fallback = found.fallback;
+    if (!fallback?.trace) {
+      // A fallback recorded without a trace cannot become a rule, and saying so beats
+      // returning an empty proposal that looks like the feature not working.
+      return res.status(422).json({ error: 'NO_TRACE', detail: 'this fallback carries no rule trace' });
+    }
+
+    const selection = fallback.userSelection ?? fallback.engineSelection;
+    const proposal = proposeRuleFromFallback(
+      fallback.trace as unknown as DocumentDecision,
+      selection,
+      req.body?.toleranceFraction === undefined
+        ? {}
+        : { toleranceFraction: Number(req.body.toleranceFraction) }
+    );
+
+    if (!proposal) {
+      return res.status(422).json({
+        error: 'NOT_DERIVABLE',
+        detail:
+          selection.length === 0
+            ? 'the operator sent every page to A4, which the profile default already does'
+            : 'the page has no measured ink box to key a rule on'
+      });
+    }
+
+    // Kept on the item so the proposal survives a page reload and is visible to whoever
+    // eventually publishes it, rather than living only in one admin's browser. The item's
+    // status is untouched: a proposal is something to read, not a decision.
+    await store.setProposedRule(found.item.id, proposal as unknown as JsonObject);
+
+    return res.json({ proposal });
   });
 
   router.post('/admin/review-queue/:id/resolve', ...admin, async (req, res) => {

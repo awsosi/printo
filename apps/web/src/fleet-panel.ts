@@ -225,6 +225,23 @@ export function fleetPanelScript(): string {
           }).join('') || '<div class="item muted">No individual events recorded.</div>';
         }
 
+        /** Shows a derived rule with the reasoning behind it, ready to be read and edited. */
+        function renderProposal(proposal) {
+          const rationale = (proposal.rationale || []).map(function (line) {
+            return '<li>' + escapeHtml(line) + '</li>';
+          }).join('');
+
+          return '<div class="item stack">' +
+            '<strong>Proposed rule</strong>' +
+            '<ul class="muted">' + rationale + '</ul>' +
+            '<textarea rows="10" spellcheck="false" readonly>' +
+              escapeHtml(JSON.stringify(proposal.rule, null, 2)) +
+            '</textarea>' +
+            '<button type="button" class="secondary" data-review-adopt="' +
+              escapeHtml(JSON.stringify(proposal.rule)) + '">Add it to the bundle editor</button>' +
+          '</div>';
+        }
+
         function renderFleetReview() {
           const target = byId('fleetReviewList');
           const open = fleet.review.filter(function (item) { return item.status === 'OPEN'; });
@@ -240,10 +257,12 @@ export function fleetPanelScript(): string {
               '<div class="section-title"><strong>' + escapeHtml(item.reason) + '</strong>' +
               '<span class="pill">' + escapeHtml(fleetAgo(item.createdAt)) + '</span></div>' +
               '<label>What was done<input type="text" data-review-note="' + escapeHtml(item.id) + '" placeholder="Widened the inkAspect range on dhl-label-embedded" /></label>' +
+              (item.proposedRule ? renderProposal(item.proposedRule) : '') +
               '<div class="grid2">' +
+                '<button type="button" data-review-propose="' + escapeHtml(item.id) + '">Propose a rule</button>' +
                 '<button type="button" data-review-resolve="' + escapeHtml(item.id) + '">Resolved</button>' +
-                '<button type="button" class="secondary" data-review-dismiss="' + escapeHtml(item.id) + '">Dismiss</button>' +
               '</div>' +
+              '<button type="button" class="secondary" data-review-dismiss="' + escapeHtml(item.id) + '">Dismiss</button>' +
             '</div>';
           }).join('');
         }
@@ -384,6 +403,45 @@ export function fleetPanelScript(): string {
           const reviewList = byId('fleetReviewList');
           if (reviewList) {
             reviewList.addEventListener('click', async function (event) {
+              const propose = event.target.getAttribute && event.target.getAttribute('data-review-propose');
+              if (propose) {
+                try {
+                  await request('/admin/review-queue/' + encodeURIComponent(propose) + '/propose-rule', 'POST', {});
+                  await loadFleet();
+                } catch (error) {
+                  fleetSetStatus('fleetTokenResult', 'Could not derive a rule: ' + error.message, 'danger');
+                }
+                return;
+              }
+
+              const adopt = event.target.getAttribute && event.target.getAttribute('data-review-adopt');
+              if (adopt) {
+                // Into the editor, never straight to the fleet. A machine-written rule is a
+                // proposal an administrator reads, edits and publishes deliberately.
+                const editor = byId('fleetBundleEditor');
+                let bundle;
+                try {
+                  bundle = JSON.parse(editor.value);
+                } catch (error) {
+                  fleetSetStatus('fleetBundleStatus', 'Load a bundle first: ' + error.message, 'danger');
+                  return;
+                }
+
+                const rule = JSON.parse(adopt);
+                const profile = (bundle.profiles || [])[0];
+                if (!profile) {
+                  fleetSetStatus('fleetBundleStatus', 'The bundle has no profile to add the rule to.', 'danger');
+                  return;
+                }
+
+                // Prepended: a more specific rule has to be tried before the general ones it
+                // was derived to fix, or it never matches.
+                profile.pageRules = [rule].concat(profile.pageRules || []);
+                editor.value = JSON.stringify(bundle, null, 2);
+                fleetSetStatus('fleetBundleStatus', 'Added to the editor. Review it, then publish.', 'ok');
+                return;
+              }
+
               const resolve = event.target.getAttribute && event.target.getAttribute('data-review-resolve');
               const dismiss = event.target.getAttribute && event.target.getAttribute('data-review-dismiss');
               const id = resolve || dismiss;

@@ -110,6 +110,15 @@ export interface AgentStore {
   summariseFallbacks(): Promise<FallbackSummaryRow[]>;
 
   listReviewQueue(status?: ReviewQueueRecord['status']): Promise<ReviewQueueRecord[]>;
+
+  /** Attaches a derived rule to a review item without changing its status. */
+  setProposedRule(id: string, rule: JsonObject): Promise<ReviewQueueRecord | null>;
+
+  /** The review item and the fallback it came from, which carries the engine's trace. */
+  getReviewItem(id: string): Promise<{
+    item: ReviewQueueRecord;
+    fallback: FallbackEventRecord | null;
+  } | null>;
   resolveReviewItem(input: {
     id: string;
     status: 'RESOLVED' | 'DISMISSED';
@@ -613,6 +622,37 @@ export class PostgresAgentStore implements AgentStore {
         )
       : await this.pool.query('SELECT * FROM review_queue ORDER BY created_at DESC LIMIT 200');
     return result.rows.map(mapReview);
+  }
+
+  async getReviewItem(id: string): Promise<{
+    item: ReviewQueueRecord;
+    fallback: FallbackEventRecord | null;
+  } | null> {
+    const found = await this.pool.query('SELECT * FROM review_queue WHERE id = $1', [id]);
+    if (!found.rowCount) {
+      return null;
+    }
+
+    const item = mapReview(found.rows[0]);
+    if (!item.fallbackEventId) {
+      return { item, fallback: null };
+    }
+
+    const fallback = await this.pool.query('SELECT * FROM fallback_events WHERE id = $1', [
+      item.fallbackEventId
+    ]);
+
+    return { item, fallback: fallback.rowCount ? mapFallback(fallback.rows[0]) : null };
+  }
+
+  async setProposedRule(id: string, rule: JsonObject): Promise<ReviewQueueRecord | null> {
+    // Status is untouched on purpose: a proposal is something to read, not a decision. The
+    // item stays open until a person says what they did about it.
+    const result = await this.pool.query(
+      'UPDATE review_queue SET proposed_rule = $2 WHERE id = $1 RETURNING *',
+      [id, JSON.stringify(rule)]
+    );
+    return result.rowCount ? mapReview(result.rows[0]) : null;
   }
 
   async resolveReviewItem(input: {

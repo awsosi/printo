@@ -622,6 +622,149 @@ suite('agent API (postgres)', () => {
     ).toBe(404);
   });
 
+  it('turns a logged fallback into a rule that would have routed it', async () => {
+    const key = (await enroll(await newToken())).body.apiKey;
+
+    // A page no built-in rule claims: a small label-shaped region with no barcode, on a
+    // landscape sheet. The operator says it is the label.
+    const features = {
+      fileName: 'OneClickPrint_TEST.pdf',
+      pageCount: 1,
+      pages: [
+        {
+          pageNumber: 1,
+          pageCount: 1,
+          pageWidthMm: 297,
+          pageHeightMm: 210,
+          orientation: 'landscape',
+          rotation: 0,
+          text: null,
+          inkBox: { xMm: 12, yMm: 8, widthMm: 62, heightMm: 104, aspect: 1.68, coverage: 0.06 },
+          barcodes: []
+        }
+      ]
+    };
+
+    const decided = await request(app)
+      .post('/agents/me/decide')
+      .set('x-printo-agent-key', key)
+      .send({ features });
+
+    expect(decided.body.decision.pages[0].route).toBe('A4');
+
+    await request(app)
+      .post('/agents/me/jobs')
+      .set('x-printo-agent-key', key)
+      .send({
+        jobKey: 'fallback-to-rule',
+        source: 'HotFolder',
+        fileName: 'OneClickPrint_TEST.pdf',
+        documentSha256: 'abc',
+        pageCount: 1,
+        status: 'COMPLETED',
+        fallback: {
+          reasonCode: 'NO_THERMAL_CANDIDATE',
+          message: 'Expected at least 1 thermal page(s), found 0',
+          engineSelection: [],
+          userSelection: [1],
+          resolution: 'print',
+          decisionMs: 4200,
+          trace: decided.body.decision
+        }
+      });
+
+    const queue = await request(app)
+      .get('/admin/review-queue?status=OPEN')
+      .set('authorization', `Bearer ${adminToken}`);
+
+    const item = queue.body.items[0];
+    expect(item.reason).toBe('NO_THERMAL_CANDIDATE');
+
+    const proposed = await request(app)
+      .post(`/admin/review-queue/${item.id}/propose-rule`)
+      .set('authorization', `Bearer ${adminToken}`)
+      .send({});
+
+    expect(proposed.status).toBe(200);
+    const rule = proposed.body.proposal.rule;
+    expect(rule.then.route).toBe('THERMAL');
+    expect(rule.then.transform.source).toBe('inkBox');
+    expect(proposed.body.proposal.rationale.join(' ')).toContain('62 x 104 mm');
+
+    // The proposal is stored on the item, so it survives a page reload and is visible to
+    // whoever eventually publishes it - and the item stays open, because a proposal is
+    // something to read, not a decision.
+    const reloaded = await request(app)
+      .get('/admin/review-queue?status=OPEN')
+      .set('authorization', `Bearer ${adminToken}`);
+    expect(reloaded.body.items[0].proposedRule.rule.id).toBe(rule.id);
+    expect(reloaded.body.items[0].status).toBe('OPEN');
+
+    // The loop closes: publish a bundle carrying the derived rule, and the same page that
+    // needed a person now routes without one.
+    const bundle = bundlePayload() as { profiles: Array<{ pageRules: unknown[] }> };
+    bundle.profiles[0].pageRules = [rule, ...bundle.profiles[0].pageRules];
+
+    const published = await request(app)
+      .post('/admin/bundles')
+      .set('authorization', `Bearer ${adminToken}`)
+      .send({ payload: bundle, notes: 'adopted from a fallback' });
+
+    expect(published.status).toBe(201);
+
+    const again = await request(app)
+      .post('/agents/me/decide')
+      .set('x-printo-agent-key', key)
+      .send({ features });
+
+    expect(again.body.decision.pages[0].route).toBe('THERMAL');
+    expect(again.body.decision.pages[0].ruleId).toBe(rule.id);
+  });
+
+  it('refuses to invent a rule from a fallback with nothing to key on', async () => {
+    const key = (await enroll(await newToken())).body.apiKey;
+
+    await request(app)
+      .post('/agents/me/jobs')
+      .set('x-printo-agent-key', key)
+      .send({
+        jobKey: 'no-trace',
+        source: 'HotFolder',
+        fileName: 'x.pdf',
+        documentSha256: 'x',
+        status: 'COMPLETED',
+        fallback: {
+          reasonCode: 'AMBIGUOUS',
+          engineSelection: [1],
+          userSelection: [1],
+          resolution: 'print'
+        }
+      });
+
+    const queue = await request(app)
+      .get('/admin/review-queue?status=OPEN')
+      .set('authorization', `Bearer ${adminToken}`);
+
+    // A fallback recorded without a trace cannot become a rule, and saying so beats returning
+    // an empty proposal that looks like the feature not working.
+    const refused = await request(app)
+      .post(`/admin/review-queue/${queue.body.items[0].id}/propose-rule`)
+      .set('authorization', `Bearer ${adminToken}`)
+      .send({});
+
+    expect(refused.status).toBe(422);
+    expect(refused.body.error).toBe('NO_TRACE');
+
+    expect(
+      (
+        await request(app)
+          .post('/admin/review-queue/00000000-0000-0000-0000-000000000000/propose-rule')
+          .set('authorization', `Bearer ${adminToken}`)
+          .send({})
+      ).status
+    ).toBe(404);
+  });
+
   it('sweeps on a schedule and only once across replicas', async () => {
     const key = (await enroll(await newToken())).body.apiKey;
     await request(app)

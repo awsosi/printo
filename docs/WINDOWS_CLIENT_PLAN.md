@@ -658,7 +658,7 @@ Nothing ships on "it looked right".
 | **M3** | **Complete but for hardware** | PDFium render with a true region crop, the transform maths, whole-sheet composition against the *printable* area, GDI output, raw ZPL, printer profiles with calibration, printer discovery, and a recording device. Six render-diff cases against checked-in reference images. Printable geometry is read from a real installed driver in a test. **Not done:** the physical matrix on CITIZEN / 4BARCODE / ZEBRA and on A4 lasers — postponed by the customer to a joint session (section 10.2). |
 | **M4** | **Complete but for capture** | Durable spool (idempotent intake, single-winner claim, lease-based recovery, backoff, poison queue), hot folders, job processor, work loop, fallback picker, Windows service host, tray and service/tray IPC. Soak: 30 documents across three worker lifetimes, nothing lost or duplicated. Picker measured on screen in 209-221 ms *in the foreground*. **Not done:** virtual-printer ingress, which is blocked on M1. |
 | **M5** | **Complete but for the worker** | Fleet schema (13 tables) and API, verified by running all 12 migrations from empty against real Postgres. Agent enrolment with a per-machine key, bundle sync with checksum verification and a 304 fast path, heartbeat, printer reporting, and job/trace/fallback reporting. All three decision modes implemented and tested, including server-unreachable behaviour for each. Bundles are validated at publish time against the shared schema, so a rule set neither engine could execute is a 400 rather than a fleet-wide outage. Retention runs on an advisory-locked schedule instead of only on a button. 20 API tests against Postgres, 168 C# tests, 130 routing-engine tests. **Not done:** the worker's own adoption of the shared engine — see section 10.3. |
-| **M6** | **Complete** | A Fleet tab in the existing admin console — one login, one origin — answering the four questions in order: which machines exist and are they alive (with decision mode, threshold and disable per agent), which rules they run (a bundle editor whose rejections name the exact failing rule path), what they had to ask a person about (fallback analytics with agreement rate and median decision time), and what to fix first (the review queue). Driven in a real browser against a real database: enrol, publish, reject, change an agent, resolve a review item — every change verified as persisted server-side. |
+| **M6** | **Complete** | A Fleet tab in the existing admin console - one login, one origin - answering the four questions in order: which machines exist and are they alive (with decision mode, threshold and disable per agent), which rules they run (a bundle editor whose rejections name the exact failing rule path), what they had to ask a person about (fallback analytics with agreement rate and median decision time), and what to fix first (the review queue, where **one click derives a rule from the logged fallback**). Driven in a real browser against a real database: enrol, publish, reject, change an agent, resolve a review item, and the whole fallback-to-rule loop - propose, adopt, publish, and the page that needed a person routes without one. |
 | **M7** | **Complete but for an elevated install** | Server: production Dockerfiles, a compose stack where only Traefik publishes a port, Traefik configured entirely from files, and `npm run smoke:prod`, which builds the real images and asserts the exit criterion end to end. Agent: a 48 MB self-contained WiX MSI with the service, the tray autostart, an ACL'd data directory and unattended properties; ADMX/ADML templates; a four-layer configuration reader with provenance (`--show-config`); GPO, signing and AV-exclusion procedures in `docs/DEPLOYMENT.md`. MSI contents verified by decompiling the package - service registration, `RemoveExistingProducts` at 6501 (after `InstallExecute`, before `InstallFinalize`), the data-directory ACL, all five registry values, 318 payload files, no debug symbols. **Not done:** actually installing it, which needs elevation - `Verify-Install.ps1` is written for exactly that and has not been run. |
 | **M8** | Not started | — |
 
@@ -718,6 +718,28 @@ nothing else. Three ways forward, none of them free:
 
 This is a real architectural choice rather than an oversight, so it is recorded here for a
 decision rather than settled unilaterally. Nothing else in M5 depends on it.
+
+### 10.4 What "a new carrier template, no code changes" does and does not mean
+
+M6's exit criterion has two halves, and they landed differently.
+
+**"A logged fallback converts to a rule in one click" - done, and verified end to end.** The
+review queue derives a rule from the fallback's own trace: the measured ink box with an
+explicit tolerance, plus the carrier when one resolved, routed to thermal with an `inkBox`
+crop. It is stored on the review item with its rationale, adopted into the bundle editor on a
+second click, and published on a third.
+
+Publishing is deliberately *not* part of the one click. Pushing a machine-written rule to
+thirty workstations without anyone reading it is how a fleet starts printing invoices on label
+stock at four in the afternoon.
+
+**"A new carrier template can be created end to end from a sample PDF" - partially.** A new
+carrier is fully configurable without code: rules and carrier signatures are data, the bundle
+editor accepts them, and the validator rejects anything either engine could not execute,
+naming the exact failing path. What does *not* exist is uploading a sample PDF and dragging a
+rectangle over it in the browser to author the rule visually. The fallback path covers the
+common case - a document that already failed produces its own rule - and authoring from a
+sample is JSON today.
 
 Each milestone is committed and pushed to `github.com/awsosi/printo` as it completes.
 

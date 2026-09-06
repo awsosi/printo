@@ -53,7 +53,8 @@ describe('fleet admin', () => {
       ['post', '/admin/bundles', { payload: { schemaVersion: 1, profiles: [] } }],
       ['patch', '/admin/agents/agent-1', { status: 'DISABLED' }],
       ['post', '/admin/agents/enrollment-tokens', { validForHours: 1 }],
-      ['post', '/admin/review-queue/item-1/resolve', { status: 'RESOLVED' }]
+      ['post', '/admin/review-queue/item-1/resolve', { status: 'RESOLVED' }],
+      ['post', '/admin/review-queue/item-1/propose-rule', {}]
     ];
 
     for (const [method, path, body] of calls) {
@@ -107,6 +108,21 @@ describe('fleet admin', () => {
     // would leave an administrator hunting through a rule set by hand.
     expect(response.status).toBe(400);
     expect(response.body.detail).toContain('pageRules[0].when.colour');
+  });
+
+  it('offers a proposed rule, and adopts it into the editor rather than publishing it', async () => {
+    const res = await request(createWebApp()).get('/admin/config');
+
+    expect(res.text).toContain('data-review-propose=');
+    expect(res.text).toContain('function renderProposal(proposal)');
+    expect(res.text).toContain('data-review-adopt=');
+
+    // Adopting writes into the editor. Publishing a machine-written rule to the whole fleet on
+    // one click is exactly what this must not do.
+    expect(res.text).toContain("fleetSetStatus('fleetBundleStatus', 'Added to the editor. Review it, then publish.', 'ok')");
+
+    // And it goes in front of the rules it was derived to fix, or it would never match.
+    expect(res.text).toContain('profile.pageRules = [rule].concat(profile.pageRules || [])');
   });
 
   it('shows the API detail in the page, not just the error code', async () => {
