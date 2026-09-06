@@ -23,6 +23,25 @@ namespace Printo.Agent.Tests;
 /// </remarks>
 public sealed class OcrTests
 {
+    /// <summary>
+    /// The pattern the shipped `fedex-return-label` rule uses on the printed path.
+    /// </summary>
+    /// <remarks>
+    /// Not <c>RETURN DEPT</c>, though that is how the phrase reads on the page and how it sits
+    /// in the text layer. The recogniser reads a label in visual line order and this label's
+    /// columns interleave, so the two words come back separated by half the address block:
+    /// <c>PO: RETURN OJX058644430 REF: RETURN 808292H2ND03227236 DEPT:</c>. A rule keyed on the
+    /// phrase would pass against the text layer and fail on every real print job.
+    ///
+    /// <c>REF:</c> and <c>PO:</c> keep their value adjacent, and either form appears on exactly
+    /// 3 of the 1266 corpus pages - the three return labels. Bare <c>RETURN</c> appears on 467,
+    /// because DHL outgoing labels carry <c>Ref No: Return</c> for return *shipments* and must
+    /// still print on thermal stock.
+    /// </remarks>
+    private static readonly Regex ReturnLabelMarkings = new(
+        @"REF:\s*RETURN|PO:\s*RETURN",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     /// <summary>The pattern the shipped `dhl-waybill-sheet-ocr` rule uses.</summary>
     private static readonly Regex WaybillMarkings = new(
         @"WAYBILL\s*DOC|Not\s*to\s*be\s*attached|Hand\s*to\s*Courier",
@@ -175,6 +194,86 @@ public sealed class OcrTests
         Assert.True(
             failures.Count == 0,
             $"{failures.Count} of {checkedPages} courier sheets were not recognised:" +
+            Environment.NewLine +
+            string.Join(Environment.NewLine, failures));
+    }
+
+    /// <summary>
+    /// The FedEx return label's discriminator survives into OCR.
+    /// </summary>
+    /// <remarks>
+    /// Return and outgoing FedEx labels are the same shape - ink 100.8x151.6 mm against
+    /// 101.1x149.9 mm, both aspect 1.5 - and the shipped rule separates them by page size,
+    /// Letter against A4 landscape. Section 5.0a measured that page size does not survive
+    /// printing, so on the virtual-printer path the only thing left is content, and the content
+    /// has to be read rather than found in a text layer that printing removed.
+    ///
+    /// See <see cref="ReturnLabelMarkings"/> for which phrase, and why not the obvious one.
+    ///
+    /// This asserts the recogniser can find the phrase on the real pages. Without it the rule
+    /// would be written against a text layer that only the anonymiser produced.
+    /// </remarks>
+    [Fact]
+    [SupportedOSPlatform("windows10.0.19041.0")]
+    public void ReadsTheReturnLabelMarkingThatSeparatesItFromAnOutgoingFedExLabel()
+    {
+        var engine = TryEngine();
+        var pdfRoot = RepositoryPaths.CorpusPdfs;
+        if (engine is null || pdfRoot is null)
+        {
+            return;
+        }
+
+        var pages = new[]
+        {
+            ("czwart_anon/OneClickPrint_VTW189066252_anon.pdf", 2),
+            ("czwart_anon/OneClickPrint_VTW189066661_anon.pdf", 2),
+            ("wtorek_anon/OneClickPrint_VTW189004806_anon.pdf", 2),
+        };
+
+        var marking = ReturnLabelMarkings;
+        var failures = new List<string>();
+        var checkedPages = 0;
+
+        foreach (var (document, pageNumber) in pages)
+        {
+            var path = Path.Combine(pdfRoot, document.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(path))
+            {
+                continue;
+            }
+
+            using var pdf = PdfDocument.Load(File.ReadAllBytes(path));
+            using var page = pdf.OpenPage(pageNumber - 1);
+
+            var box = PageRenderer.MeasureInkBox(page);
+            Assert.NotNull(box);
+
+            var region = new RectMm
+            {
+                XMm = box!.XMm,
+                YMm = box.YMm,
+                WidthMm = box.WidthMm,
+                HeightMm = box.HeightMm,
+            };
+
+            checkedPages++;
+            var text = engine.Recognise(page, region).Text;
+
+            // Whitespace-insensitive, exactly as the rule matches: the recogniser routinely
+            // drops the spaces in a bold header.
+            var squashed = Regex.Replace(text, @"\s+", string.Empty);
+            if (!marking.IsMatch(text) && !marking.IsMatch(squashed))
+            {
+                failures.Add($"{document} p{pageNumber}: no return marking in '{Preview(text)}'");
+            }
+        }
+
+        Assert.True(checkedPages > 0, "no return-label PDFs were found beside the checkout");
+
+        Assert.True(
+            failures.Count == 0,
+            $"{failures.Count} of {checkedPages} return labels were not recognised:" +
             Environment.NewLine +
             string.Join(Environment.NewLine, failures));
     }
