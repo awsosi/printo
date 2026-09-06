@@ -50,6 +50,16 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# An unmistakable banner. This script and Run-CaptureSpike.ps1 do similar things in the same
+# window, and a session's scrollback from one is easy to mistake for a run of the other.
+Write-Host ''
+Write-Host '########################################################################'
+Write-Host '#  CAPTURE-CORPUS  -  multi-document capture                           #'
+Write-Host '#  You will be asked to press Ctrl+P then Enter once per document.     #'
+Write-Host '#  Output goes to tests\capture\session\                               #'
+Write-Host '########################################################################'
+Write-Host ''
+
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 if (-not (New-Object Security.Principal.WindowsPrincipal($identity)).IsInRole(
         [Security.Principal.WindowsBuiltInRole]::Administrator)) {
