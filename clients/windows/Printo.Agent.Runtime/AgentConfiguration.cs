@@ -82,6 +82,33 @@ public sealed class AgentConfiguration
 
     public string DatabasePath => Path.Combine(DataDirectory, "spool.db");
 
+    /// <summary>Where the configuration lives when nothing overrides it.</summary>
+    /// <remarks>
+    /// ProgramData rather than the install directory: the MSI replaces the install directory on
+    /// upgrade, and a site's printer mapping and watched folders must survive that.
+    /// </remarks>
+    public static string DefaultPath { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "Printo",
+        "agent",
+        "agent.json");
+
+    /// <summary>Reads <c>--config &lt;path&gt;</c> from a command line, else <see cref="DefaultPath"/>.</summary>
+    /// <remarks>
+    /// Shared by the service and the tray so the two processes cannot disagree about which file
+    /// is in force. A tray showing one machine's settings while the service acts on another's
+    /// is not a bug anybody diagnoses over the phone.
+    /// </remarks>
+    public static string ResolvePath(string[] args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+
+        var index = Array.FindIndex(args, argument =>
+            string.Equals(argument, "--config", StringComparison.OrdinalIgnoreCase));
+
+        return index >= 0 && index + 1 < args.Length ? args[index + 1] : DefaultPath;
+    }
+
     /// <summary>Reads the configuration, falling back to defaults when the file is absent.</summary>
     /// <remarks>
     /// A missing file is a valid state - a freshly installed, not-yet-enrolled machine - and

@@ -23,35 +23,71 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
 
+        var command = TrayCommandLine.Parse(args, AgentConfiguration.DefaultPath);
+
         // `--picker <pdf>` shows the picker for a document and prints the answer. It is how the
         // "Ctrl+P to on-screen in under a second" criterion is measured, and how an installer
         // check or a support call can confirm the window still appears correctly on this
         // machine's monitor layout.
-        if (args.Length >= 2 && args[0] is "--picker" or "--demo")
+        return command.Mode switch
         {
-            return ShowPicker(args[1], args.Skip(2).ToArray());
-        }
+            TrayMode.Picker => ShowPicker(command.DocumentPath!, command.SuggestedPages),
+            TrayMode.Settings => ShowSettings(command.ConfigPath),
+            TrayMode.Apply => SettingsSaver.Apply(command.ApplyFrom!, command.ConfigPath),
+            _ => RunTray(command.ConfigPath),
+        };
+    }
 
-        MessageBox.Show(
-            "Printo tray.\n\nUsage:\n  Printo.Tray.exe --picker <document.pdf> [page numbers to suggest]",
-            "Printo",
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Information);
+    /// <summary>
+    /// The settings window on its own, without a tray icon.
+    /// </summary>
+    /// <remarks>
+    /// Reachable from the Start Menu shortcut's context menu and from a support call, and the
+    /// way to configure a machine whose tray the operator has exited.
+    /// </remarks>
+    private static int ShowSettings(string configPath)
+    {
+        using var form = new SettingsForm(configPath);
+        Application.Run(form);
         return 0;
     }
 
-    private static int ShowPicker(string path, string[] suggestedArguments)
+    /// <summary>
+    /// The default: sit in the notification area for this sign-in.
+    /// </summary>
+    /// <remarks>
+    /// One instance per session, enforced with a mutex in the session-local namespace. Two
+    /// trays would race for the same named pipe, and the loser would be a tray icon that looks
+    /// entirely healthy while the service's picker requests go to the other one.
+    /// </remarks>
+    private static int RunTray(string configPath)
+    {
+        using var single = new Mutex(initiallyOwned: true, @"Local\Printo.Tray", out var owned);
+        if (!owned)
+        {
+            // Silent: the autostart entry and a manual launch both land here routinely, and a
+            // message box on every sign-in would be its own defect.
+            return 0;
+        }
+
+        try
+        {
+            Application.Run(new TrayApplication(configPath));
+            return 0;
+        }
+        finally
+        {
+            single.ReleaseMutex();
+        }
+    }
+
+    private static int ShowPicker(string path, IReadOnlyList<int> suggested)
     {
         if (!File.Exists(path))
         {
             MessageBox.Show($"No such file: {path}", "Printo", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 2;
         }
-
-        var suggested = suggestedArguments
-            .Select(value => int.TryParse(value, CultureInfo.InvariantCulture, out var page) ? page : 0)
-            .Where(page => page > 0)
-            .ToList();
 
         var stopwatch = Stopwatch.StartNew();
 

@@ -656,10 +656,10 @@ Nothing ships on "it looked right".
 | **M1** | **Blocked** | Both spikes build and self-test; binding a real queue needs one elevated `Add-Printer`. Neither capture question is answered yet — section 5.0. |
 | **M2** | **Complete** | 1266/1266 corpus pages routed correctly in **both** text-layer modes; 67 conformance fixtures pass on the TypeScript **and** C# engines; 0 pages attributed to GLS. The agent extracts its own features (geometry, ink box, text, barcodes, OCR) and `FeatureParityTests` proves they match the calibrated extractor — identical routing over 117 real pages, exact geometry, identical barcode decoding. Caveat unchanged: barcode predicates cannot be validated against real barcodes on this corpus (section 1.5a), and picture matching is now implemented (section 10.5), which adds four more fixtures. |
 | **M3** | **Complete but for hardware** | PDFium render with a true region crop, the transform maths, whole-sheet composition against the *printable* area, GDI output, raw ZPL, printer profiles with calibration, printer discovery, and a recording device. Six render-diff cases against checked-in reference images. Printable geometry is read from a real installed driver in a test. **Not done:** the physical matrix on CITIZEN / 4BARCODE / ZEBRA and on A4 lasers — postponed by the customer to a joint session (section 10.2). |
-| **M4** | **Complete but for capture** | Durable spool (idempotent intake, single-winner claim, lease-based recovery, backoff, poison queue), hot folders, job processor, work loop, fallback picker, Windows service host, tray and service/tray IPC. Soak: 30 documents across three worker lifetimes, nothing lost or duplicated. Picker measured on screen in 209-221 ms *in the foreground*. **Not done:** virtual-printer ingress, which is blocked on M1. |
+| **M4** | **Complete but for capture** | Durable spool (idempotent intake, single-winner claim, lease-based recovery, backoff, poison queue), hot folders, job processor, work loop, fallback picker, Windows service host, tray and service/tray IPC. Soak: 30 documents across three worker lifetimes, nothing lost or duplicated. Picker measured on screen in 209-221 ms *in the foreground*. **Not done:** virtual-printer ingress, which is blocked on M1. The tray now actually runs: the executable's no-argument path - the one the installer's autostart entry and the Start Menu shortcut both take - constructed nothing and showed a usage message box, so the tray icon and the service's picker channel did not exist on an installed machine. It is covered by tests now, because the installed path was the only path nothing exercised. |
 | **M5** | **Complete but for the worker** | Fleet schema (13 tables) and API, verified by running all 12 migrations from empty against real Postgres. Agent enrolment with a per-machine key, bundle sync with checksum verification and a 304 fast path, heartbeat, printer reporting, and job/trace/fallback reporting. All three decision modes implemented and tested, including server-unreachable behaviour for each. Bundles are validated at publish time against the shared schema, so a rule set neither engine could execute is a 400 rather than a fleet-wide outage. Retention runs on an advisory-locked schedule instead of only on a button. Every job reports its per-page outcome, its audit trail and — on a fallback — a thumbnail of the pages a person was asked about. **Not done:** the worker's own adoption of the shared engine — see section 10.3. |
 | **M6** | **Complete** | A Fleet tab in the existing admin console - one login, one origin. Agents (decision mode, threshold, disable per machine), the rule bundle (an editor whose rejections name the exact failing rule path), fallback analytics (agreement rate and median decision time), the review queue where **one click derives a rule from the logged fallback**, **accounting with an explicit reconciliation**, and **recent jobs showing, per page, the printer it reached and the media it printed on with the layer that chose it**. A new carrier template is cut from a sample PDF in the browser - drag a box round the logo and get the template plus a matching rule. Driven in a real browser against a real database throughout. |
-| **M7** | **Complete but for an elevated install** | Server: production Dockerfiles, a compose stack where only Traefik publishes a port, Traefik configured entirely from files, and `npm run smoke:prod`, which builds the real images and asserts the exit criterion end to end. Agent: a 48 MB self-contained WiX MSI with the service, the tray autostart, an ACL'd data directory and unattended properties; ADMX/ADML templates; a four-layer configuration reader with provenance (`--show-config`); GPO, signing and AV-exclusion procedures in `docs/DEPLOYMENT.md`. MSI contents verified by decompiling the package - service registration, `RemoveExistingProducts` at 6501 (after `InstallExecute`, before `InstallFinalize`), the data-directory ACL, all five registry values, 318 payload files, no debug symbols. **Not done:** actually installing it, which needs elevation - `Verify-Install.ps1` is written for exactly that and has not been run. |
+| **M7** | **Complete but for an elevated install** | Server: production Dockerfiles, a compose stack where only Traefik publishes a port, Traefik configured entirely from files, and `npm run smoke:prod`, which builds the real images and asserts the exit criterion end to end. Agent: a 48 MB self-contained WiX MSI with the service, the tray autostart, an ACL'd data directory and unattended properties; ADMX/ADML templates; a four-layer configuration reader with provenance (`--show-config`); GPO, signing and AV-exclusion procedures in `docs/DEPLOYMENT.md`. MSI contents verified by decompiling the package - service registration, `RemoveExistingProducts` at 6501 (after `InstallExecute`, before `InstallFinalize`), the data-directory ACL, all five registry values, 318 payload files, no debug symbols. The MSI now also lays down Start Menu shortcuts - `Printo` and `Printo Settings` - because a headless service plus an autostart entry that does not fire until the next sign-in reads as "nothing happened" to whoever ran the installer, which is exactly how it read. `Verify-Install.ps1` asserts both shortcuts and that the tray binary behind them exists; its old check looked only at the registry value, which is why the empty tray survived a release. **Not done:** actually installing it, which needs elevation. |
 | **M8** | **Partly complete** | Docs: `docs/DEPLOYMENT.md` (server and agent, GPO, ADCS signing, AV exclusions) and `docs/MIGRATING_FROM_PRINT_AND_SHARE.md` (what maps onto what, how to run both at once, and what Printo does not do yet). CI: unchanged by request, and `npm run test`, `lint`, `typecheck`, `build` and the compose smoke all pass locally as CI runs them. **Not done:** the parts of the definition of done that need hardware or an elevated session - the printer matrix, an actual MSI install, and virtual-printer ingress. |
 
 The GLS defect in M2's exit criteria turned out to be smaller and differently caused than the
@@ -668,6 +668,60 @@ mis-attributed, because DHL is tested first and wins on the other 274. The 4 are
 *DOMESTIC EXPRESS* labels, which matched none of the old DHL patterns (`dhl` does not
 match `MyDHL`). Both the worker heuristic and the new engine now register the footer as the
 DHL artifact it is and guard the GLS keyword against it.
+
+### 10.8 The agent's own user interface
+
+Three things were missing between "the MSI installed successfully" and a person being able to
+use the product, and all three read to the operator as the same thing: nothing happened.
+
+**The tray never started.** `Printo.Tray.exe` handled `--picker` and fell through everything
+else to a usage message box, and `TrayApplication` - the notification icon, and the named pipe
+the service raises the fallback picker through - was constructed nowhere. The installed
+autostart entry pointed at a real executable that did nothing useful. The parsing is now a
+separate, tested function, and the no-argument case is the first test in it.
+
+**There was nothing to open.** The package created no shortcut of any kind, so a fresh install
+offered no way in until the next sign-in, and even then only a tray icon. There are now two
+Start Menu entries: `Printo`, which is the tray, and `Printo Settings`, which goes straight to
+the settings window - because the first thing a new machine needs is its printers mapped, and
+at that moment the tray has not started yet.
+
+**There was nowhere to configure the machine.** Printer roles, media, calibration offsets and
+watched folders existed only as JSON in a directory ordinary users cannot read. The settings
+window edits exactly the things that are facts about *this machine* and nothing else:
+
+| Tab | What it does |
+|---|---|
+| Printers | Maps installed Windows queues to `A4`, `THERMAL` or a rule-facing alias; media as a free `WxH mm` value; per-device calibration offset and zoom; raw ZPL with darkness and speed. A mapping to a queue that is no longer installed is shown in red here rather than discovered at print time from the poison queue. |
+| Watched folders | Path, extensions, include/exclude masks, subfolders, what happens to the file afterwards, and the settle time that stops a half-written document being read. |
+| General | Server address, decision mode, confidence threshold, OCR language, and where the data directory and configuration file are. |
+
+Routing rules are deliberately not editable here. They are published centrally, validated
+against both engines before release and shared by the whole fleet; thirty workstations each
+with their own idea of what a DHL label looks like is the failure this product exists to end.
+
+Two details that are not cosmetic:
+
+- **Group Policy values are shown, not hidden.** A managed setting appears with its effective
+  value, disabled, marked, and with a line saying where it is actually set. A helpdesk has to
+  be able to see that a setting is wrong *and* that this is not the place to fix it. On save,
+  managed settings are written back exactly as the file already held them, so withdrawing a
+  policy actually withdraws it rather than leaving the imposed value baked into the file.
+- **Saving elevates the smallest possible thing.** The data directory is ACL'd to SYSTEM and
+  Administrators because the enrolment credential lives there, so an operator's tray cannot
+  write the configuration. It stages the file and relaunches this same executable with
+  `--apply`, which validates the staged JSON, copies it and restarts the service - and nothing
+  else. Running the whole window elevated would be less code and much worse: a message loop, a
+  PDF renderer and a printer enumerator behind the UAC prompt to change one JSON file.
+
+**The calibration page** answers the questions the geometry depends on and that nothing but
+hardware can answer: does the sheet the driver reports match the stock that is loaded, does the
+printable area it reports match where the head can really mark, and is the device offset. It
+draws the reported printable rectangle, millimetre rulers, a centre crosshair and the numbers
+it was built from, composed exactly the way a real job is - a full-sheet 32bpp raster at device
+resolution handed to the same `IPrinterDevice` - so a page that lands correctly is evidence
+about the print path and not only about the drawing. It is how a site records a per-printer
+offset without waiting for the hardware session in section 10.2.
 
 ### 10.2 What "M3 complete but for hardware" means
 

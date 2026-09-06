@@ -21,7 +21,7 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
-        var configPath = ResolveConfigPath(args);
+        var configPath = AgentConfiguration.ResolvePath(args);
 
         if (args.Contains("--write-default-config", StringComparer.OrdinalIgnoreCase))
         {
@@ -85,29 +85,5 @@ internal static class Program
         using var host = builder.Build();
         await host.RunAsync();
         return 0;
-    }
-
-    /// <summary>
-    /// Where the configuration lives.
-    /// </summary>
-    /// <remarks>
-    /// ProgramData rather than the install directory: the MSI replaces the install directory on
-    /// upgrade, and a site's printer mapping and watched folders must survive that.
-    /// </remarks>
-    private static string ResolveConfigPath(string[] args)
-    {
-        var index = Array.FindIndex(args, argument =>
-            string.Equals(argument, "--config", StringComparison.OrdinalIgnoreCase));
-
-        if (index >= 0 && index + 1 < args.Length)
-        {
-            return args[index + 1];
-        }
-
-        return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-            "Printo",
-            "agent",
-            "agent.json");
     }
 }

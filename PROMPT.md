@@ -115,6 +115,8 @@ defect.
 
 - [x] Corpus analysis and plan — approved (`docs/WINDOWS_CLIENT_PLAN.md`, `tools/corpus/`)
 - [ ] **M1 — Capture spike — code written, BLOCKED on one elevated command (see below)**
+- [x] Agent UI — tray entry point, Start Menu shortcuts, settings window and
+      calibration page (plan section 10.8)
 - [x] M2 — Corpus + engine core (complete; two gaps listed below)
 - [x] M3 — Print output (complete except the hardware pass, postponed by the user)
 - [~] M4 — Agent runtime + fallback picker (all but virtual-printer ingress, which needs M1)
@@ -143,15 +145,20 @@ client), `Printo.Spike.PipePort` (named pipe with a LocalSystem ACL), and
 
 **Blocked:** `Add-Printer` needs elevation. From a standard-user session it fails with
 `Access was denied` *before any IPP traffic reaches the endpoint*, so neither capture question
-is answered. A UAC prompt was raised once and cancelled. To finish M1, run:
+is answered.
+
+`clients/windows/spike/scripts/Run-CaptureSpike.ps1` now does the whole experiment in one
+elevated command: it builds the listener, starts it, creates the queue, waits for a print job,
+reports what arrived, and removes the queue in a `finally` so an interrupted run leaves the
+machine as it was found. From an **elevated** PowerShell:
 
 ```
-! powershell -NoProfile -Command "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','C:\Users\olek\Documents\code\si\printo\clients\windows\spike\scripts\Invoke-SpikePrinters.ps1','-Action','Add'"
+powershell -ExecutionPolicy Bypass -File clients\windows\spike\scripts\Run-CaptureSpike.ps1
 ```
 
-then start `printo-spike-ipp.exe`, print to `Printo-Spike-IPP` from Chrome, read
-`capture/ipp-session.jsonl`, record the answer in plan section 5.0, and run the script again
-with `-Action Remove`. **No production code may assume an answer until this is done.**
+Then print one page to `Printo-Spike-IPP` from Chrome. Record the reported format and job
+attributes in plan section 5.0. **No production code may assume an answer until this is done.**
+
 
 ### M2 — what landed, and the two gaps
 

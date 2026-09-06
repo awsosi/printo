@@ -26,6 +26,8 @@ public sealed class TrayApplication : ApplicationContext
 
     private readonly System.Windows.Forms.Timer refresh;
 
+    private SettingsForm? settings;
+
     public TrayApplication(string configPath)
     {
         this.configPath = configPath;
@@ -55,6 +57,7 @@ public sealed class TrayApplication : ApplicationContext
     private ContextMenuStrip BuildMenu()
     {
         var menu = new ContextMenuStrip();
+        menu.Items.Add("Settings…", null, (_, _) => ShowSettings());
         menu.Items.Add("Status…", null, (_, _) => ShowStatus());
         menu.Items.Add("Open spool folder", null, (_, _) => OpenSpoolFolder());
         menu.Items.Add(new ToolStripSeparator());
@@ -110,6 +113,31 @@ public sealed class TrayApplication : ApplicationContext
                 : waiting > 0
                     ? $"Printo — {waiting} queued"
                     : "Printo — idle";
+    }
+
+    /// <summary>
+    /// Opens the settings window, or brings the open one forward.
+    /// </summary>
+    /// <remarks>
+    /// Modeless, and single-instance: two copies of this window would each hold a snapshot of
+    /// the configuration and the second one saved would silently undo the first.
+    /// </remarks>
+    private void ShowSettings()
+    {
+        if (settings is { IsDisposed: false })
+        {
+            settings.WindowState = FormWindowState.Normal;
+            settings.Activate();
+            return;
+        }
+
+        settings = new SettingsForm(configPath);
+        settings.FormClosed += (_, _) =>
+        {
+            settings = null;
+            UpdateTooltip();
+        };
+        settings.Show();
     }
 
     private void ShowStatus()

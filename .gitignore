@@ -24,3 +24,4 @@ infra/traefik/dynamic/tls.yml
 # MSI build output: publish staging and the packages themselves.
 clients/windows/installer/obj/
 clients/windows/installer/bin/
+clients/windows/spike/capture/

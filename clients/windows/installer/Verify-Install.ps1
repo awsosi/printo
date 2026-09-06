@@ -101,7 +101,18 @@ Check 'the service is running' {
 Check 'the binaries are installed' { Test-Path (Join-Path $installDir 'Printo.Agent.exe') }
 Check 'the native renderer is installed' { Test-Path (Join-Path $installDir 'pdfium.dll') }
 Check 'the tray starts at sign-in' {
-    (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name PrintoTray -ErrorAction SilentlyContinue).PrintoTray -like '*Printo.Tray.exe*'
+    $value = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name PrintoTray -ErrorAction SilentlyContinue).PrintoTray
+    # The value alone is not enough - it pointed at a real executable for a whole release while
+    # that executable, run with no arguments, showed a usage message box instead of a tray.
+    ($value -like '*Printo.Tray.exe*') -and (Test-Path (Join-Path $installDir 'Printo.Tray.exe'))
+}
+Check 'there is a Start Menu shortcut to open' {
+    # Otherwise the install is invisible: a headless service plus an autostart entry that does
+    # not fire until the next sign-in reads as "nothing happened" to whoever ran the MSI.
+    $link = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Printo\Printo.lnk'
+    if (-not (Test-Path $link)) { return $false }
+    $target = (New-Object -ComObject WScript.Shell).CreateShortcut($link).TargetPath
+    Test-Path $target
 }
 
 Write-Host '==> unattended configuration reached the agent'
@@ -162,6 +173,9 @@ Check 'the autostart entry is gone' {
     $null -eq (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name PrintoTray -ErrorAction SilentlyContinue)
 }
 Check 'the machine registry key is gone' { -not (Test-Path $machineKey) }
+Check 'the Start Menu folder is gone' {
+    -not (Test-Path (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Printo'))
+}
 
 # Data is deliberately left behind by the uninstall - a reinstall should find its spool and its
 # enrolment - so this cleans up after the test rather than asserting the directory is gone.

@@ -57,6 +57,11 @@
       </Directory>
     </StandardDirectory>
 
+    <!-- All-users Start Menu: the install is perMachine and a packing bench is shared. -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="SHORTCUTFOLDER" Name="Printo" />
+    </StandardDirectory>
+
     <Feature Id="Agent" Title="Printo Agent" Level="1" AllowAbsent="no">
       <ComponentGroupRef Id="AgentPayload" />
       <ComponentGroupRef Id="AgentRegistration" />
@@ -108,6 +113,36 @@
                        Type="string"
                        Value="&quot;[INSTALLFOLDER]Printo.Tray.exe&quot;"
                        KeyPath="yes" />
+      </Component>
+
+      <!--
+        Something to open. Without it the whole install is invisible: a headless service and an
+        autostart entry that only fires at the next sign-in, which reads to the person who ran
+        the MSI as nothing having happened at all. The shortcut launches the same tray the
+        autostart entry does, so it is also the recovery path when someone exits the tray.
+      -->
+      <Component Id="TrayShortcut" Directory="SHORTCUTFOLDER" Guid="5e2a8c37-1b94-4f60-a7d3-0c6e8b2f9a15">
+        <Shortcut Id="PrintoTrayShortcut"
+                  Name="Printo"
+                  Description="Printo agent status, printers and the fallback picker."
+                  Target="[INSTALLFOLDER]Printo.Tray.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+
+        <!--
+          A direct route to the settings, because the tray is not running yet on the machine
+          where someone has just run the MSI: the autostart entry does not fire until the next
+          sign-in, and the first thing a new install needs is its printers mapped.
+        -->
+        <Shortcut Id="PrintoSettingsShortcut"
+                  Name="Printo Settings"
+                  Description="Map this machine's printers and watched folders."
+                  Target="[INSTALLFOLDER]Printo.Tray.exe"
+                  Arguments="--settings"
+                  WorkingDirectory="INSTALLFOLDER" />
+
+        <RemoveFolder Id="RemoveShortcutFolder" Directory="SHORTCUTFOLDER" On="uninstall" />
+        <RegistryValue Root="HKLM" Key="SOFTWARE\Printo\Agent" Name="Shortcut"
+                       Type="integer" Value="1" KeyPath="yes" />
       </Component>
 
       <!--
