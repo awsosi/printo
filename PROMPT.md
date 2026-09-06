@@ -1,12 +1,21 @@
 # PROMPT.md — resume instructions
 
 > **You are being pointed at this file at the start of a fresh session.** Read it, read the
-> documents it points to, then start work at the current milestone.
+> documents it points to, then start work at the current milestone. It is written for whichever
+> assistant picks the work up — Claude Code, Codex or a person — and assumes no memory of any
+> earlier session.
+>
+> **Start here:** section 6 is where the project stands, and **section 6a is a decision that
+> is open and blocks the next milestone.** Do not begin virtual-printer ingress before it is
+> settled with the user; the evidence for why is in the same section. Section 6b is a log of
+> what the last session changed and why, including two corrections worth carrying forward.
 >
 > **Lifecycle of this file:** delete it when every milestone in
 > `docs/WINDOWS_CLIENT_PLAN.md` section 10 is complete and the Definition of Done in section 12
 > is met. Until then, keep it accurate: after each milestone, update
 > "Current position" below and strike through what is finished. Never leave it stale.
+>
+> **Last updated:** 2026-09-06, at commit `bfe0390` on `feat/windows-agent`.
 
 ---
 
@@ -29,7 +38,7 @@ zoom, scaling and orientation per printer.
 
 | Document | What it gives you |
 |---|---|
-| `docs/WINDOWS_CLIENT_PLAN.md` | **The approved plan.** Corpus analysis, architecture, capture tiers, rule schema, fallback picker, milestones M1-M8, definition of done. This is the contract. |
+| `docs/WINDOWS_CLIENT_PLAN.md` | **The approved plan.** Corpus analysis, architecture, capture tiers, rule schema, fallback picker, milestones M1-M8, definition of done. This is the contract. **Sections 5.0 and 5.0a are the newest and most important: what the Windows print path does to a page, measured.** |
 | `docs/ARCHITECTURE.md` | Existing service boundaries and topology |
 | `docs/PLAN.md` | Delivery state of the already-built server stack |
 | `README.md` | Repo commands, compose, current feature set |
@@ -114,12 +123,14 @@ defect.
 **Branch:** `feat/windows-agent`
 
 - [x] Corpus analysis and plan — approved (`docs/WINDOWS_CLIENT_PLAN.md`, `tools/corpus/`)
-- [ ] **M1 — Capture spike — code written, BLOCKED on one elevated command (see below)**
+- [x] **M1 — Capture spike — ANSWERED. Tier 1 (IPP) works and delivers PDF. What it
+      revealed is now the thing blocking everything else — read section 6a first.**
 - [x] Agent UI — tray entry point, Start Menu shortcuts, settings window and
       calibration page (plan section 10.8)
 - [x] M2 — Corpus + engine core (complete; two gaps listed below)
 - [x] M3 — Print output (complete except the hardware pass, postponed by the user)
-- [~] M4 — Agent runtime + fallback picker (all but virtual-printer ingress, which needs M1)
+- [~] M4 — Agent runtime + fallback picker (all but virtual-printer ingress, which is now
+      unblocked by M1 and blocked instead by the decision in section 6a)
 - [~] M5 — Server integration (all but the worker's own engine adoption — plan §10.3)
 - [x] M6 — Admin UI (Fleet tab; driven in a real browser against a real database)
 - [~] M7 — Packaging + delivery (all but an elevated install of the MSI — see below)
@@ -135,30 +146,97 @@ defect.
 | CI | **Leave `.github/workflows/ci.yml` alone.** Do not add a Windows job. Keep the existing ubuntu pipeline green. |
 | Dev stack | Docker Desktop compose locally; compose stays the mandatory server form factor. |
 
-### M1 — what is done and what is blocked
+### 6a. THE OPEN DECISION — read this before writing any code
 
-Written, building and self-tested (`clients/windows/spike/`, plan section 5.0):
-`Printo.Spike.Ipp` (a real IPP/1.1 printer with an IPP Everywhere attribute table, switchable
-PDF/raster advertising, full request logging and PDL sniffing — verified against a Python IPP
-client), `Printo.Spike.PipePort` (named pipe with a LocalSystem ACL), and
-`Invoke-SpikePrinters.ps1` (creates/removes exactly three `Printo-Spike-*` queues, idempotent).
+**M1 is answered and it changed the problem.** The virtual printer works, but the Windows print
+path transforms every page on its way through, and the shipped rule set does not survive the
+transformation. Nothing about virtual-printer ingress should be built until this is decided.
 
-**Blocked:** `Add-Printer` needs elevation. From a standard-user session it fails with
-`Access was denied` *before any IPP traffic reaches the endpoint*, so neither capture question
-is answered.
+Full evidence: `docs/WINDOWS_CLIENT_PLAN.md` sections 5.0 and 5.0a. Fixtures: `tests/capture/`.
+Tests that pin it: `CaptureRoutingTests`. Reproduce with `Capture-Corpus.ps1` and
+`tools/corpus/compare_captures.py`.
 
-`clients/windows/spike/scripts/Run-CaptureSpike.ps1` now does the whole experiment in one
-elevated command: it builds the listener, starts it, creates the queue, waits for a print job,
-reports what arrived, and removes the queue in a `finally` so an interrupted run leaves the
-machine as it was found. From an **elevated** PowerShell:
+**What was measured** — 7 documents, one per page-shape family in the corpus census plus a page
+of nothing but visible prose, printed from Chrome to an IPP Everywhere queue. 22 pages:
+
+| Transformation | Pages | What it costs |
+|---|---|---|
+| Text layer removed | **22 of 22** | every `text` predicate |
+| Landscape turned to portrait | 10 of 22 | `orientation`, `pageWidthMm`, `pageHeightMm` |
+| Non-A4 media replaced by A4 | 5 of 22 | `pageIsLabelStock` and every page-size predicate |
+| Images resampled to ~300 dpi | 4 of 22 | nothing; never resampled *up* |
+
+The text result is not an artefact of the corpus being scans: the HTML probe was 368 characters
+of ordinary prose with no images, and came back with nothing extractable. **Every printed job is
+text-free.** OCR stops being an optimisation for scanned pages and becomes load-bearing.
+
+**What survives is physical size.** Content is placed at 1:1, never scaled - `SCALED` appears
+zero times in 22 pages. An ink box measuring 101.6x156.0 mm on disk measures 150.6x101.6 mm
+printed: the same rectangle, turned.
+
+**Result today: none of the seven documents routes a single page to thermal.** Six of them
+contain an outgoing carrier label. Every page lands on A4, silently, because `onUnknown` is
+`route` and the profile sets no `expectations.thermalPagesPerDocument`.
+
+#### The decision
+
+Rules for printed input must be stated in terms that survive printing: **ink box normalised for
+orientation, plus content** - never the page frame, which on this path describes the *queue's
+media* rather than the document.
+
+A rotation-tolerant retry was considered and **rejected on the evidence**: transposing recovers
+the three embedded FedEx/DHL labels whose rules key on an A4-landscape sheet, and neither the
+label-stock page nor the UPS carrier sheet, because no transposition brings back a page size
+that was substituted away. Do not re-propose it as a complete fix.
+
+Geometry alone cannot finish either. The 22 measured ink boxes separate labels (99-102 mm short
+edge) from courier waybill sheets (92-94 mm) by 5 mm, and plan section 1 already established
+from the full corpus that the DHL waybill sheet and DHL parcel label sit at 92.2x183.6 and
+91.9x180.3 mm - not separable by measurement at all. Content must discriminate, and on this
+path content means OCR, barcodes or picture matching.
+
+Two ways to organise it, **not yet chosen by the user**:
+
+1. **One rule set for both paths**, keyed on ink box and content, page-frame predicates demoted
+   to optional corroboration. Cleaner; but it re-derives rules that currently pass 1266/1266 and
+   the corpus must be re-proven.
+2. **A second profile for virtual-printer input**, leaving the corpus-calibrated profile to
+   serve hot folders and files. Lower risk; two rule sets to keep true.
+
+The assistant leaned toward (1) with (2) as the safe path. **Ask before choosing.**
+
+Also open, and asked but not answered: whether to measure OCR and picture-match cost per page on
+the seven captures *first*, so the efficiency question is settled with numbers. The user has
+stated twice that efficiency and reliability are both first-class, and that the stack must be
+elastic to input formats it cannot control.
+
+### M1 — answered
+
+Tier 1 wins. `Add-Printer -IppURL http://127.0.0.1:<port>/ipp/print` binds the inbox
+**Microsoft IPP Class Driver** to our own endpoint: no driver to write, none to sign, no port
+monitor, and Windows creates the port itself. It delivers **`application/pdf`**, IPP 2.0, via
+`Validate-Job` / `Create-Job` / `Send-Document`, after nine `Get-Printer-Attributes` that must
+all be answered or the queue will not bind. The job carries `job-name` (the original file name)
+and `requesting-user-name` (`DOMAIN\user`) - both of which the spool and accounting wanted
+anyway - plus copies, media-col, sides, colour mode, quality, orientation and resolution.
+
+Embedded images arrive at native resolution rather than re-sampled, so barcode decoding and OCR
+are no worse than on the source file. That was the main risk of this path and it did not
+materialise.
+
+Reproduce, from an **elevated** PowerShell (or double-click the `-Elevated.cmd` beside it):
 
 ```
 powershell -ExecutionPolicy Bypass -File clients\windows\spike\scripts\Run-CaptureSpike.ps1
+powershell -ExecutionPolicy Bypass -File clients\windows\spike\scripts\Capture-Corpus.ps1
 ```
 
-Then print one page to `Printo-Spike-IPP` from Chrome. Record the reported format and job
-attributes in plan section 5.0. **No production code may assume an answer until this is done.**
+Both scripts undo whatever a previous killed run left behind - default printer, queue, listener
+- before starting, because `finally` does not run when a window is closed and a stranded run
+leaves the machine's default printer pointing at a queue with nothing behind it.
 
+`Printo.Spike.PipePort` and `Invoke-SpikePrinters.ps1` remain for the Tier 2 fallback, which is
+no longer needed but is not deleted until the production virtual printer is proven.
 
 ### M2 — what landed, and the two gaps
 
@@ -218,10 +296,12 @@ which capture tier works. Hot folders are the working intake path meanwhile.
 ```bash
 npm run lint && npm run typecheck                      # repo-wide, must stay green
 npx vitest run --root packages/routing-engine          # 141 tests incl. golden corpus and picture matching
-dotnet test clients/windows/Printo.Agent.Tests         # 198 tests incl. corpus parity and soak
+dotnet test clients/windows/Printo.Agent.Tests         # 222 tests incl. corpus parity, soak, captures
 npm run smoke:prod                                     # builds the production images, asserts the stack
 pwsh clients/windows/installer/build.ps1 -Version 0.1.0           # builds the agent MSI
 Printo.Tray.exe --picker <document.pdf> [pages]        # measure the picker, prints timing
+Printo.Tray.exe --settings                             # the settings window, standalone
+python tools/corpus/compare_captures.py tests/capture/session   # what printing did to each page
 Printo.Agent.exe --console --config <agent.json>       # run the service in the foreground
 npx tsx packages/routing-engine/scripts/export-profiles.ts        # after editing profiles.ts
 npx tsx packages/routing-engine/scripts/export-corpus-fixtures.ts # after changing the engine
@@ -259,6 +339,52 @@ Two things are worth knowing before touching this code:
 forgotten — with no rasterizer the worker has no ink box, and without an ink box the shared
 engine routes 678/1266 corpus pages, missing *every* label. Plan §10.3 has the numbers and the
 three ways forward; it needs a decision, and nothing else depends on it.
+
+## 6b. Session log
+
+### 2026-09-06
+
+Started from "I installed the MSI and no app came up". That turned out to be three defects and
+one wrong diagnosis, and then the M1 answer changed the shape of the project.
+
+**The MSI was invisible, and partly broken.** The install had in fact succeeded and been
+uninstalled three minutes later. But `Printo.Tray.exe` run with no arguments - the path the
+autostart entry and every workstation take - fell through to a usage message box, and
+`TrayApplication`, which owns the notification icon *and* the named pipe the service raises the
+fallback picker through, was constructed nowhere in the repository. The package also created no
+shortcut of any kind. Fixed: the argument parsing is a tested function whose first test is the
+no-argument case; two Start Menu shortcuts; and `Verify-Install.ps1` now asserts the shortcuts
+and the binary behind them rather than only a registry value, which is how the empty tray
+survived a release.
+
+**A settings window** (plan section 10.8) - printers with roles, media, calibration and raw ZPL;
+watched folders; server, decision mode, threshold, OCR language. Group Policy values are shown
+disabled and marked, and written back unchanged so withdrawing a policy withdraws it. Saving
+stages the file and relaunches elevated with `--apply` - validate, copy, restart service, and
+nothing else - because the data directory is ACL'd to SYSTEM and Administrators. A test caught
+that path blanking a working configuration when the staged file was missing, since `Load` treats
+absence as a fresh machine. A calibration page prints rulers and the driver's reported geometry,
+composed exactly as a real job is.
+
+**M1 answered** (section 6a above). Along the way the capture harness itself needed hardening:
+the repository root was computed by climbing three directories instead of four, which put a
+session under `clients\tests\` and made a run that *had* happened look like one that had not -
+the assistant reported "it never ran" on that basis and was wrong. Both scripts now assert the
+root against a landmark, kill orphaned listeners, and undo a previous run's default printer from
+a breadcrumb in ProgramData, because `finally` does not run when a window is closed.
+
+**Not done, deliberately:** virtual-printer ingress. It is the next milestone and it is blocked
+on the decision in 6a, not on effort.
+
+### Corrections worth carrying forward
+
+- The user asked for evidence before committing to a fix, over the assistant's proposal to fix
+  it from one sample. They were right: the multi-document capture invalidated the proposal.
+- The user cares about efficiency and reliability as first-class constraints and has said the
+  stack must be elastic to input formats it cannot control. "Retry" as a word landed badly and
+  needed disambiguating from I/O retry; measure costs rather than assert they are small.
+- English only in the UI. The machine is Polish-locale, so tool output is often Polish - test
+  summaries read `Powodzenie` for pass and `Niepowodzenie` for fail.
 
 ## 7. Working agreements
 
