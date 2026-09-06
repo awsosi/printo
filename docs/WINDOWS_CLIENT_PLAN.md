@@ -233,30 +233,61 @@ Milestone M1 answers both on real hardware before any production code depends on
 If Tier 1 returns PWG Raster we still ship it — the engine consumes rasters natively — but we
 lose the text layer and lean harder on barcode + OCR.
 
-### 5.0 M1 spike status — **INCOMPLETE, blocked on one elevated step**
+### 5.0 M1 capture spike - **ANSWERED, Tier 1 confirmed**
 
-Both spikes are written, build clean and self-test. Neither has yet been bound to a real
-Windows print queue, so **the two questions above remain unanswered** and no production code
-may assume either answer.
+Run on Windows 11 with `clients/windows/spike/scripts/Run-CaptureSpike.ps1`, printing
+`czwart_anon/OneClickPrint_VTW189036998_anon.pdf` from Chrome to a queue created with
+`Add-Printer -IppURL`. The captured job is checked in at
+`tests/capture/chrome-ipp-a4-landscape-dhl.pdf`, and `CaptureRoutingTests` routes it.
 
-| Component | State |
+**Tier 1 works, and it delivers PDF.**
+
+| Question | Answer |
 |---|---|
-| `clients/windows/spike/Printo.Spike.Ipp` | Minimal IPP/1.1 printer on `127.0.0.1:39631`. Implements Get-Printer-Attributes, Validate-Job, Print-Job, Create-Job, Send-Document, Get-Job(s)-Attributes, Cancel-Job, Close-Job, Identify-Printer, with an IPP Everywhere (PWG 5100.14) attribute table including `media-col-database` and a `printer-device-id`. Advertises PDF-only, raster-only or both (`--formats`), so the format question can be answered by experiment rather than by argument. Logs every operation and attribute to JSONL and sniffs the delivered PDL by magic bytes. Verified end to end against a Python IPP client: attribute encoding, nested collections, job flow and PDF capture all correct. |
-| `clients/windows/spike/Printo.Spike.PipePort` | Hosts a named pipe with an ACL granting LocalSystem (the spooler's identity), for use as a Local Port target. Builds and runs. |
-| `clients/windows/spike/scripts/Invoke-SpikePrinters.ps1` | Creates and removes exactly three `Printo-Spike-*` queues and their ports; idempotent, and `-Action Remove` restores the machine. |
+| Which tier | Tier 1. Inbox **Microsoft IPP Class Driver** bound to a local IPP endpoint. No driver to write, none to sign, no port monitor. Windows creates the port itself. |
+| Which format | **`application/pdf`**, 223 710 bytes, IPP 2.0, user agent `wPrintWindowsDoc`. Not PWG Raster - the format question is settled in the good direction. |
+| Operation flow | Nine `Get-Printer-Attributes`, then `Validate-Job`, `Create-Job`, `Send-Document` with `last-document=true`. All nine attribute requests must be answered or the queue does not bind. |
+| Job identity | `job-name` carries the **original file name**, and `requesting-user-name` the submitting `DOMAIN\user`. Both are what the spool and accounting want, and both arrive free. |
+| Job settings | `copies`, `media-col` (`media-size` in hundredths of a millimetre: `20999x29699` is A4), `media-type`, `sides`, `print-color-mode`, `print-quality`, `orientation-requested`, `printer-resolution`. |
 
-**What is blocking.** `Add-Printer` and `Add-PrinterPort` require elevation; the attempt from a
-standard-user session returns `Access was denied to the specified resource` **before any IPP
-traffic reaches the endpoint**, so nothing about the format question can be inferred from it.
-Running the script elevated is the whole of the remaining work:
+**What the spooler does to the page, which matters more than the format.**
 
-```powershell
-Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass',
-  '-File','clients\windows\spike\scripts\Invoke-SpikePrinters.ps1','-Action','Add'
-```
+The renderer is `Microsoft: Print To PDF`. Measured against the source:
 
-Then start `printo-spike-ipp.exe`, print to the `Printo-Spike-IPP` queue from Chrome, and read
-`capture/ipp-session.jsonl`. Record the answers here and remove the queues with `-Action Remove`.
+| | Source on disk | Delivered by the spooler |
+|---|---|---|
+| Sheet | 297x210 mm landscape | **210x297 mm portrait** |
+| Ink box | 101.4 x 149.9 mm at (34, 19.3), aspect 1.48 | **150.6 x 101.6 mm at (19.1, 161.5), aspect 0.68** |
+| Text layer | 180 characters | **0 characters** |
+| Embedded image | 800x1228 at 200 dpi | 1228x800 at 199 dpi - **passed through, not re-rasterised** |
+
+Three consequences, each of which changes production code:
+
+1. **Image fidelity is preserved.** The page's images arrive at their native resolution rather
+   than re-sampled, so barcode decoding and OCR are no worse than on the source file. This was
+   the main risk of the IPP path and it did not materialise.
+
+2. **There is no text layer.** The source's text was the anonymiser's invisible layer and the
+   print path renders visible content only. Production originals are image-only anyway
+   (section 1.5), and the engine is proven at 1266/1266 with `--strip-text-layer`, so this is
+   survivable - but a rule set that quietly depends on text passes every existing test and
+   fails on every real print job. `CaptureRoutingTests` pins it.
+
+3. **The page arrives rotated, and the shipped rules do not recognise it.** Chrome asked for
+   portrait stock; Windows turned the landscape sheet to fit. The label is still there and
+   still the same size in millimetres, on its side. Every embedded-label rule is stated in a
+   frame that turned with it - `orientation: landscape`, `pageWidthMm 290-305`,
+   `inkAspect 1.35-1.7` - so `fedex-label-embedded` matches the file on disk and **nothing**
+   matches the same document printed. It routes to A4 at confidence 0.60.
+
+   Worse, it does so **silently**: the profile's `onUnknown` is `route`, which is right for the
+   many pages that are ordinary documents, and its `expectations.thermalPagesPerDocument` is
+   null, so nothing notices that a mixed document produced no label at all. A carrier label
+   printing on A4 with no prompt is the exact failure this product exists to end.
+
+This is why no production code was allowed to assume an answer. Virtual-printer ingress cannot
+be built as "hot folders, but from the spooler": the routing has to be made rotation-tolerant
+first, or the feature ships broken for the input it exists to handle.
 
 ### 5.1 Hot-folder mode (robustness rules)
 

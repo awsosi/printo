@@ -25,6 +25,16 @@ internal static class RepositoryPaths
     public static string? Profiles => Combine("profiles");
 
     /// <summary>
+    /// Real jobs captured from the Windows virtual printer, as the agent receives them.
+    /// </summary>
+    /// <remarks>
+    /// Not the same bytes as the source document, and that is the whole point of keeping them:
+    /// Windows re-lays the page out on its way through the spooler, so a rule proven against a
+    /// corpus file is not thereby proven against the same document printed.
+    /// </remarks>
+    public static string? Captures => Combine("tests", "capture");
+
+    /// <summary>
     /// The sample PDFs, which live outside the repository because they are customer data.
     /// Overridable with PRINTO_CORPUS_DIR; otherwise looked for beside the checkout.
     /// </summary>
