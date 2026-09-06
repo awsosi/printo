@@ -210,8 +210,8 @@ which capture tier works. Hot folders are the working intake path meanwhile.
 
 ```bash
 npm run lint && npm run typecheck                      # repo-wide, must stay green
-npx vitest run --root packages/routing-engine          # 141 tests incl. golden corpus
-dotnet test clients/windows/Printo.Agent.Tests         # 191 tests incl. corpus parity and soak
+npx vitest run --root packages/routing-engine          # 141 tests incl. golden corpus and picture matching
+dotnet test clients/windows/Printo.Agent.Tests         # 198 tests incl. corpus parity and soak
 npm run smoke:prod                                     # builds the production images, asserts the stack
 pwsh clients/windows/installer/build.ps1 -Version 0.1.0           # builds the agent MSI
 Printo.Tray.exe --picker <document.pdf> [pages]        # measure the picker, prints timing
