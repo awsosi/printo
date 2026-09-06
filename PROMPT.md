@@ -121,7 +121,7 @@ defect.
 - [~] M5 — Server integration (all but the worker's own engine adoption — plan §10.3)
 - [x] M6 — Admin UI (Fleet tab; driven in a real browser against a real database)
 - [~] M7 — Packaging + delivery (all but an elevated install of the MSI — see below)
-- [ ] M8 — Hardening ← **next**
+- [~] M8 — Hardening (docs and migration guide done; the rest needs hardware or elevation)
 
 ### Environment answers already given by the user (2026-09-05)
 
