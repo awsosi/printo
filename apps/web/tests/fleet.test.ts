@@ -128,6 +128,26 @@ describe('fleet admin', () => {
     expect(res.text).toContain('profile.pageRules = [rule].concat(profile.pageRules || [])');
   });
 
+  it('offers a template cropper that cuts in the browser and never uploads the sample', async () => {
+    const res = await request(createWebApp()).get('/admin/config');
+
+    expect(res.text).toContain('id="fleetSampleCanvas"');
+    expect(res.text).toContain('id="fleetAddTemplateButton"');
+    expect(res.text).toContain('function fleetCutTemplate()');
+
+    // The sample never leaves the browser: there is no upload endpoint and none is called.
+    expect(res.text).toContain('the document is never uploaded');
+
+    // Canvas pixels, not CSS pixels. The canvas is displayed scaled to fit, so cropping on
+    // CSS coordinates would cut the wrong region on every screen but the one it was written on.
+    expect(res.text).toContain('canvas.width / bounds.width');
+
+    // Recorded with the template, because the agent looks for the logo at the physical size it
+    // was cut at rather than at whatever pixel size the preview happened to use.
+    expect(res.text).toContain('const FLEET_TEMPLATE_DPI = 150');
+    expect(res.text).toContain('dpi: FLEET_TEMPLATE_DPI');
+  });
+
   it('shows the API detail in the page, not just the error code', async () => {
     const res = await request(createWebApp()).get('/admin/config');
 

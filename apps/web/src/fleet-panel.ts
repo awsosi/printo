@@ -74,6 +74,41 @@ export function fleetPanelHtml(): string {
               <section class="card stack">
                 <div class="section-title">
                   <div class="stack">
+                    <h2>Template from a sample</h2>
+                    <p class="muted">Open a sample document, drag a box round the logo, and get a rule that matches it.</p>
+                  </div>
+                  <span class="pill" id="fleetSampleInfo">no sample</span>
+                </div>
+                <div class="grid2">
+                  <label>Sample PDF
+                    <input id="fleetSampleFile" type="file" accept="application/pdf" />
+                  </label>
+                  <label>Page
+                    <input id="fleetSamplePage" type="number" min="1" value="1" />
+                  </label>
+                </div>
+                <div id="fleetSampleStage" style="position:relative;overflow:auto;max-height:420px;border:1px solid var(--line);border-radius:8px;">
+                  <canvas id="fleetSampleCanvas" style="display:block;max-width:100%;cursor:crosshair;"></canvas>
+                  <div id="fleetSampleSelection" style="position:absolute;display:none;border:2px solid var(--accent);background:rgba(29,90,72,0.14);pointer-events:none;"></div>
+                </div>
+                <div class="grid2">
+                  <label>Template name
+                    <input id="fleetTemplateName" type="text" placeholder="dhl-logo" />
+                  </label>
+                  <label>Match threshold
+                    <input id="fleetTemplateThreshold" type="number" min="0" max="1" step="0.05" value="0.8" />
+                  </label>
+                </div>
+                <button id="fleetAddTemplateButton" type="button">Add the template and a rule to the bundle</button>
+                <p class="hint muted">The cutting is done here in the browser; the document is never uploaded.</p>
+                <div id="fleetTemplateStatus" class="status muted"></div>
+              </section>
+            </div>
+
+            <div class="grid2">
+              <section class="card stack">
+                <div class="section-title">
+                  <div class="stack">
                     <h2>Fallbacks</h2>
                     <p class="muted">Where the engine had to ask a person. Driving these to zero is the point of the rules.</p>
                   </div>
@@ -255,6 +290,90 @@ export function fleetPanelScript(): string {
           '</div>';
         }
 
+        /**
+         * The resolution the sample is rendered at, and therefore the template's own dpi.
+         *
+         * pdf.js scale 1.0 is 72 dpi. Rendering at 150 and recording that with the template is
+         * what lets the agent look for the logo at the physical size it was cut at, rather than
+         * at whatever pixel size happened to fall out of the preview.
+         */
+        const FLEET_TEMPLATE_DPI = 150;
+
+        const fleetSample = { pdf: null, page: 1, selection: null };
+
+        async function fleetRenderSample() {
+          if (!fleetSample.pdf) {
+            return;
+          }
+
+          const canvas = byId('fleetSampleCanvas');
+          const number = Math.min(Math.max(1, fleetSample.page), fleetSample.pdf.numPages);
+          fleetSample.page = number;
+          byId('fleetSamplePage').value = String(number);
+
+          const page = await fleetSample.pdf.getPage(number);
+          const viewport = page.getViewport({ scale: FLEET_TEMPLATE_DPI / 72 });
+          canvas.width = Math.round(viewport.width);
+          canvas.height = Math.round(viewport.height);
+          await page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
+
+          fleetSample.selection = null;
+          byId('fleetSampleSelection').style.display = 'none';
+          byId('fleetSampleInfo').textContent = 'page ' + number + ' of ' + fleetSample.pdf.numPages;
+        }
+
+        /** Canvas pixels for a pointer event, which is not the same as CSS pixels. */
+        function fleetCanvasPoint(event) {
+          const canvas = byId('fleetSampleCanvas');
+          const bounds = canvas.getBoundingClientRect();
+          // The canvas is displayed scaled to fit, so a click at the right-hand edge is not
+          // canvas.width CSS pixels from the left. Cropping on CSS coordinates would cut the
+          // wrong region on every screen but the one it was written on.
+          return {
+            x: Math.round((event.clientX - bounds.left) * (canvas.width / bounds.width)),
+            y: Math.round((event.clientY - bounds.top) * (canvas.height / bounds.height))
+          };
+        }
+
+        function fleetDrawSelection() {
+          const overlay = byId('fleetSampleSelection');
+          const canvas = byId('fleetSampleCanvas');
+          const box = fleetSample.selection;
+
+          if (!box || box.w < 4 || box.h < 4) {
+            overlay.style.display = 'none';
+            return;
+          }
+
+          const bounds = canvas.getBoundingClientRect();
+          const stage = byId('fleetSampleStage').getBoundingClientRect();
+          const scale = bounds.width / canvas.width;
+
+          overlay.style.display = 'block';
+          overlay.style.left = (bounds.left - stage.left + (box.x * scale)) + 'px';
+          overlay.style.top = (bounds.top - stage.top + (box.y * scale)) + 'px';
+          overlay.style.width = (box.w * scale) + 'px';
+          overlay.style.height = (box.h * scale) + 'px';
+        }
+
+        /** Cuts the selected region out as a PNG, base64, the way the bundle wants it. */
+        function fleetCutTemplate() {
+          const box = fleetSample.selection;
+          if (!box || box.w < 8 || box.h < 8) {
+            return null;
+          }
+
+          const cut = document.createElement('canvas');
+          cut.width = box.w;
+          cut.height = box.h;
+          cut.getContext('2d').drawImage(
+            byId('fleetSampleCanvas'), box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
+
+          // The bundle carries bare base64; the validator rejects a data: URI prefix.
+          const encoded = cut.toDataURL('image/png');
+          return encoded.slice(encoded.indexOf(',') + 1);
+        }
+
         function renderFleetAccounting() {
           const target = byId('fleetAccountingList');
           const note = byId('fleetReconciliation');
@@ -429,6 +548,140 @@ export function fleetPanelScript(): string {
                 // exact path, so the message is the useful part - show it whole.
                 fleetSetStatus('fleetBundleStatus', 'Rejected: ' + error.message, 'danger');
               }
+            });
+          }
+
+          const sampleFile = byId('fleetSampleFile');
+          if (sampleFile) {
+            sampleFile.addEventListener('change', async function (event) {
+              const file = event.target.files && event.target.files[0];
+              if (!file) {
+                return;
+              }
+
+              try {
+                const bytes = new Uint8Array(await file.arrayBuffer());
+                fleetSample.pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+                fleetSample.page = 1;
+                await fleetRenderSample();
+                fleetSetStatus('fleetTemplateStatus', 'Drag a box round the logo you want to match.', 'muted');
+              } catch (error) {
+                fleetSetStatus('fleetTemplateStatus', 'Could not open that PDF: ' + error.message, 'danger');
+              }
+            });
+          }
+
+          const samplePage = byId('fleetSamplePage');
+          if (samplePage) {
+            samplePage.addEventListener('change', function () {
+              fleetSample.page = Number(samplePage.value || 1);
+              void fleetRenderSample();
+            });
+          }
+
+          const sampleCanvas = byId('fleetSampleCanvas');
+          if (sampleCanvas) {
+            let dragging = false;
+            let origin = null;
+
+            sampleCanvas.addEventListener('pointerdown', function (event) {
+              if (!fleetSample.pdf) {
+                return;
+              }
+              dragging = true;
+              origin = fleetCanvasPoint(event);
+              fleetSample.selection = { x: origin.x, y: origin.y, w: 0, h: 0 };
+              sampleCanvas.setPointerCapture(event.pointerId);
+            });
+
+            sampleCanvas.addEventListener('pointermove', function (event) {
+              if (!dragging || !origin) {
+                return;
+              }
+              const point = fleetCanvasPoint(event);
+              fleetSample.selection = {
+                x: Math.min(origin.x, point.x),
+                y: Math.min(origin.y, point.y),
+                w: Math.abs(point.x - origin.x),
+                h: Math.abs(point.y - origin.y)
+              };
+              fleetDrawSelection();
+            });
+
+            sampleCanvas.addEventListener('pointerup', function (event) {
+              dragging = false;
+              origin = null;
+              fleetDrawSelection();
+
+              if (fleetSample.selection && fleetSample.selection.w >= 8) {
+                const mm = 25.4 / FLEET_TEMPLATE_DPI;
+                fleetSetStatus(
+                  'fleetTemplateStatus',
+                  'Selected ' + Math.round(fleetSample.selection.w * mm) + ' x ' +
+                    Math.round(fleetSample.selection.h * mm) + ' mm. Name it and add it.',
+                  'ok');
+              }
+
+              try { sampleCanvas.releasePointerCapture(event.pointerId); } catch (_error) {}
+            });
+          }
+
+          const addTemplate = byId('fleetAddTemplateButton');
+          if (addTemplate) {
+            addTemplate.addEventListener('click', function () {
+              const name = byId('fleetTemplateName').value.trim();
+              if (!name) {
+                fleetSetStatus('fleetTemplateStatus', 'Give the template a name first.', 'danger');
+                return;
+              }
+
+              const png = fleetCutTemplate();
+              if (!png) {
+                fleetSetStatus('fleetTemplateStatus', 'Drag a box round the logo first.', 'danger');
+                return;
+              }
+
+              const editor = byId('fleetBundleEditor');
+              let bundle;
+              try {
+                bundle = JSON.parse(editor.value);
+              } catch (error) {
+                fleetSetStatus('fleetTemplateStatus', 'Load a bundle first: ' + error.message, 'danger');
+                return;
+              }
+
+              const profile = (bundle.profiles || [])[0];
+              if (!profile) {
+                fleetSetStatus('fleetTemplateStatus', 'The bundle has no profile to add the rule to.', 'danger');
+                return;
+              }
+
+              // Replacing by name rather than appending: two templates with one name make every
+              // rule using it ambiguous, and the validator refuses the bundle outright.
+              bundle.templates = (bundle.templates || []).filter(function (entry) {
+                return entry.name !== name;
+              });
+              bundle.templates.push({ name: name, png: png, dpi: FLEET_TEMPLATE_DPI });
+
+              const ruleId = 'picture-' + name;
+              profile.pageRules = [{
+                id: ruleId,
+                name: name + ' (picture match)',
+                when: {
+                  image: { template: name, threshold: Number(byId('fleetTemplateThreshold').value || 0.8) }
+                },
+                then: {
+                  route: 'THERMAL',
+                  confidence: 0.9,
+                  transform: { source: 'inkBox', padMm: 1, rotate: 'auto', fit: 'contain' }
+                }
+              }].concat((profile.pageRules || []).filter(function (rule) { return rule.id !== ruleId; }));
+
+              editor.value = JSON.stringify(bundle, null, 2);
+              fleetSetStatus(
+                'fleetTemplateStatus',
+                'Added template ' + name + ' and rule ' + ruleId + ' to the editor. Review it, then publish.',
+                'ok');
             });
           }
 

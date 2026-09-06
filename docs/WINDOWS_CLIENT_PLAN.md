@@ -733,13 +733,15 @@ Publishing is deliberately *not* part of the one click. Pushing a machine-writte
 thirty workstations without anyone reading it is how a fleet starts printing invoices on label
 stock at four in the afternoon.
 
-**"A new carrier template can be created end to end from a sample PDF" - partially.** A new
-carrier is fully configurable without code: rules and carrier signatures are data, the bundle
-editor accepts them, and the validator rejects anything either engine could not execute,
-naming the exact failing path. What does *not* exist is uploading a sample PDF and dragging a
-rectangle over it in the browser to author the rule visually. The fallback path covers the
-common case - a document that already failed produces its own rule - and authoring from a
-sample is JSON today.
+**"A new carrier template can be created end to end from a sample PDF" - done.** Open the
+sample in the console, drag a box round the carrier's logo, name it, and the template and a
+matching rule land in the bundle editor ready to publish. Rules and carrier signatures are
+data, the validator rejects anything either engine could not execute and names the exact
+failing path, and no code changes are involved at any point.
+
+What the console still does not offer is authoring a *geometry* rule visually - dragging a
+rectangle to set `inkWidthMm` and friends. Those are written as JSON, or derived automatically
+from a logged fallback, which covers the case that actually arises.
 
 ### 10.5 Picture matching
 
@@ -770,8 +772,16 @@ Four conformance fixtures pin the protocol on both engines; four end-to-end test
 PDF through PDFium, a PNG cut from a rendering of it, the engine's request, the matcher and the
 printer.
 
-**Still missing:** a tool for cropping a template out of a sample PDF. The reference image has
-to be produced by hand and pasted into the bundle as base64.
+The console cuts the reference image: open a sample document, drag a box round the logo, and
+get the template plus a matching rule in the bundle editor. The cutting is done in the browser,
+so the sample never leaves the machine, and the crop is taken from the canvas at 150 dpi with
+that resolution recorded alongside it.
+
+A PNG cut that way is a checked-in fixture (`tests/templates/console-cut-logo.png`), and three
+tests take it through the agent: decode, locate on the page it came from, and route. That is
+not ceremony - the two ends produce different PNGs. A canvas emits 8-bit RGBA, and a decoder
+that only handled what the agent's own encoder writes would pass every other test in the suite
+and fail on the first template an administrator actually cut.
 
 Each milestone is committed and pushed to `github.com/awsosi/printo` as it completes.
 

@@ -161,6 +161,11 @@ Four things worth knowing before porting a snippet rule:
   a full A4 page at 150 dpi takes well under a tenth of a second — but narrowing it is both
   faster and less likely to match something else that happens to look similar.
 
+**Cutting one:** in the Fleet tab, open a sample document under *Template from a sample*, drag
+a box round the logo, name it, and press *Add the template and a rule to the bundle*. The
+cropping happens in the browser — the sample is never uploaded — and the rule is added to the
+editor for you to review before publishing.
+
 Thresholds: 0.8 is a reasonable starting point. The trace records the score actually reached,
 so a rule that is not firing tells you whether it missed by 0.01 or by 0.5.
 
@@ -169,10 +174,10 @@ so a rule that is not firing tells you whether it missed by 0.01 or by 0.5.
 Stated plainly, because the gap that matters most is the one closest to a Print&Share feature
 you may rely on:
 
-- **There is no tool for cutting a template out of a sample PDF.** Picture matching itself
-  works — see §6 — but the reference image has to be produced by hand and pasted into the bundle
-  as base64. Deriving a rule from a logged fallback is one click; cropping a logo is not.
-- **The visual rule editor does not exist.** Rules are authored as JSON in the console, which
+- **The visual rule editor is limited to picture rules.** Cutting a logo out of a sample and
+  getting a matching rule is a drag and a click (§5). Authoring a *geometry* rule visually —
+  dragging a rectangle to set the ink bounds — is not offered; those are written as JSON, or
+  derived automatically from a logged fallback. Rules are authored as JSON in the console, which
   validates them and names the exact path of anything either engine could not execute. Deriving
   a rule from a logged fallback is one click; drawing a rectangle on a sample PDF is not
   available.
