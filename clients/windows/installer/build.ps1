@@ -53,6 +53,7 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $clientRoot = Split-Path -Parent $here
 $publishDir = Join-Path $here 'obj/publish'
 $serviceDir = Join-Path $here 'obj/service'
+$trayDir = Join-Path $here 'obj/tray'
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $here 'bin' }
 
 function Assert-Tool {
@@ -65,24 +66,28 @@ function Assert-Tool {
 Assert-Tool -Name 'dotnet' -InstallHint 'Install the .NET 10 SDK.'
 Assert-Tool -Name 'wix' -InstallHint 'Install it with: dotnet tool install --global wix --version 5.*'
 
-# The Util extension supplies ServiceConfig and PermissionEx. Its version has to match the WiX
-# major version: `wix extension add` without one resolves to the newest package, which is v7 and
-# fails with a "could not find expected package root folder wixext5" warning and then an
+# Util supplies ServiceConfig, PermissionEx and the well-known-SID lookup; UI supplies the
+# dialogs somebody sees when they double-click the package. Both versions have to match the WiX
+# major version: `wix extension add` without one resolves to the newest package, which is v7,
+# and fails with a "could not find expected package root folder wixext5" warning and then an
 # unresolved-extension error at build time.
-$wixExtension = 'WixToolset.Util.wixext'
 $wixExtensionVersion = '5.0.2'
-if (-not ((& wix extension list -g 2>&1) -match [regex]::Escape("$wixExtension $wixExtensionVersion"))) {
-    Write-Host "==> adding $wixExtension/$wixExtensionVersion"
-    & wix extension remove -g $wixExtension 2>&1 | Out-Null
-    & wix extension add -g "$wixExtension/$wixExtensionVersion"
-    if ($LASTEXITCODE -ne 0) { throw "could not add $wixExtension/$wixExtensionVersion" }
+foreach ($wixExtension in @('WixToolset.Util.wixext', 'WixToolset.UI.wixext')) {
+    if (-not ((& wix extension list -g 2>&1) -match [regex]::Escape("$wixExtension $wixExtensionVersion"))) {
+        Write-Host "==> adding $wixExtension/$wixExtensionVersion"
+        & wix extension remove -g $wixExtension 2>&1 | Out-Null
+        & wix extension add -g "$wixExtension/$wixExtensionVersion"
+        if ($LASTEXITCODE -ne 0) { throw "could not add $wixExtension/$wixExtensionVersion" }
+    }
 }
 
 # A stale publish directory is the classic way to ship a file that is no longer built.
 if (Test-Path $publishDir) { Remove-Item -Recurse -Force $publishDir }
 if (Test-Path $serviceDir) { Remove-Item -Recurse -Force $serviceDir }
+if (Test-Path $trayDir) { Remove-Item -Recurse -Force $trayDir }
 New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
 New-Item -ItemType Directory -Force -Path $serviceDir | Out-Null
+New-Item -ItemType Directory -Force -Path $trayDir | Out-Null
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 
 # Both projects publish into the same directory on purpose: they share almost every assembly,
@@ -118,10 +123,12 @@ foreach ($required in @(
 # symbols kept with the build, not the ones on the workstation.
 Get-ChildItem -Path $publishDir -Filter '*.pdb' -Recurse | Remove-Item -Force
 
-# The service executable is moved out of the harvested tree because it cannot be harvested: its
-# component carries the ServiceInstall, and WiX 5's `Files` element has no `Exclude`, so a file
-# that appears in both the glob and an explicit component is a duplicate-file error.
+# Both executables are moved out of the harvested tree because neither can be harvested: the
+# service exe carries the ServiceInstall, and the tray exe has to be referenced by id from the
+# shortcuts and from the exit dialog's "open the settings" action. WiX 5's `Files` element has
+# no `Exclude`, so a file in both the glob and an explicit component is a duplicate-file error.
 Move-Item -Path (Join-Path $publishDir 'Printo.Agent.exe') -Destination $serviceDir
+Move-Item -Path (Join-Path $publishDir 'Printo.Tray.exe') -Destination $trayDir
 
 if ($CertificateThumbprint) {
     Assert-Tool -Name 'signtool' -InstallHint 'Install the Windows SDK signing tools.'
@@ -130,7 +137,7 @@ if ($CertificateThumbprint) {
     # The binaries are signed before packaging: signing only the MSI leaves the installed
     # executables unsigned, and it is those that AV inspects every time the service starts.
     & signtool sign /sha1 $CertificateThumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 `
-        (Join-Path $serviceDir 'Printo.Agent.exe') (Join-Path $publishDir 'Printo.Tray.exe')
+        (Join-Path $serviceDir 'Printo.Agent.exe') (Join-Path $trayDir 'Printo.Tray.exe')
     if ($LASTEXITCODE -ne 0) { throw 'signing the binaries failed' }
 }
 
@@ -141,10 +148,13 @@ Write-Host "==> building $msi"
     (Join-Path $here 'Printo.Agent.wxs') `
     (Join-Path $here 'Printo.Agent.Payload.wxs') `
     -ext WixToolset.Util.wixext `
+    -ext WixToolset.UI.wixext `
     -arch x64 `
     -define "ProductVersion=$Version" `
     -define "PublishDir=$publishDir" `
     -define "ServiceDir=$serviceDir" `
+    -define "TrayDir=$trayDir" `
+    -define "NoticeRtf=$(Join-Path $here 'Notice.rtf')" `
     -out $msi
 if ($LASTEXITCODE -ne 0) { throw 'wix build failed' }
 

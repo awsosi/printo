@@ -19,6 +19,10 @@ public sealed class InstallerTests
 {
     private static readonly XNamespace Wxs = "http://wixtoolset.org/schemas/v4/wxs";
 
+    private static readonly XNamespace Ui = "http://wixtoolset.org/schemas/v4/wxs/ui";
+
+    private static readonly XNamespace Util = "http://wixtoolset.org/schemas/v4/wxs/util";
+
     private static XDocument Package() => XDocument.Load(
         Path.Combine(RepositoryPaths.Root!, "clients", "windows", "installer", "Printo.Agent.wxs"));
 
@@ -70,6 +74,63 @@ public sealed class InstallerTests
             RepositoryPaths.Root!, "clients", "windows", "Printo.Agent.Service", "Program.cs"));
 
         Assert.Contains($"\"{command}\"", program, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Every account in the package's ACL is named through a property, never in English.
+    /// </summary>
+    /// <remarks>
+    /// Windows localises the built-in accounts, and the ACL is applied by a deferred custom
+    /// action that resolves the name on the target machine. `Administrators` does not exist on a
+    /// Polish installation - the group is `Administratorzy` - so the lookup fails, the action
+    /// fails, and the whole install rolls back with 1603 and no explanation. It installed
+    /// cleanly on an English machine and failed on the first real one.
+    /// </remarks>
+    [Fact]
+    public void TheAclNamesAccountsByPropertyRatherThanInEnglish()
+    {
+        var package = Package();
+
+        var users = package
+            .Descendants(Util + "PermissionEx")
+            .Select(element => (string?)element.Attribute("User") ?? string.Empty)
+            .ToList();
+
+        Assert.NotEmpty(users);
+        Assert.All(users, user => Assert.StartsWith("[WIX_ACCOUNT_", user, StringComparison.Ordinal));
+
+        // The properties are empty unless this is scheduled, and an empty user is a failed
+        // lookup by another route.
+        Assert.Single(package.Descendants(Util + "QueryWindowsWellKnownSIDs"));
+    }
+
+    /// <summary>
+    /// The package has a user interface, so an install that fails can say so.
+    /// </summary>
+    /// <remarks>
+    /// Without one, Windows Installer runs everything behind a progress window that appears and
+    /// vanishes, and a fatal rollback is indistinguishable from success. That is how a 1603 on
+    /// the first machine this was installed on came back as "it flashes and disappears".
+    /// </remarks>
+    [Fact]
+    public void ThePackageShowsSomethingToWhoeverRunsIt()
+    {
+        var package = Package();
+
+        Assert.Single(package.Descendants(Ui + "WixUI"));
+
+        // And the exit dialog offers the one thing a new machine actually needs next.
+        var launch = package
+            .Descendants(Wxs + "CustomAction")
+            .Single(element => (string?)element.Attribute("Id") == "LaunchSettings");
+
+        Assert.Equal("TrayExe", (string?)launch.Attribute("FileRef"));
+        Assert.Equal("--settings", (string?)launch.Attribute("ExeCommand"));
+
+        // Impersonated: the settings window belongs to the person installing, not to the
+        // elevated installer. Asynchronous: a window nobody closes must not hold msiexec open.
+        Assert.Equal("yes", (string?)launch.Attribute("Impersonate"));
+        Assert.Equal("asyncNoWait", (string?)launch.Attribute("Return"));
     }
 
     /// <summary>

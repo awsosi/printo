@@ -1,0 +1,18 @@
+{\rtf1\ansi\ansicpg1252\deff0{\fonttbl{\f0\fnil\fcharset0 Segoe UI;}}
+\viewkind4\uc1\pard\sa120\f0\fs20
+\b Printo Agent\b0\par
+Internal software. Installed and supported by your own IT department; there is no third-party licence to accept.\par
+\par
+\b What this installs\b0\par
+A Windows service, \i PrintoAgent\i0 , which runs as LocalSystem and starts with the machine.\par
+A printer called \i Printo\i0 . Anything printed to it is examined page by page and sent on to this machine's real printers - carrier labels to the thermal printer, everything else to A4.\par
+A tray application and two Start Menu entries, \i Printo\i0  and \i Printo Settings\i0 .\par
+\par
+\b What it does with documents\b0\par
+Documents are rendered, measured and printed on this workstation. They are not uploaded. When the agent is connected to a Printo server, what crosses the network is measurements and job records - page sizes, rule outcomes, which printer a page reached - and, only when an operator was asked to resolve a page, a thumbnail of the pages in question.\par
+\par
+A copy of each document is kept in \i C:\\ProgramData\\Printo\\agent\i0  until it has printed, and for as long afterwards as the retention policy your administrator has set.\par
+\par
+\b Before it can print\b0\par
+This machine's printers have to be mapped to roles once, in \i Printo Settings\i0 . Until that is done the agent accepts documents and holds them.\par
+}

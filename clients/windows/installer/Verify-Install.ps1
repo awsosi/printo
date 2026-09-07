@@ -14,7 +14,7 @@
 
     What it checks, in order:
 
-      1. a clean install succeeds silently
+      1. a clean install succeeds
       2. the service exists, is set to start automatically, and is running
       3. the virtual printer queue appears and points at the agent's own endpoint
       4. a page printed to that queue reaches the agent
@@ -171,11 +171,44 @@ Check 'the agent reports that configuration back' {
 
 Write-Host '==> the data directory is protected'
 Check 'the data directory exists' { Test-Path $dataDir }
-Check 'ordinary users cannot read it' {
-    $rules = (Get-Acl $dataDir).Access | Where-Object { -not $_.IsInherited }
-    $identities = $rules | ForEach-Object { $_.IdentityReference.Value }
-    # The enrolment credential lives here, and ProgramData grants Users read by default.
-    -not ($identities -match 'BUILTIN\\Users|Everyone|Authenticated Users')
+Check 'it has an ACL of its own' {
+    # Not the inherited ProgramData rules: those grant every authenticated user read, and this
+    # is where a site's queued documents live.
+    (Get-Acl $dataDir).AreAccessRulesProtected
+}
+Check 'the system and administrators have full control' {
+    # By SID, not by name. `Administrators` is `Administratorzy` on a Polish installation and
+    # something else again elsewhere - naming these in English is what made the first install of
+    # this package fail with 1603.
+    $rules = (Get-Acl $dataDir).GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
+    $full = $rules | Where-Object {
+        $_.FileSystemRights.HasFlag([System.Security.AccessControl.FileSystemRights]::FullControl)
+    } | ForEach-Object { $_.IdentityReference.Value }
+
+    ($full -contains 'S-1-5-18') -and ($full -contains 'S-1-5-32-544')
+}
+Check 'ordinary users can use it but not take it over' {
+    # Users need read and write: the tray runs as the operator and reads this machine's
+    # configuration, the document the picker is asking about, and the job queue behind its
+    # tooltip. What they must not have is control of the ACL itself. The enrolment credential is
+    # protected separately, as its own file - see the check below.
+    $rules = (Get-Acl $dataDir).GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
+    $users = $rules | Where-Object { $_.IdentityReference.Value -eq 'S-1-5-32-545' }
+    if (-not $users) { return $false }
+
+    $forbidden = [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+                 [System.Security.AccessControl.FileSystemRights]::TakeOwnership
+    -not ($users | Where-Object { ($_.FileSystemRights -band $forbidden) -ne 0 })
+}
+Check 'the enrolment credential is out of their reach' {
+    # Written by the agent, not by the installer, and locked from well-known SIDs as it is
+    # written. Absent until the machine enrols, which this run does not do - so an absent file
+    # passes and a present one is checked.
+    $identity = Join-Path $dataDir 'identity.json'
+    if (-not (Test-Path $identity)) { return $true }
+
+    $rules = (Get-Acl $identity).GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
+    -not ($rules | Where-Object { $_.IdentityReference.Value -in @('S-1-5-32-545', 'S-1-1-0', 'S-1-5-11') })
 }
 
 # A marker file, to prove an upgrade does not discard a site's spool and identity.

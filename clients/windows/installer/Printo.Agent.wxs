@@ -16,6 +16,7 @@
   neither installable nor removable.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
   <Package Name="Printo Agent"
@@ -38,6 +39,51 @@
       DowngradeErrorMessage="A newer version of the Printo Agent is already installed." />
 
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <!--
+      A user interface, because a package a person double-clicks has to be able to tell them
+      what happened. Without one, Windows Installer runs the whole install behind a progress
+      window that appears and vanishes: a success and a fatal rollback look exactly the same
+      from the outside, which is precisely how a 1603 went unexplained on the first machine
+      this was ever installed on. GPO deployment and `msiexec /qn` are unaffected - they
+      suppress the UI either way.
+    -->
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.NoticeRtf)" />
+
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT"
+              Value="Open Printo Settings, to map this machine's printers" />
+
+    <!--
+      The first thing a new machine needs is its printer map, and at that moment the tray has
+      not started - the autostart entry does not fire until the next sign-in. Impersonated, so
+      the settings window runs as the person who installed rather than as the elevated
+      installer, and asynchronous so a window nobody closes cannot hold msiexec open.
+    -->
+    <CustomAction Id="LaunchSettings"
+                  FileRef="TrayExe"
+                  ExeCommand="--settings"
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="asyncNoWait" />
+
+    <UI>
+      <Publish Dialog="ExitDialog"
+               Control="Finish"
+               Event="DoAction"
+               Value="LaunchSettings"
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+    </UI>
+
+    <!--
+      Resolves the built-in accounts to whatever this machine calls them. Windows localises
+      them - on a Polish installation the administrators group is `Administratorzy` and
+      `Administrators` resolves to nothing at all - and the ACL below is applied by a deferred
+      custom action that looks the name up on the target machine. Naming them in English
+      installed cleanly on an English workstation and failed with 1603 on every other one.
+    -->
+    <util:QueryWindowsWellKnownSIDs />
 
     <Launch Condition="Installed OR VersionNT64" Message="The Printo Agent requires 64-bit Windows." />
 
@@ -129,6 +175,14 @@
       </Component>
 
       <!--
+        The tray executable, declared rather than harvested so the exit dialog and the
+        shortcuts can refer to it by id.
+      -->
+      <Component Id="TrayApp" Directory="INSTALLFOLDER" Guid="6a1d3f75-2c48-4e91-b3f6-0d5a7c92e184">
+        <File Id="TrayExe" Source="$(var.TrayDir)\Printo.Tray.exe" KeyPath="yes" />
+      </Component>
+
+      <!--
         The tray is per-user and starts at sign-in. HKLM rather than HKCU because a packing
         bench is shared: the picker has to appear for every operator, not only for whoever
         happened to be signed in when the MSI ran.
@@ -177,13 +231,30 @@
         In ProgramData rather than the install directory because the MSI replaces the install
         directory on upgrade, and a site's queued work and identity must survive that.
 
-        The ACL drops the inherited ProgramData rules, which grant every authenticated user
-        read - and the enrolment credential lives here.
+        Every account is named through a property rather than in English, because these names
+        are localised and the lookup happens on the target machine - see QueryWindowsWellKnownSIDs
+        above.
+
+        Users are granted read and write, which is weaker than it first looks and is deliberate:
+        the tray runs as the signed-in operator and has to read this machine's configuration, the
+        spooled document the picker is asking about, and the queue it reports in its tooltip. An
+        ACL of SYSTEM and administrators alone reads well in a security review and leaves an
+        operator with a settings window that cannot open and a picker with no thumbnails.
+
+        What actually needs protecting is the enrolment credential, and that is protected where
+        it lives: the agent locks `identity.json` down to SYSTEM and the administrators group as
+        it writes it, from well-known SIDs, which cannot be mis-localised.
       -->
       <Component Id="DataDirectory" Directory="DATAFOLDER" Guid="8f30b1a6-2d54-4c73-b8e1-9a4f6d2c0b18">
         <CreateFolder>
-          <util:PermissionEx User="SYSTEM" GenericAll="yes" Inheritable="yes" />
-          <util:PermissionEx User="Administrators" GenericAll="yes" Inheritable="yes" />
+          <util:PermissionEx User="[WIX_ACCOUNT_LOCALSYSTEM]" GenericAll="yes" Inheritable="yes" />
+          <util:PermissionEx User="[WIX_ACCOUNT_ADMINISTRATORS]" GenericAll="yes" Inheritable="yes" />
+          <util:PermissionEx User="[WIX_ACCOUNT_USERS]"
+                             GenericRead="yes"
+                             GenericWrite="yes"
+                             GenericExecute="yes"
+                             Delete="yes"
+                             Inheritable="yes" />
         </CreateFolder>
         <RegistryValue Root="HKLM" Key="SOFTWARE\Printo\Agent" Name="DataDirectory"
                        Type="string" Value="[DATAFOLDER]" KeyPath="yes" />

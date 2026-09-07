@@ -254,8 +254,16 @@ Issue a multi-use token in the console (**Fleet → Issue enrolment token**) and
 per-machine credential, and never needs it again. Clear the policy once the fleet has enrolled.
 
 The token is not a long-lived secret: it only permits enrolment, it expires, and its use count
-is enforced server-side. The credential it buys is stored in `%ProgramData%\Printo\agent\` under
-an ACL that grants only SYSTEM, Administrators and the account the agent runs as.
+is enforced server-side. The credential it buys is written to
+`%ProgramData%\Printo\agent\identity.json`, and the agent locks that file as it writes it: the
+inherited rules are dropped and only SYSTEM, the administrators group and the account the agent
+runs as are left.
+
+The directory around it is deliberately less strict - SYSTEM and administrators in full,
+ordinary users read and write. The tray runs as the signed-in operator and has to read this
+machine's configuration, the document the picker is asking about, and the queue behind its
+tooltip; a directory locked to administrators reads better in a review and leaves an operator
+with a settings window that will not open. The secret is protected where the secret is.
 
 Alternatively pass it to the MSI directly, which is what a one-off install wants:
 
@@ -297,6 +305,41 @@ software.
 
 For Microsoft Defender, by GPO: **Computer Configuration → Policies → Administrative Templates →
 Windows Components → Microsoft Defender Antivirus → Exclusions**.
+
+### 2.7a When an install fails
+
+Double-clicking the package shows a short welcome, a progress bar, and a page saying whether it
+worked. If it ends in an error, or if you are deploying unattended and want the detail, install
+with a log:
+
+```powershell
+msiexec /i PrintoAgent-0.1.2.msi /l*v "$env:TEMP\printo-install.log"
+```
+
+Then find the action that failed - Windows Installer marks it, and everything after it is
+rollback noise:
+
+```powershell
+Select-String -Path "$env:TEMP\printo-install.log" -Pattern 'Return value 3' |
+    Select-Object -First 5
+```
+
+The Application event log carries the summary as MsiInstaller event 1033, with the product
+version and the exit code. **1603** means an action failed and everything was rolled back;
+nothing is left installed.
+
+One failure is worth naming, because it cost a day and it is the reason this section exists. Up
+to 0.1.1 the package set the data directory's ACL for accounts named `SYSTEM` and
+`Administrators` in English. Windows localises those: on a Polish installation the group is
+`Administratorzy`, `Administrators` resolves to nothing at all, the deferred action that applies
+the ACL fails, and the install rolls back with 1603. The accounts are now named through the
+`WIX_ACCOUNT_*` properties, which Windows Installer fills in with whatever the machine calls
+them, and a test refuses any English account name in the package.
+
+Until 0.1.2 the package also had no user interface, so all of that happened behind a progress
+window that appeared and vanished - a fatal rollback and a clean install looked identical from
+the outside. That is fixed too, and is why the first symptom reported was "it flashes and
+disappears".
 
 ### 2.8 What the agent needs on a workstation
 
