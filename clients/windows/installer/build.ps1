@@ -118,6 +118,60 @@ foreach ($required in @(
     }
 }
 
+# ---------------------------------------------------------------------------------------------
+# Every assembly each executable asks for has to be the one that is actually there.
+#
+# The two projects publish into one directory, so whichever publishes last wins any file they
+# both contribute. When they targeted different Windows TFMs they contributed different versions
+# of the WinRT projection: the tray's copy overwrote the service's, and the installed service
+# died on startup with a FileNotFoundException naming the version its own deps.json listed. The
+# MSI was well formed, every file was present, and the product did not work.
+#
+# So the publish output is checked against what the apps say they need, before anything is
+# packaged. It costs a second and it is the only step here that would have caught that.
+# ---------------------------------------------------------------------------------------------
+Write-Host '==> checking the publish output against each app''s dependency manifest'
+
+$mismatches = @()
+foreach ($manifest in Get-ChildItem -Path $publishDir -Filter '*.deps.json') {
+    $deps = Get-Content $manifest.FullName -Raw | ConvertFrom-Json
+
+    foreach ($target in $deps.targets.PSObject.Properties) {
+        foreach ($package in $target.Value.PSObject.Properties) {
+            $runtime = $package.Value.runtime
+            if (-not $runtime) { continue }
+
+            foreach ($assembly in $runtime.PSObject.Properties) {
+                $wanted = $assembly.Value.assemblyVersion
+                if (-not $wanted) { continue }
+
+                $name = Split-Path $assembly.Name -Leaf
+                $onDisk = Join-Path $publishDir $name
+                if (-not (Test-Path $onDisk)) { continue }
+
+                try {
+                    $actual = [System.Reflection.AssemblyName]::GetAssemblyName($onDisk).Version.ToString()
+                } catch {
+                    continue  # native or unmanaged: nothing to compare
+                }
+
+                # Only an *older* file is a fault. A framework facade routinely carries a
+                # higher implementation version than the reference version recorded here, and
+                # the runtime rolls forward to it happily; what it cannot do is roll backwards,
+                # which is exactly what one publish overwriting another produces.
+                if ([version]$actual -lt [version]$wanted) {
+                    $mismatches += "$($manifest.Name) wants $name $wanted, the published file is $actual"
+                }
+            }
+        }
+    }
+}
+
+if ($mismatches.Count -gt 0) {
+    $mismatches | Sort-Object -Unique | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+    throw 'the published assemblies do not match what the applications ask for; the two publishes have overwritten each other'
+}
+
 # Debug symbols are not part of a production install: they are a few megabytes per build and
 # they hand an attacker a map of the binary for nothing in return. Crash diagnosis uses the
 # symbols kept with the build, not the ones on the workstation.

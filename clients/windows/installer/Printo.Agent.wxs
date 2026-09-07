@@ -78,6 +78,21 @@
 
     <Launch Condition="Installed OR VersionNT64" Message="The Printo Agent requires 64-bit Windows." />
 
+    <!--
+      Say so, rather than failing with 1603.
+
+      This package installs a service, so it is perMachine and cannot install without elevation.
+      A standard user who double-clicks it gets an elevation request that a locked-down domain
+      workstation may refuse outright, and what they see is a progress window that vanishes and
+      an event log entry saying 1603 - which describes everything and explains nothing.
+
+      `Privileged` is true for an administrator even before the UAC prompt, and for a Group
+      Policy deployment, which installs as the machine. So this stops exactly the case it is
+      meant to and nothing else.
+    -->
+    <Launch Condition="Installed OR Privileged"
+            Message="The Printo Agent installs a Windows service, so it has to be installed by an administrator. Either run this package from an administrator account, or deploy it with Group Policy - see docs/DEPLOYMENT.md." />
+
     <!-- Unattended configuration. Every one of these is optional. -->
     <Property Id="SERVERURL" Secure="yes" />
     <Property Id="DECISIONMODE" Secure="yes" />

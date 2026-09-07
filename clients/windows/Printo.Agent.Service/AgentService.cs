@@ -53,8 +53,7 @@ public sealed class AgentService(
             logger.LogWarning("Recovered {Count} job(s) stranded by a previous instance", recovered);
         }
 
-        var ocr = WindowsOcrEngine.TryCreate(
-            string.IsNullOrWhiteSpace(configuration.OcrLanguage) ? null : configuration.OcrLanguage);
+        var ocr = TryCreateRecogniser();
 
         if (ocr is null)
         {
@@ -232,6 +231,41 @@ public sealed class AgentService(
     /// rate would be twelve times the traffic for no operational gain.
     /// </remarks>
     private static readonly TimeSpan SyncInterval = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Creates the OCR recogniser, treating its absence as a missing feature, never a failure.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="WindowsOcrEngine.TryCreate"/> returns null when Windows has no OCR language
+    /// installed, and that path is handled. What is caught here is the other kind of absence:
+    /// the WinRT projection assembly not being loadable at all. That is not hypothetical - a
+    /// build that published the service and the tray into one directory left the wrong version
+    /// of `Microsoft.Windows.SDK.NET.dll` on disk, and the resulting FileNotFoundException came
+    /// out of this call, through ExecuteAsync, and stopped the host. A workstation that cannot
+    /// read a page must still print the pages it can read and ask about the rest.
+    /// </remarks>
+    private WindowsOcrEngine? TryCreateRecogniser()
+    {
+        try
+        {
+            return WindowsOcrEngine.TryCreate(
+                string.IsNullOrWhiteSpace(configuration.OcrLanguage) ? null : configuration.OcrLanguage);
+        }
+        catch (Exception error) when (
+            error is FileNotFoundException
+                or FileLoadException
+                or TypeLoadException
+                or BadImageFormatException
+                or TypeInitializationException)
+        {
+            logger.LogError(
+                error,
+                "The Windows OCR components could not be loaded, so pages that need reading will " +
+                "be referred to an operator. Everything else routes as normal");
+
+            return null;
+        }
+    }
 
     /// <summary>
     /// How often the Windows queue is checked against the endpoint it should point at.

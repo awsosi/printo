@@ -2,7 +2,23 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+
+    <!--
+      The same Windows TFM as the service, and that is not a detail.
+
+      The two executables are published into one directory - they share almost every assembly
+      and two copies of the runtime would double the MSI - so whichever publishes last wins any
+      file they both contribute. With different Windows TFMs they contribute *different
+      versions* of the WinRT projection, `Microsoft.Windows.SDK.NET.dll`: the tray's 17763 copy
+      overwrote the service's 19041 copy, and the service then failed to load the assembly its
+      own deps.json named. Every install produced a service that started and died on the spot,
+      with a FileNotFoundException in the event log and 1603 in front of whoever ran the MSI.
+
+      `SupportedOSPlatformVersion` still says 17763, which is the thing that actually matters
+      for a Windows 10 1809 machine: the TFM decides which APIs compile, this decides which the
+      analyser will let us call unguarded.
+    -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>Printo.Agent.Tray</RootNamespace>

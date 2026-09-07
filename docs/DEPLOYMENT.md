@@ -345,18 +345,38 @@ The Application event log carries the summary as MsiInstaller event 1033, with t
 version and the exit code. **1603** means an action failed and everything was rolled back;
 nothing is left installed.
 
-One failure is worth naming, because it cost a day and it is the reason this section exists. Up
-to 0.1.1 the package set the data directory's ACL for accounts named `SYSTEM` and
-`Administrators` in English. Windows localises those: on a Polish installation the group is
+Three failures are worth naming, because between them they cost a day and they are the reason
+this section exists.
+
+**The service died on startup, and the install failed with it.** The two executables are
+published into one directory, and until 0.1.7 they targeted different Windows TFMs - so the
+tray's copy of `Microsoft.Windows.SDK.NET.dll`, the WinRT projection, overwrote the service's
+newer one. The service then could not load the assembly its own `deps.json` named, threw a
+`FileNotFoundException` out of the OCR probe, and stopped. Because the package waited for the
+service to start, that came back as 1603 with everything rolled back. The MSI was well formed
+and every file was present; the product simply did not work. Both projects now target the same
+Windows TFM, the build refuses to package a publish whose assemblies are older than the apps
+ask for, and the OCR probe can no longer take the agent down whatever happens to it.
+
+**A standard user cannot install it.** This package installs a service, so it is per-machine and
+needs elevation. From 0.1.6 it says so in a dialog rather than failing with 1603; before that, a
+double-click by an operator looked exactly like every other failure. Install as an
+administrator, or deploy by Group Policy, which installs as the machine.
+
+**The ACL named accounts in English.** Up to 0.1.1 the package set the data directory's ACL for
+accounts named `SYSTEM` and `Administrators`. Windows localises those: on a Polish installation the group is
 `Administratorzy`, `Administrators` resolves to nothing at all, the deferred action that applies
-the ACL fails, and the install rolls back with 1603. The accounts are now named through the
-`WIX_ACCOUNT_*` properties, which Windows Installer fills in with whatever the machine calls
-them, and a test refuses any English account name in the package.
+the ACL fails, and the install rolls back with 1603. The ACL is now applied by the agent instead, from
+well-known SIDs, and a test refuses any account name in the package at all.
 
 Until 0.1.2 the package also had no user interface, so all of that happened behind a progress
 window that appeared and vanished - a fatal rollback and a clean install looked identical from
 the outside. That is fixed too, and is why the first symptom reported was "it flashes and
 disappears".
+
+`Diagnose-Install.ps1`, beside the package, checks the things above on a machine that will not
+take the install - elevation, policy, a blocked download, a service left behind - and with
+`-Install` runs the installation with a verbose log and names the action that failed.
 
 ### 2.8 What the agent needs on a workstation
 
