@@ -317,6 +317,77 @@ public sealed class VirtualPrinterTests : IDisposable
         Assert.Equal(4, Assert.Single(a4.Pages).Copies);
     }
 
+    /// <summary>
+    /// A captured job the rules cannot settle reaches the fallback picker, and the answer prints.
+    /// </summary>
+    /// <remarks>
+    /// The other half of "never guess silently, never drop", on the path that matters most: the
+    /// operator pressed Ctrl+P and is waiting. The document below is the DHL-shaped page the
+    /// rules need OCR for, on a machine with no recogniser, so the engine reports
+    /// OCR_UNAVAILABLE rather than deciding - and what happens next must be a question, not a
+    /// silent A4 job and not a failure.
+    /// </remarks>
+    [Fact]
+    public async Task ACapturedJobTheRulesCannotSettleAsksTheOperator()
+    {
+        var thermal = RecordingPrinterDevice.Thermal();
+        var a4 = RecordingPrinterDevice.A4Laser();
+
+        var catalog = new PrinterCatalog(
+            [
+                new PrinterProfile { QueueName = a4.Name, Role = PrinterRole.A4 },
+                new PrinterProfile { QueueName = thermal.Name, Role = PrinterRole.Thermal, Media = "100x150mm" },
+            ],
+            (profile, _) => profile.Role == PrinterRole.Thermal ? thermal : a4);
+
+        await using var printer = await StartAsync();
+
+        var request = NewRequest(IppOperation.PrintJob, printer);
+        request.Operation!.Text("job-name", IppTag.NameWithoutLanguage, "waybill");
+        request.Data = TestPdf.Build(TestPdf.A4Document(), TestPdf.DhlStyleLabelOnA4Landscape());
+
+        Assert.Equal(IppStatus.Ok, (await SendAsync(printer, request)).Code);
+
+        var prompter = new RecordingPrompter(new HashSet<int> { 2 });
+        var worker = new AgentWorker(
+            spool,
+            new JobProcessor(spool, catalog),
+            new AgentWorkerOptions { SpoolDirectory = spoolDirectory, Owner = "test" },
+            prompter);
+
+        worker.RunOnce();
+
+        Assert.Equal(1, prompter.Asked);
+        Assert.Equal(JobSource.VirtualPrinter, prompter.LastJob!.Source);
+
+        // The prompt has to carry a reason and the pages to pre-select, or an operator is being
+        // asked a question with no context and an admin cannot drive the rate down afterwards.
+        Assert.False(string.IsNullOrWhiteSpace(prompter.LastPrompt!.ReasonCode));
+        Assert.Equal(2, prompter.LastPrompt.PageCount);
+
+        // And their answer prints, through the same path a decided job takes.
+        Assert.Equal([2], thermal.Pages.Select(page => page.PageNumber));
+        Assert.Equal([1], a4.Pages.Select(page => page.PageNumber));
+    }
+
+    /// <summary>A prompter that answers the same way and remembers what it was asked.</summary>
+    private sealed class RecordingPrompter(IReadOnlySet<int>? answer) : IFallbackPrompter
+    {
+        public int Asked { get; private set; }
+
+        public SpoolJob? LastJob { get; private set; }
+
+        public FallbackPrompt? LastPrompt { get; private set; }
+
+        public IReadOnlySet<int>? Ask(SpoolJob job, FallbackPrompt prompt)
+        {
+            Asked++;
+            LastJob = job;
+            LastPrompt = prompt;
+            return answer;
+        }
+    }
+
     [Theory]
     [InlineData("invoice.pdf", "invoice.pdf")]
     [InlineData("OneClickPrint VTW189", "OneClickPrint VTW189.pdf")]

@@ -331,7 +331,7 @@ Plan section 5.0d is the write-up; `VirtualPrinterTests` is the evidence.
 ```bash
 npm run lint && npm run typecheck                      # repo-wide, must stay green
 npx vitest run --root packages/routing-engine          # 146 tests incl. golden corpus and picture matching
-dotnet test clients/windows/Printo.Agent.Tests         # 244 tests incl. corpus parity, soak, captures, the virtual printer
+dotnet test clients/windows/Printo.Agent.Tests         # 253 tests incl. corpus parity, soak, captures, the virtual printer
 python tools/corpus/check_vision_features.py "C:\Users\olek\Documents\code\si\printo-materials" --all   # vision measures the corpus as calibrated
 npm run smoke:prod                                     # builds the production images, asserts the stack
 pwsh clients/windows/installer/build.ps1 -Version 0.1.0           # builds the agent MSI
@@ -420,7 +420,7 @@ rasterizes and the worker deliberately has no native dependencies. Proven twice 
 corpus pages through the worker's own classifier in both text-layer modes, and the service's
 measuring code checked against the corpus it was calibrated on, page for page, exactly.
 
-Suite: **244 C# tests, 146 routing-engine, 69 worker, lint and typecheck clean.**
+Suite: **253 C# tests, 146 routing-engine, 69 worker, lint and typecheck clean.**
 
 ### 2026-09-06 (later session) — one rule set for both paths
 
