@@ -313,7 +313,7 @@ worked. If it ends in an error, or if you are deploying unattended and want the 
 with a log:
 
 ```powershell
-msiexec /i PrintoAgent-0.1.2.msi /l*v "$env:TEMP\printo-install.log"
+msiexec /i PrintoAgent-0.1.4.msi /l*v "$env:TEMP\printo-install.log"
 ```
 
 Then find the action that failed - Windows Installer marks it, and everything after it is
@@ -323,6 +323,23 @@ rollback noise:
 Select-String -Path "$env:TEMP\printo-install.log" -Pattern 'Return value 3' |
     Select-Object -First 5
 ```
+
+Two things are worth checking before reading any further into a log.
+
+A **leftover service** blocks every reinstall. If an earlier attempt failed while something held
+the service open - Services, Event Viewer, a Computer Management window - it is left marked for
+deletion, `InstallServices` cannot recreate it, and every subsequent install fails the same way
+until the machine is restarted:
+
+```powershell
+Get-Service PrintoAgent -ErrorAction SilentlyContinue
+```
+
+Anything at all here after a failed install means: close those windows, restart, install again.
+
+**Endpoint protection** is the other one. The agent is an unsigned executable that opens a
+loopback listener, renders PDFs and talks to printer drivers; some products stop the install
+itself rather than the running service. Section 2.7 lists what to exclude.
 
 The Application event log carries the summary as MsiInstaller event 1033, with the product
 version and the exit code. **1603** means an action failed and everything was rolled back;

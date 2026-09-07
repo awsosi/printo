@@ -76,15 +76,6 @@
                Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
     </UI>
 
-    <!--
-      Resolves the built-in accounts to whatever this machine calls them. Windows localises
-      them - on a Polish installation the administrators group is `Administratorzy` and
-      `Administrators` resolves to nothing at all - and the ACL below is applied by a deferred
-      custom action that looks the name up on the target machine. Naming them in English
-      installed cleanly on an English workstation and failed with 1603 on every other one.
-    -->
-    <util:QueryWindowsWellKnownSIDs />
-
     <Launch Condition="Installed OR VersionNT64" Message="The Printo Agent requires 64-bit Windows." />
 
     <!-- Unattended configuration. Every one of these is optional. -->
@@ -159,19 +150,34 @@
                         ErrorControl="normal"
                         Account="LocalSystem"
                         Vital="yes">
-          <!-- Restart on failure twice, then stop and let the event log stand. -->
+          <!--
+            Restart on failure twice, then stop and let the event log stand.
+
+            Still the Util extension's element, which is a deferred custom action, because the
+            standard MsiServiceConfigFailureActions table is documented in the Windows Installer
+            SDK as not working as expected and WiX warns about it by name. Trading a mechanism
+            that works for one that is documented not to would be a poor way to remove a risk.
+          -->
           <util:ServiceConfig FirstFailureActionType="restart"
                               SecondFailureActionType="restart"
                               ThirdFailureActionType="none"
                               RestartServiceDelayInSeconds="60" />
         </ServiceInstall>
 
+        <!--
+          `Wait="no"` on purpose. A service that is slow to start - a workstation with a dozen
+          network printers takes its time enumerating them - or that fails outright must not
+          fail the installation: an install that rolls back leaves no binaries, no event log
+          source and nothing to diagnose, while an install that succeeds with a stopped service
+          leaves everything in place and says so in the tray and the event log. The service is
+          `Start="auto"`, so it also comes up on the next boot regardless.
+        -->
         <ServiceControl Id="PrintoAgentControl"
                         Name="PrintoAgent"
                         Start="install"
                         Stop="both"
                         Remove="uninstall"
-                        Wait="yes" />
+                        Wait="no" />
       </Component>
 
       <!--
@@ -231,31 +237,14 @@
         In ProgramData rather than the install directory because the MSI replaces the install
         directory on upgrade, and a site's queued work and identity must survive that.
 
-        Every account is named through a property rather than in English, because these names
-        are localised and the lookup happens on the target machine - see QueryWindowsWellKnownSIDs
-        above.
-
-        Users are granted read and write, which is weaker than it first looks and is deliberate:
-        the tray runs as the signed-in operator and has to read this machine's configuration, the
-        spooled document the picker is asking about, and the queue it reports in its tooltip. An
-        ACL of SYSTEM and administrators alone reads well in a security review and leaves an
-        operator with a settings window that cannot open and a picker with no thumbnails.
-
-        What actually needs protecting is the enrolment credential, and that is protected where
-        it lives: the agent locks `identity.json` down to SYSTEM and the administrators group as
-        it writes it, from well-known SIDs, which cannot be mis-localised.
+        The directory is created here and secured by the agent, at every start, from well-known
+        SIDs - see `DataDirectorySecurity`. It was an ACL in this package until 0.1.2, applied by
+        an extension custom action that resolved account names in English; on a Polish Windows
+        `Administrators` resolves to nothing, the action failed, and the install rolled back with
+        1603. Names that only work in one language have no business in an installer.
       -->
       <Component Id="DataDirectory" Directory="DATAFOLDER" Guid="8f30b1a6-2d54-4c73-b8e1-9a4f6d2c0b18">
-        <CreateFolder>
-          <util:PermissionEx User="[WIX_ACCOUNT_LOCALSYSTEM]" GenericAll="yes" Inheritable="yes" />
-          <util:PermissionEx User="[WIX_ACCOUNT_ADMINISTRATORS]" GenericAll="yes" Inheritable="yes" />
-          <util:PermissionEx User="[WIX_ACCOUNT_USERS]"
-                             GenericRead="yes"
-                             GenericWrite="yes"
-                             GenericExecute="yes"
-                             Delete="yes"
-                             Inheritable="yes" />
-        </CreateFolder>
+        <CreateFolder />
         <RegistryValue Root="HKLM" Key="SOFTWARE\Printo\Agent" Name="DataDirectory"
                        Type="string" Value="[DATAFOLDER]" KeyPath="yes" />
       </Component>

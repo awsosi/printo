@@ -31,6 +31,18 @@ public sealed class AgentService(
         Directory.CreateDirectory(configuration.DataDirectory);
         Directory.CreateDirectory(configuration.SpoolDirectory);
 
+        // Applied here rather than by the installer, and re-applied on every start. The MSI used
+        // to do it through a custom action that named the accounts in English, which fails on a
+        // localised Windows and takes the whole install down with it.
+        if (DataDirectorySecurity.Apply(configuration.DataDirectory) is { } problem)
+        {
+            logger.LogWarning(
+                "The data directory keeps the permissions it inherited: {Problem}. " +
+                "Documents queued in {Directory} may be readable by other users of this machine",
+                problem,
+                configuration.DataDirectory);
+        }
+
         using var spool = new JobSpool(configuration.DatabasePath);
 
         // Anything a previous instance was holding when it died is released before the first

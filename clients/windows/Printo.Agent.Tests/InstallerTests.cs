@@ -77,31 +77,46 @@ public sealed class InstallerTests
     }
 
     /// <summary>
-    /// Every account in the package's ACL is named through a property, never in English.
+    /// The installer sets no permissions, because it cannot name the accounts portably.
     /// </summary>
     /// <remarks>
-    /// Windows localises the built-in accounts, and the ACL is applied by a deferred custom
-    /// action that resolves the name on the target machine. `Administrators` does not exist on a
-    /// Polish installation - the group is `Administratorzy` - so the lookup fails, the action
-    /// fails, and the whole install rolls back with 1603 and no explanation. It installed
-    /// cleanly on an English machine and failed on the first real one.
+    /// It used to, and the accounts were named in English. Windows localises them: on a Polish
+    /// installation the administrators group is `Administratorzy` and `Administrators` resolves
+    /// to nothing at all, so the deferred action that applied the ACL failed and took the whole
+    /// install down with it - 1603, no message, on the first machine this was ever installed on.
+    ///
+    /// The agent does it instead, at every start, from well-known SIDs, which cannot be
+    /// mis-localised. This test is what stops it coming back.
     /// </remarks>
     [Fact]
-    public void TheAclNamesAccountsByPropertyRatherThanInEnglish()
+    public void ThePackageLeavesPermissionsToTheAgent()
     {
-        var package = Package();
+        Assert.Empty(Package().Descendants(Util + "PermissionEx"));
 
-        var users = package
-            .Descendants(Util + "PermissionEx")
-            .Select(element => (string?)element.Attribute("User") ?? string.Empty)
-            .ToList();
+        var service = File.ReadAllText(Path.Combine(
+            RepositoryPaths.Root!, "clients", "windows", "Printo.Agent.Service", "AgentService.cs"));
 
-        Assert.NotEmpty(users);
-        Assert.All(users, user => Assert.StartsWith("[WIX_ACCOUNT_", user, StringComparison.Ordinal));
+        Assert.Contains(nameof(DataDirectorySecurity), service, StringComparison.Ordinal);
+    }
 
-        // The properties are empty unless this is scheduled, and an empty user is a failed
-        // lookup by another route.
-        Assert.Single(package.Descendants(Util + "QueryWindowsWellKnownSIDs"));
+    /// <summary>
+    /// A service that is slow to start, or will not start, must not fail the installation.
+    /// </summary>
+    /// <remarks>
+    /// An install that rolls back leaves no binaries, no event log source and nothing to
+    /// diagnose. An install that succeeds with a stopped service leaves everything in place and
+    /// says so in the tray, the event log and `--show-config`. On a workstation with a dozen
+    /// network printers, "slow to start" is an ordinary Tuesday.
+    /// </remarks>
+    [Fact]
+    public void TheInstallDoesNotWaitForTheServiceToStart()
+    {
+        var control = Package()
+            .Descendants(Wxs + "ServiceControl")
+            .Single(element => (string?)element.Attribute("Name") == "PrintoAgent");
+
+        Assert.Equal("install", (string?)control.Attribute("Start"));
+        Assert.Equal("no", (string?)control.Attribute("Wait"));
     }
 
     /// <summary>
