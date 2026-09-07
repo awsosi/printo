@@ -21,6 +21,11 @@
     Product version, three or four parts. Windows Installer compares only the first three, so
     two builds that differ in the fourth part will not upgrade each other.
 
+.PARAMETER Portable
+    Also emit a zip of the same binaries that runs without being installed. For proving the
+    agent on a machine whose policy will not accept the package, and for support: it is the
+    same files in the same layout, so what it does is what an installed agent does.
+
 .PARAMETER CertificateThumbprint
     Optional. When given, the published binaries and the finished MSI are Authenticode-signed
     with the matching certificate from the current user's store.
@@ -36,6 +41,9 @@ param(
     [Parameter()]
     [ValidatePattern('^\d+\.\d+\.\d+(\.\d+)?$')]
     [string]$Version = '0.1.0',
+
+    [Parameter()]
+    [switch]$Portable,
 
     [Parameter()]
     [string]$CertificateThumbprint,
@@ -220,6 +228,67 @@ if ($CertificateThumbprint) {
     Write-Host ''
     Write-Host 'The MSI is UNSIGNED. To sign it with the internal ADCS certificate:'
     Write-Host "  pwsh $($MyInvocation.MyCommand.Path) -Version $Version -CertificateThumbprint <thumbprint>"
+}
+
+if ($Portable) {
+    # The same files the MSI installs, in the same directory, plus the two things a person
+    # needs to know to run them. No service registration and no virtual printer: those are
+    # machine changes and belong to the installer.
+    $portableDir = Join-Path $here 'obj/portable'
+    if (Test-Path $portableDir) { Remove-Item -Recurse -Force $portableDir }
+    New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+
+    Copy-Item (Join-Path $publishDir '*') $portableDir -Recurse -Force
+    Copy-Item (Join-Path $serviceDir 'Printo.Agent.exe') $portableDir -Force
+    Copy-Item (Join-Path $trayDir 'Printo.Tray.exe') $portableDir -Force
+
+    @"
+Printo Agent $Version - portable
+
+The same binaries the installer lays down, run from here instead. Nothing is registered, no
+service is created and no printer is added, so this changes nothing on the machine beyond the
+data directory below.
+
+  Run-Agent.cmd        the agent, in this window. Ctrl+C stops it.
+  Settings.cmd         map this machine's printers, and the watched folders.
+
+Both use .\printo-data beside these files rather than C:\ProgramData\Printogent.
+
+One exception, and it is deliberate: if the agent is also *installed* on this machine, the
+installed data directory wins. Values written by the installer and by Group Policy outrank a
+configuration file, which is what stops two copies of the agent fighting over one job queue.
+Run `Printo.Agent.exe --show-config` to see which directory is in force and where that came
+from.
+
+The virtual printer needs a Windows queue pointing at the agent, and creating one needs an
+administrator. With the agent running, from an elevated prompt:
+
+  Add-Printer -Name Printo -IppURL http://127.0.0.1:39631/ipp/print
+
+Remove it again with:
+
+  Remove-Printer -Name Printo
+"@ | Set-Content -Path (Join-Path $portableDir 'README.txt') -Encoding utf8
+
+    @"
+{
+  "dataDirectory": "printo-data",
+  "decisionMode": "Local",
+  "virtualPrinter": { "enabled": true, "port": 39631, "manageQueue": false }
+}
+"@ | Set-Content -Path (Join-Path $portableDir 'agent.json') -Encoding utf8
+
+    '@echo off' + "`r`n" + 'cd /d "%~dp0"' + "`r`n" + 'Printo.Agent.exe --console --config "%~dp0agent.json"' |
+        Set-Content -Path (Join-Path $portableDir 'Run-Agent.cmd') -Encoding ascii
+
+    '@echo off' + "`r`n" + 'cd /d "%~dp0"' + "`r`n" + 'start "" Printo.Tray.exe --settings --config "%~dp0agent.json"' |
+        Set-Content -Path (Join-Path $portableDir 'Settings.cmd') -Encoding ascii
+
+    $zip = Join-Path $OutputDirectory "PrintoAgent-$Version-portable.zip"
+    if (Test-Path $zip) { Remove-Item -Force $zip }
+    Compress-Archive -Path (Join-Path $portableDir '*') -DestinationPath $zip -CompressionLevel Optimal
+
+    Write-Host "built $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB)"
 }
 
 Write-Host ''
