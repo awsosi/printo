@@ -37,6 +37,9 @@ public sealed class SettingsForm : Form
 
     private readonly List<HotFolderSettings> folders;
 
+    private readonly CheckBox virtualPrinterEnabled = new() { AutoSize = true, Text = "Capture print jobs" };
+    private readonly TextBox virtualPrinterName = new();
+    private readonly NumericUpDown virtualPrinterPort = new() { Minimum = 0, Maximum = 65535, Increment = 1 };
     private readonly TextBox serverUrl = new();
     private readonly ComboBox decisionMode = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly NumericUpDown threshold = new()
@@ -340,6 +343,22 @@ public sealed class SettingsForm : Form
         threshold.Value = (decimal)Math.Clamp(resolved.ConfidenceThreshold, 0, 1);
         ocrLanguage.Text = resolved.OcrLanguage;
 
+        virtualPrinterEnabled.Checked = resolved.VirtualPrinter.Enabled;
+        virtualPrinterName.Text = resolved.VirtualPrinter.PrinterName;
+        virtualPrinterPort.Value = Math.Clamp(resolved.VirtualPrinter.Port, 0, 65535);
+
+        AddRow(grid, "Virtual printer", virtualPrinterEnabled, "VirtualPrinterEnabled");
+        AddNote(grid, "The queue this machine offers applications. Turn it off and watched "
+            + "folders become the only way documents reach the agent.");
+
+        AddRow(grid, "Printer name", virtualPrinterName, "VirtualPrinterName");
+        AddNote(grid, "What appears in the print dialog. Changing it makes the agent create a "
+            + "queue under the new name and remove the old one at its next start.");
+
+        AddRow(grid, "Listening port", virtualPrinterPort, "VirtualPrinterPort");
+        AddNote(grid, "Loopback only: nothing outside this machine can reach it. Change it only "
+            + "if something else on this workstation already uses the port.");
+
         AddRow(grid, "Server address", serverUrl, nameof(AgentConfiguration.ServerUrl));
         AddNote(grid, "Blank runs this machine standalone: it routes on its built-in rules and "
             + "reports nothing. With an address it enrols, syncs the published rule bundle and "
@@ -445,6 +464,13 @@ public sealed class SettingsForm : Form
         return panel;
     }
 
+    /// <summary>A blank printer name would leave the machine with no queue at all.</summary>
+    private static string NameOrDefault(string value)
+    {
+        var trimmed = value.Trim();
+        return trimmed.Length == 0 ? new VirtualPrinterSettings().PrinterName : trimmed;
+    }
+
     private void Save()
     {
         if (printers.Count == 0
@@ -482,6 +508,24 @@ public sealed class SettingsForm : Form
 
             Printers = printers,
             HotFolders = folders,
+
+            VirtualPrinter = new VirtualPrinterSettings
+            {
+                Enabled = Managed("VirtualPrinterEnabled")
+                    ? fromFile.VirtualPrinter.Enabled
+                    : virtualPrinterEnabled.Checked,
+                PrinterName = Managed("VirtualPrinterName")
+                    ? fromFile.VirtualPrinter.PrinterName
+                    : NameOrDefault(virtualPrinterName.Text),
+                Port = Managed("VirtualPrinterPort")
+                    ? fromFile.VirtualPrinter.Port
+                    : (int)virtualPrinterPort.Value,
+
+                // Not exposed: a site that manages its own queues sets this in the file or by
+                // policy, and an operator switching it off in the tray would leave a printer
+                // nobody maintains pointing at an endpoint that may move.
+                ManageQueue = fromFile.VirtualPrinter.ManageQueue,
+            },
 
             // Not exposed in the window: tuning knobs with sound defaults, carried through so
             // saving from the UI never silently resets a value someone set in the file.

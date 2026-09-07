@@ -1,0 +1,9 @@
+-r requirements.txt
+# Rasterization, barcode decoding and the ink bounding box: everything the shared routing
+# engine needs from this service. PaddleOCR is deliberately absent - it is most of a gigabyte
+# and only pages whose rules ask for OCR need it, so a site that does not use those rules
+# should not carry it.
+pypdfium2>=4.30
+zxing-cpp>=2.2
+pillow>=10.3
+numpy>=1.26

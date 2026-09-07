@@ -67,6 +67,33 @@
       <ComponentGroupRef Id="AgentRegistration" />
     </Feature>
 
+    <!--
+      The one custom action in this package, and it only ever runs on uninstall.
+
+      The queue itself is created by the service, not from here: it can only be created while
+      the IPP endpoint is answering, it has to be repaired when somebody deletes it, and a
+      failure at install time would be a failure of the install. Removing it is the opposite
+      case - at uninstall the service is about to stop for good, and a queue left behind is a
+      printer that accepts jobs into a socket nothing is listening on.
+
+      `Return="ignore"` because a package that cannot be uninstalled is a far worse outcome than
+      an orphaned printer, and the printer can be removed by hand. Scheduled before the service
+      is stopped, so `Printo.Agent.exe` is still on disk, and excluded during a major upgrade so
+      an upgrade does not silently remove the operator's default printer and put it back.
+    -->
+    <CustomAction Id="RemoveVirtualPrinter"
+                  FileRef="AgentServiceExe"
+                  ExeCommand="--remove-virtual-printer"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="RemoveVirtualPrinter"
+              Before="StopServices"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+
     <ComponentGroup Id="AgentRegistration">
 
       <!--

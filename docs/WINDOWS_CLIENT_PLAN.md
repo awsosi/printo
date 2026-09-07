@@ -1,13 +1,15 @@
 # Windows Client + Routing Engine — Understanding & Delivery Plan
 
 Status: `APPROVED — in delivery`
-Last updated: 2026-09-06
+Last updated: 2026-09-07
 
 **Progress:** M1 answered — Tier 1 (IPP) works (section 5.0). What it revealed about the print
-path (5.0a), what routing one costs (5.0b) and the single rule set that now serves both paths
-(5.0c) are all settled and built. M2 complete. M3 complete except the hardware pass, which the
-customer has postponed. M4 complete except virtual-printer ingress, which is now blocked on
-nothing but effort. See section 10.1.
+path (5.0a), what routing one costs (5.0b) and the single rule set that serves both paths (5.0c)
+are settled and built. **The virtual printer itself is now built and tested (5.0d): the agent
+presents a `Printo` queue, captures what is printed to it, and spools it — M4 is complete.**
+M2 complete. M3 complete except the hardware pass, which the customer has postponed. The worker
+now runs the shared engine too (10.3). What remains needs hardware or an elevated session. See
+section 10.1.
 
 This document is the proposal for the next phase of `printo`: a Windows agent that replaces
 Print&Share on the workstation, plus the server-side work needed to make routing genuinely
@@ -519,6 +521,54 @@ asserted exactly that failure.
 The corpus is unchanged at **1266/1266 in both text-layer modes**, and two conformance fixtures
 pin the return-versus-outgoing decision on both engines from recognised text alone.
 
+### 5.0d The virtual printer, as built
+
+The production form of the M1 spike, in `clients/windows/Printo.Agent.Ipp`, wired into the
+service and covered by `VirtualPrinterTests`.
+
+**Kestrel, not http.sys.** `HttpListener` will not reserve a URL prefix for a process that is
+not elevated, which would have made every test of the capture path need an administrator — and
+an ingress path nobody can exercise is exactly how the tray once shipped empty. Kestrel binds an
+ordinary socket, and it is also the stack the spike proved against the inbox class driver, so
+chunked bodies, `Expect: 100-continue` and keep-alive behave the way Windows already showed they
+do.
+
+**PDF only.** The spike advertised PDF and PWG Raster together to find out which Windows would
+choose; it chose PDF, with embedded images at native resolution. The raster path is no longer
+advertised — a rasterised job would arrive with its page geometry already flattened, which is
+the input the engine is worst at.
+
+**The queue is created by the service, not the installer.** It can only be created while the
+endpoint is answering (`Add-Printer` reads the printer's capabilities before it will bind), it
+has to come back when somebody deletes it, and a failure at install time would be a failure of
+the install. So the service ensures it at startup and every fifteen minutes after, through the
+same `Add-Printer -IppURL` the spike proved. The MSI's one custom action runs on uninstall only,
+removes the queue, and is marked `Return="ignore"`: a package that cannot be uninstalled is far
+worse than an orphaned printer.
+
+**Nothing is acknowledged before it is durable.** The spooler treats our IPP response as the
+truth about whether a job printed, so the document is written to the spool and committed to
+SQLite before the response is sent. A job Windows shows as printed is a job that will print.
+
+**Idempotency is keyed on the IPP job *and* the content.** The job id keeps deliberate reprints
+apart — a packer whose label jammed presses Ctrl+P again and must get a second label, so the hot
+folder's content-hash dedupe would be wrong here — while the content hash makes a retried
+`Send-Document` the same document rather than a second one. Counting documents instead cannot
+tell those apart, which the test suite demonstrated by failing.
+
+**Two things the recorded session settled that guesswork got wrong.** Windows sends `job-name`
+and `requesting-user-name` as *operation* attributes but `copies` and `media-col` as *job*
+attributes; reading only the operation group prints one copy of everything and nothing says why.
+The session log (`tests/capture/session/ipp-session.jsonl`) is now the test oracle: every
+attribute Windows asked for and every operation it performed is replayed against the production
+printer, so the spike's evidence keeps earning its keep.
+
+**What is still not proven here.** That the class driver binds a queue to *this* endpoint on a
+machine other than the one the spike ran on, and that a document printed from Chrome ends on
+paper, are both hardware- or elevation-shaped. `installer/Verify-Install.ps1` now covers them
+end to end — it waits for the queue, checks the port points at the agent, prints the Windows
+test page and waits for the agent's event-log entry — and needs an elevated run to say so.
+
 ### 5.1 Hot-folder mode (robustness rules)
 
 - Watch N configurable directories; per-directory extension list + include/exclude filename
@@ -937,11 +987,11 @@ Nothing ships on "it looked right".
 | **M1** | **Blocked** | Both spikes build and self-test; binding a real queue needs one elevated `Add-Printer`. Neither capture question is answered yet — section 5.0. |
 | **M2** | **Complete** | 1266/1266 corpus pages routed correctly in **both** text-layer modes; 67 conformance fixtures pass on the TypeScript **and** C# engines; 0 pages attributed to GLS. The agent extracts its own features (geometry, ink box, text, barcodes, OCR) and `FeatureParityTests` proves they match the calibrated extractor — identical routing over 117 real pages, exact geometry, identical barcode decoding. Caveat unchanged: barcode predicates cannot be validated against real barcodes on this corpus (section 1.5a), and picture matching is now implemented (section 10.5), which adds four more fixtures. |
 | **M3** | **Complete but for hardware** | PDFium render with a true region crop, the transform maths, whole-sheet composition against the *printable* area, GDI output, raw ZPL, printer profiles with calibration, printer discovery, and a recording device. Six render-diff cases against checked-in reference images. Printable geometry is read from a real installed driver in a test. **Not done:** the physical matrix on CITIZEN / 4BARCODE / ZEBRA and on A4 lasers — postponed by the customer to a joint session (section 10.2). |
-| **M4** | **Complete but for capture** | Durable spool (idempotent intake, single-winner claim, lease-based recovery, backoff, poison queue), hot folders, job processor, work loop, fallback picker, Windows service host, tray and service/tray IPC. Soak: 30 documents across three worker lifetimes, nothing lost or duplicated. Picker measured on screen in 209-221 ms *in the foreground*. **Not done:** virtual-printer ingress, which is blocked on M1. The tray now actually runs: the executable's no-argument path - the one the installer's autostart entry and the Start Menu shortcut both take - constructed nothing and showed a usage message box, so the tray icon and the service's picker channel did not exist on an installed machine. It is covered by tests now, because the installed path was the only path nothing exercised. |
-| **M5** | **Complete but for the worker** | Fleet schema (13 tables) and API, verified by running all 12 migrations from empty against real Postgres. Agent enrolment with a per-machine key, bundle sync with checksum verification and a 304 fast path, heartbeat, printer reporting, and job/trace/fallback reporting. All three decision modes implemented and tested, including server-unreachable behaviour for each. Bundles are validated at publish time against the shared schema, so a rule set neither engine could execute is a 400 rather than a fleet-wide outage. Retention runs on an advisory-locked schedule instead of only on a button. Every job reports its per-page outcome, its audit trail and — on a fallback — a thumbnail of the pages a person was asked about. **Not done:** the worker's own adoption of the shared engine — see section 10.3. |
+| **M4** | **Complete** | Durable spool (idempotent intake, single-winner claim, lease-based recovery, backoff, poison queue), hot folders, job processor, work loop, fallback picker, Windows service host, tray and service/tray IPC. Soak: 30 documents across three worker lifetimes, nothing lost or duplicated. Picker measured on screen in 209-221 ms *in the foreground*. **Virtual-printer ingress is now built** (section 5.0d): an IPP Everywhere endpoint on loopback, the Windows queue created and repaired by the service, documents spooled before they are acknowledged, copies honoured from the print dialog, and a captured job proven to route exactly as the same document dropped in a watched folder. The recorded M1 session is the oracle for the protocol half. The tray now actually runs: the executable's no-argument path - the one the installer's autostart entry and the Start Menu shortcut both take - constructed nothing and showed a usage message box, so the tray icon and the service's picker channel did not exist on an installed machine. It is covered by tests now, because the installed path was the only path nothing exercised. |
+| **M5** | **Complete** | Fleet schema (13 tables) and API, verified by running all 12 migrations from empty against real Postgres. Agent enrolment with a per-machine key, bundle sync with checksum verification and a 304 fast path, heartbeat, printer reporting, and job/trace/fallback reporting. All three decision modes implemented and tested, including server-unreachable behaviour for each. Bundles are validated at publish time against the shared schema, so a rule set neither engine could execute is a 400 rather than a fleet-wide outage. Retention runs on an advisory-locked schedule instead of only on a button. Every job reports its per-page outcome, its audit trail and — on a fallback — a thumbnail of the pages a person was asked about. The worker now runs the shared engine as well, with the Vision Service measuring pages for it — section 10.3. |
 | **M6** | **Complete** | A Fleet tab in the existing admin console - one login, one origin. Agents (decision mode, threshold, disable per machine), the rule bundle (an editor whose rejections name the exact failing rule path), fallback analytics (agreement rate and median decision time), the review queue where **one click derives a rule from the logged fallback**, **accounting with an explicit reconciliation**, and **recent jobs showing, per page, the printer it reached and the media it printed on with the layer that chose it**. A new carrier template is cut from a sample PDF in the browser - drag a box round the logo and get the template plus a matching rule. Driven in a real browser against a real database throughout. |
 | **M7** | **Complete but for an elevated install** | Server: production Dockerfiles, a compose stack where only Traefik publishes a port, Traefik configured entirely from files, and `npm run smoke:prod`, which builds the real images and asserts the exit criterion end to end. Agent: a 48 MB self-contained WiX MSI with the service, the tray autostart, an ACL'd data directory and unattended properties; ADMX/ADML templates; a four-layer configuration reader with provenance (`--show-config`); GPO, signing and AV-exclusion procedures in `docs/DEPLOYMENT.md`. MSI contents verified by decompiling the package - service registration, `RemoveExistingProducts` at 6501 (after `InstallExecute`, before `InstallFinalize`), the data-directory ACL, all five registry values, 318 payload files, no debug symbols. The MSI now also lays down Start Menu shortcuts - `Printo` and `Printo Settings` - because a headless service plus an autostart entry that does not fire until the next sign-in reads as "nothing happened" to whoever ran the installer, which is exactly how it read. `Verify-Install.ps1` asserts both shortcuts and that the tray binary behind them exists; its old check looked only at the registry value, which is why the empty tray survived a release. **Not done:** actually installing it, which needs elevation. |
-| **M8** | **Partly complete** | Docs: `docs/DEPLOYMENT.md` (server and agent, GPO, ADCS signing, AV exclusions) and `docs/MIGRATING_FROM_PRINT_AND_SHARE.md` (what maps onto what, how to run both at once, and what Printo does not do yet). CI: unchanged by request, and `npm run test`, `lint`, `typecheck`, `build` and the compose smoke all pass locally as CI runs them. **Not done:** the parts of the definition of done that need hardware or an elevated session - the printer matrix, an actual MSI install, and virtual-printer ingress. |
+| **M8** | **Complete but for hardware and an elevated run** | Docs: `docs/DEPLOYMENT.md` (server and agent, GPO, ADCS signing, AV exclusions) and `docs/MIGRATING_FROM_PRINT_AND_SHARE.md` (what maps onto what, how to run both at once, and what Printo does not do yet). CI: unchanged by request, and `npm run test`, `lint`, `typecheck`, `build` and the compose smoke all pass locally as CI runs them. **Not done:** the two parts of the definition of done that cannot be reached from a development machine - the physical printer matrix (section 10.2) and an elevated install of the MSI, which `Verify-Install.ps1` is written for and which now also exercises the virtual printer end to end. |
 
 The GLS defect in M2's exit criteria turned out to be smaller and differently caused than the
 plan assumed: 278 pages carry the `*GLS certified label*` footer, but only **4** were actually
@@ -1021,11 +1071,11 @@ CITIZEN, 4BARCODE and ZEBRA at 100x150 and 100x200, and on the HP A4 units, meas
 result, and record any per-printer calibration offset in its `PrinterProfile`. Until then the
 milestone is **not** reported as done.
 
-### 10.3 Why the worker has not adopted the shared engine
+### 10.3 How the worker adopted the shared engine
 
-The intent was that the worker and the agent execute one rule set. Measured against the
-corpus, the worker cannot: **it has no rasterizer, and without an ink box the engine finds
-no labels at all.**
+The intent was that the worker and the agent execute one rule set. The obstacle was never the
+rules but the measurements: **the worker has no rasterizer, and without an ink box the engine
+finds no labels at all.**
 
 Running the golden corpus with `inkBox` nulled and everything else intact:
 
@@ -1034,25 +1084,52 @@ Running the golden corpus with `inkBox` nulled and everything else intact:
 | Full features | 1266 / 1266 (100.0%) |
 | No ink box | 678 / 1266 (53.6%) |
 
-The 588 failures are exactly the label pages — 423 FedEx, 145 DHL, 20 UPS — every one of
-them routed to A4. That is not a degradation, it is a floor: 53.6% is precisely the share of
-pages that are A4 anyway, so the engine contributes nothing without geometry. The reason is
-structural and already recorded in section 1.5: labels in this corpus are *embedded regions*
-on a carrier sheet, located by measurement, not whole pages identifiable from text.
+The 588 failures were exactly the label pages — 423 FedEx, 145 DHL, 20 UPS — every one routed
+to A4. That is not a degradation but a floor: 53.6% is precisely the share of pages that are A4
+anyway, so the engine contributed nothing without geometry. The reason is structural and
+recorded in section 1.5: labels in this corpus are *embedded regions* on a carrier sheet,
+located by measurement, not whole pages identifiable from text.
 
-The worker loads `pdfjs-dist` without `canvas`, so it has a text layer and page dimensions and
-nothing else. Three ways forward, none of them free:
+Three ways forward were recorded here for a decision. **Option 2 was taken: measure the ink box
+in the Vision Service, which already rasterizes.** It keeps the worker free of native
+dependencies — the constraint that produced the split in the first place — and it costs one
+service the server already runs. Option 1 (a rasterizer in the worker) would have put native
+image code in the Node process for the same result; option 3 (leave it) was the status quo the
+conformance suite alone was holding together.
 
-1. **Give the worker a rasterizer** (`@napi-rs/canvas` is prebuilt and needs no system
-   packages, so it survives the Docker constraint). Costs CPU on every scanned page.
-2. **Measure the ink box in the Vision Service**, which already rasterizes, and return it as a
-   feature. Keeps the worker light; makes the engine path depend on a service.
-3. **Leave the worker on its heuristic classifier**, which is what it does today, and accept
-   that the two rule implementations are kept honest only by the conformance suite rather than
-   by shared production traffic.
+#### What was built
 
-This is a real architectural choice rather than an oversight, so it is recorded here for a
-decision rather than settled unilaterally. Nothing else in M5 depends on it.
+- **`POST /v1/page-features`** in the Vision Service: geometry, ink box, and — only when asked —
+  barcodes and OCR of named rectangles, following the same two-phase protocol the agent uses.
+  Contract in `docs/VISION_SERVICE.md`.
+- **`services/vision/features.py`**, the measuring code, deliberately importable without FastAPI.
+- **`RoutingEngineClassifier`** in the worker, which decides a document at a time — profiles
+  match on the document, and a rule set can say "expect one thermal page in this document",
+  which no single page can answer. The classifier interface grew a document-level form; the
+  page-level one stays as the simpler contract and the fallback.
+- **A `geometry` build profile** for the Vision Service image, now the default. `minimal` has no
+  rasterizer and answers 503, which the worker treats as a reason to fall back rather than to
+  fail a job; `full` adds PaddleOCR at about ten times the image size.
+
+#### What it is held to
+
+- `apps/worker/tests/engine-classifier.test.ts` routes **every one of the 1266 corpus pages
+  through the worker's own classifier, in both text-layer modes**, and compares each against the
+  reviewed ground truth. It is the same bar the agent is held to.
+- `tools/corpus/check_vision_features.py` runs the production measuring code over the corpus
+  PDFs and compares it with the recorded features the rules were calibrated on: **1266 pages
+  across 258 documents, exact agreement.** The constants are shared deliberately — measuring
+  differently here would route differently from the agent while both sides ran identical rules,
+  which is the hardest kind of defect to see, because each side alone looks correct.
+
+#### What it still cannot do, and what happens instead
+
+Picture-matching rules need the reference images from the published bundle, which live on the
+workstation. Rather than answer with a score of zero — silently turning "this rule could not
+run" into "this rule did not match" — the document falls back to the heuristic classifier and
+the reason is logged. The same happens when the service is unreachable, when no profile matches,
+and when the rules will not settle inside the round budget. A routing decision one generation
+older beats a document that does not print.
 
 ### 10.4 What "a new carrier template, no code changes" does and does not mean
 

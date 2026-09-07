@@ -2,7 +2,7 @@
 
 Owner: `@draven`
 Status: `ACTIVE`
-Last updated: `2026-03-02`
+Last updated: `2026-09-07`
 
 Single source of truth for delivery state of `printo`.
 
@@ -71,17 +71,22 @@ of delivery state.
       Windows OCR) with a parity test against the calibrated extractor
 - [x] Print output: region crop, transform maths, whole-sheet composition against the printable
       area, GDI device, raw ZPL, printer profiles, discovery, render-diff suite
-- [ ] Capture spike (M1) - blocked on one elevated `Add-Printer`; see
-      `docs/WINDOWS_CLIENT_PLAN.md` section 5.0 and `Run-CaptureSpike.ps1`
-- [x] Agent runtime: service, tray, spool, hot folders, fallback picker (M4) - complete except
-      virtual-printer ingress, which M1 gates
-- [x] Server integration: agent APIs, bundle sync, decision modes, review queue (M5) - complete
-      except the worker's own adoption of the shared engine (plan section 10.3)
+- [x] Capture spike (M1) - answered: the inbox IPP class driver binds a queue to our own
+      endpoint and delivers PDF (`docs/WINDOWS_CLIENT_PLAN.md` section 5.0)
+- [x] Agent runtime: service, tray, spool, hot folders, fallback picker **and the virtual
+      printer** (M4) - a `Printo` queue the agent creates and repairs itself, documents spooled
+      before they are acknowledged to the spooler, and a captured job proven to route exactly as
+      the same document dropped in a watched folder (plan section 5.0d)
+- [x] Server integration: agent APIs, bundle sync, decision modes, review queue (M5)
+- [x] The worker runs the shared routing engine, with the Vision Service measuring each page
+      (`/v1/page-features`): all 1266 corpus pages route correctly through the worker's own
+      classifier in both text-layer modes (plan section 10.3)
 - [x] Admin UI: rule editor, agents, fallback analytics (M6)
 - [x] Agent user interface: tray icon, Start Menu shortcuts and a settings window for this
       machine's printers, media, calibration and watched folders, with a calibration test page
-- [x] Packaging, signing, GPO deployment (M7) - complete except an elevated install of the MSI;
-      hardening (M8) partly complete
+- [x] Packaging, signing, GPO deployment (M7) - complete except an elevated install of the MSI,
+      which `Verify-Install.ps1` covers and which now also exercises the virtual printer end to
+      end; hardening (M8) complete but for that run and the hardware matrix
 
 Hardware verification on real A4 and thermal printers is postponed to a joint session with
 the customer and is **not** claimed by any test.

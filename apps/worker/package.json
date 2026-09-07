@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@printo/routing-engine": "0.1.0",
     "express": "^4.21.2",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^3.11.174",

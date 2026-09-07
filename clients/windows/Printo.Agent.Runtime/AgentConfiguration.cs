@@ -39,6 +39,40 @@ public sealed class PrinterMapping
     public bool RawZpl { get; init; }
 }
 
+/// <summary>The virtual printer this machine presents to Windows.</summary>
+/// <remarks>
+/// On by default. A workstation that installed the agent and got no printer would have to be
+/// configured before it could do the one thing it was installed for, and the queue costs
+/// nothing when nobody prints to it.
+/// </remarks>
+public sealed class VirtualPrinterSettings
+{
+    public bool Enabled { get; init; } = true;
+
+    /// <summary>The name the queue appears under in the print dialog.</summary>
+    public string PrinterName { get; init; } = "Printo";
+
+    /// <summary>Loopback port the IPP endpoint listens on.</summary>
+    /// <remarks>
+    /// Fixed rather than ephemeral, and configurable in case a site has something else on it.
+    /// The Windows queue stores the port in its port name, so a port that moved between
+    /// restarts would leave the queue pointing at nothing until the agent repaired it - which
+    /// it does, but a printer that breaks every reboot and heals a minute later is worse than
+    /// one number to keep free.
+    /// </remarks>
+    public int Port { get; init; } = 39631;
+
+    /// <summary>
+    /// Whether the agent creates and repairs the Windows queue itself.
+    /// </summary>
+    /// <remarks>
+    /// Off is for sites that deploy printers by Group Policy and want the queue under their own
+    /// control. The endpoint still runs; only the <c>Add-Printer</c> is left to the
+    /// administrator.
+    /// </remarks>
+    public bool ManageQueue { get; init; } = true;
+}
+
 /// <summary>
 /// Everything the agent needs to run, as stored on disk.
 /// </summary>
@@ -68,6 +102,9 @@ public sealed class AgentConfiguration
     public IReadOnlyList<PrinterMapping> Printers { get; init; } = [];
 
     public IReadOnlyList<HotFolderSettings> HotFolders { get; init; } = [];
+
+    /// <summary>The queue this machine offers Windows applications.</summary>
+    public VirtualPrinterSettings VirtualPrinter { get; init; } = new();
 
     /// <summary>How often the work loop runs when nothing else wakes it.</summary>
     public TimeSpan PollInterval { get; init; } = TimeSpan.FromSeconds(5);

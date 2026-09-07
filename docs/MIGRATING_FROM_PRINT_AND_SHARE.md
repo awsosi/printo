@@ -181,7 +181,11 @@ you may rely on:
   validates them and names the exact path of anything either engine could not execute. Deriving
   a rule from a logged fallback is one click; drawing a rectangle on a sample PDF is not
   available.
-- **Virtual-printer ingress is not built.** Printo currently takes work from watched folders.
+- **The virtual printer is built, but no second machine has bound it yet.** Printo presents a
+  `Printo` queue and captures what is printed to it, exactly as Print&Share does; what has not
+  happened yet is an elevated install on a machine other than the development one, which is what
+  `clients/windows/installer/Verify-Install.ps1` is for. Watched folders are an intake path in
+  their own right and need no printer at all.
   Capturing a `Ctrl+P` to a printer named `Printo` is blocked on the capture spike
   (`docs/WINDOWS_CLIENT_PLAN.md` §5.0). If your Print&Share workflow is "print to the virtual
   printer", that part is not ready; if it is "drop a file in a folder", it is.

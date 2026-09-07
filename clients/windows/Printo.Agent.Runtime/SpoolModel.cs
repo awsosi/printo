@@ -90,6 +90,14 @@ public sealed class SpoolJob
 
     /// <summary>User name the job was submitted for, when the capture tier reports one.</summary>
     public string? UserName { get; init; }
+
+    /// <summary>Copies the submitter asked for; 1 for everything but a print dialog.</summary>
+    /// <remarks>
+    /// Held on the job rather than applied at intake by queueing it twice, so the spool records
+    /// one print action as one job. It multiplies with the copies a rule and a printer profile
+    /// ask for at the moment the page is sent.
+    /// </remarks>
+    public int Copies { get; init; } = 1;
 }
 
 /// <summary>An audit line against a job.</summary>

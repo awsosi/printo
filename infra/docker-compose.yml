@@ -78,7 +78,9 @@ services:
       - WORKER_DISPATCH_PROVIDER_MODE=${WORKER_DISPATCH_PROVIDER_MODE:-mock}
       - WORKER_POLL_INTERVAL_MS=${WORKER_POLL_INTERVAL_MS:-60000}
       - WORKER_VISION_URL=${WORKER_VISION_URL:-http://vision:6000}
-      - WORKER_CLASSIFIER=${WORKER_CLASSIFIER:-auto}
+      # `engine` runs the same rule set as the Windows agent, with the vision service measuring
+      # each page. It needs a vision image built with a rasterizer - see BUILD_PROFILE below.
+      - WORKER_CLASSIFIER=${WORKER_CLASSIFIER:-engine}
     ports:
       - "${WORKER_PORT:-5000}:5000"
     depends_on:
@@ -99,8 +101,10 @@ services:
     build:
       context: ../services/vision
       args:
-        # Set VISION_BUILD_PROFILE=full for pdfium rasterization + zxing barcodes + PaddleOCR.
-        BUILD_PROFILE: ${VISION_BUILD_PROFILE:-minimal}
+        # `geometry` is the default because without a rasterizer the worker cannot measure an
+        # ink box, and without an ink box the shared routing engine finds no labels at all.
+        # Set VISION_BUILD_PROFILE=full to add PaddleOCR for rules that read the page.
+        BUILD_PROFILE: ${VISION_BUILD_PROFILE:-geometry}
     ports:
       - "${VISION_PORT:-6000}:6000"
     healthcheck:

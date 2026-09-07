@@ -476,6 +476,52 @@ public sealed class FleetTests : IDisposable
         Assert.Null(decision.Document);
     }
 
+    /// <summary>
+    /// With the server down, server mode routes on the rules the workstation already has.
+    /// </summary>
+    /// <remarks>
+    /// The bench must keep working through a network outage. What it must not do is guess: a
+    /// document the cached rules cannot settle still goes to the picker, which the next test
+    /// covers. Both answers are recorded as degraded so the console can say which documents
+    /// printed without the server.
+    /// </remarks>
+    [Fact]
+    public void ServerModeFallsBackToTheCachedRulesWhenTheServerIsDown()
+    {
+        var server = new ScriptedServer { Offline = true };
+        using var client = Client(server);
+
+        var decider = new ServerFirstDecider(
+            new LocalDecider(() => RuleBundle.Builtin),
+            new ServerDecider(client) { Bundle = () => RuleBundle.Builtin });
+
+        var decision = decider.Decide(LabelDocument(), NoOcr.Instance);
+
+        Assert.Equal(DecisionStatus.Decided, decision.Status);
+        Assert.Equal("local", decision.DecidedBy);
+        Assert.True(decision.Degraded);
+        Assert.NotNull(decision.Document);
+    }
+
+    /// <summary>A document neither side can route still reaches a person.</summary>
+    [Fact]
+    public void ServerModeStillAsksWhenTheCachedRulesCannotSettleItEither()
+    {
+        var server = new ScriptedServer { Offline = true };
+        using var client = Client(server);
+
+        var decider = new ServerFirstDecider(
+            // An empty bundle matches no profile, which is the one thing local routing cannot
+            // recover from on its own.
+            new LocalDecider(() => new RuleBundle { Profiles = [] }),
+            new ServerDecider(client) { Bundle = () => RuleBundle.Builtin });
+
+        var decision = decider.Decide(LabelDocument(), NoOcr.Instance);
+
+        Assert.NotEqual(DecisionStatus.Decided, decision.Status);
+        Assert.Null(decision.Document);
+    }
+
     [Fact]
     public void AutoModeKeepsAConfidentLocalAnswerOffTheNetwork()
     {

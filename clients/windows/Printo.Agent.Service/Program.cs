@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Logging;
+using Printo.Agent.Ipp;
 using Printo.Agent.Runtime;
 
 namespace Printo.Agent.Service;
@@ -64,6 +65,22 @@ internal static class Program
             return 0;
         }
 
+        if (args.Contains("--remove-virtual-printer", StringComparer.OrdinalIgnoreCase))
+        {
+            // Run by the installer on uninstall, and by hand when someone wants the queue gone.
+            // It is deliberately independent of the service: at uninstall time the service has
+            // already been stopped, and a queue nobody removes is a printer that accepts jobs
+            // into a socket that no longer exists.
+            var removal = VirtualPrinterQueue.Remove(configuration.VirtualPrinter.PrinterName);
+            Console.WriteLine($"{configuration.VirtualPrinter.PrinterName}: {removal}");
+            return removal.Succeeded ? 0 : 1;
+        }
+
+        if (args.Contains("--install-virtual-printer", StringComparer.OrdinalIgnoreCase))
+        {
+            return await InstallVirtualPrinterAsync(configuration);
+        }
+
         var builder = Host.CreateApplicationBuilder(args);
 
         builder.Services.AddSingleton(configuration);
@@ -85,5 +102,47 @@ internal static class Program
         using var host = builder.Build();
         await host.RunAsync();
         return 0;
+    }
+
+    /// <summary>
+    /// Creates the Windows queue without starting the whole agent.
+    /// </summary>
+    /// <remarks>
+    /// The service does this for itself at startup, so this exists for the two cases where that
+    /// is not enough: proving the capture path on a bench without leaving a service running, and
+    /// repairing a machine whose queue was removed while <c>ManageQueue</c> is switched off.
+    ///
+    /// The listener has to be up while the queue is created - <c>Add-Printer</c> reads the
+    /// printer's capabilities before it will bind one - so this starts the real endpoint on the
+    /// configured port, creates the queue against it, and stops. The queue survives; it points
+    /// at the port the service will bind next time it starts.
+    /// </remarks>
+    private static async Task<int> InstallVirtualPrinterAsync(AgentConfiguration configuration)
+    {
+        var settings = configuration.VirtualPrinter;
+
+        await using var server = new VirtualPrinterServer(
+            new VirtualPrinterOptions { PrinterName = settings.PrinterName, Port = settings.Port },
+
+            // Nothing should print through this short-lived endpoint: it exists to answer
+            // Get-Printer-Attributes. Refusing rather than silently discarding means a job that
+            // somehow arrives is reported as failed to whoever sent it.
+            _ => CaptureResult.Reject("the agent service is not running on this endpoint"),
+            (code, detail) => Console.WriteLine($"{code}: {detail}"));
+
+        try
+        {
+            await server.StartAsync();
+        }
+        catch (Exception error)
+            when (error is IOException or InvalidOperationException or System.Net.Sockets.SocketException)
+        {
+            Console.Error.WriteLine($"could not listen on port {settings.Port}: {error.Message}");
+            return 2;
+        }
+
+        var result = VirtualPrinterQueue.Ensure(settings.PrinterName, server.EndpointUrl);
+        Console.WriteLine($"{settings.PrinterName}: {result}");
+        return result.Succeeded ? 0 : 1;
     }
 }

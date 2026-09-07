@@ -350,6 +350,76 @@ public sealed class ServerDecider(IServerClient client, Action<string, string>? 
 }
 
 /// <summary>
+/// The server decides; the workstation carries on alone when it cannot be reached.
+/// </summary>
+/// <remarks>
+/// <para>
+/// `server` mode exists so that a site can hold the whole routing decision centrally - one
+/// place to change a rule, one place that sees every document. What it must not mean is that a
+/// packing bench stops working when the server does. So an unreachable server falls through to
+/// the cached rule bundle rather than straight to the picker: the workstation already holds
+/// rules the server itself published, and using them is the same answer the server would have
+/// given, one bundle version behind at worst.
+/// </para>
+/// <para>
+/// Nothing is guessed by doing this. A document the local rules cannot settle, or settle
+/// confidently, still reaches a person through the fallback picker - that check lives in the
+/// job processor and applies to every decision whoever made it. What changes is only which of
+/// the two ends up in front of the operator: a document the rules genuinely cannot place, not
+/// every document printed during a network outage.
+/// </para>
+/// <para>
+/// The degradation is recorded on the job and reported to the server when it returns, so the
+/// console can show exactly which documents printed on cached rules and for how long a
+/// workstation was on its own.
+/// </para>
+/// </remarks>
+public sealed class ServerFirstDecider(
+    LocalDecider local,
+    ServerDecider server,
+    Action<string, string>? log = null) : IRoutingDecider
+{
+    private readonly LocalDecider local = local ?? throw new ArgumentNullException(nameof(local));
+
+    private readonly ServerDecider server = server ?? throw new ArgumentNullException(nameof(server));
+
+    public DecisionMode Mode => DecisionMode.Server;
+
+    public RoutingDecision Decide(DocumentFeatures features, IOcrFiller ocr)
+    {
+        var decision = server.Decide(features, ocr);
+        if (decision.Status != DecisionStatus.ServerUnavailable)
+        {
+            // Any real verdict is the server's to give, including the unwelcome ones: no
+            // profile matched, a rule needed OCR this machine cannot do, the rule set will not
+            // settle. Retrying those locally would only produce a second opinion nobody asked
+            // for, from an older copy of the same rules.
+            return decision;
+        }
+
+        var offline = local.Decide(features, ocr);
+        if (offline.Status != DecisionStatus.Decided)
+        {
+            // Neither side could route it. The local status is the more actionable of the two -
+            // it names the rule or the missing recogniser rather than the network - so it is
+            // what the operator and the review queue see.
+            log?.Invoke("server-unreachable", $"{decision.Detail}; the cached rules did not settle it either");
+            return offline;
+        }
+
+        log?.Invoke("server-unreachable", $"{decision.Detail}; routed on the cached rule bundle");
+
+        return RoutingDecision.Decided(
+            offline.Document!,
+            offline.Profile!,
+            "local",
+            offline.BundleVersion,
+            degraded: true,
+            detail: $"server unreachable: {decision.Detail}");
+    }
+}
+
+/// <summary>
 /// Local first, escalating to the server only when the local answer is not good enough.
 /// </summary>
 /// <remarks>

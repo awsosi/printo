@@ -56,6 +56,40 @@ The token is not a long-lived secret - it only permits enrolment, it expires, an
 
 Clear this policy once the fleet has enrolled.</string>
 
+      <string id="VirtualPrinterEnabled">Virtual printer</string>
+      <string id="VirtualPrinterEnabled_Explain">Whether the agent presents a virtual printer to Windows applications on this machine.
+
+Enabled (the default): the agent creates a Windows print queue and captures everything printed to it. This is how documents normally reach Printo - the operator presses Ctrl+P and picks the Printo printer, exactly as they did with Print&amp;Share.
+
+Disabled: no queue is created and the endpoint does not listen. Watched folders become the only way documents reach the agent, which is what a site wants when it feeds Printo from an ERP export directory rather than from people printing.
+
+Turning this off does not remove a queue that already exists; use the Printo Settings window or run Printo.Agent.exe --remove-virtual-printer.</string>
+
+      <string id="VirtualPrinterName">Virtual printer name</string>
+      <string id="VirtualPrinterName_Explain">The name the queue appears under in the print dialog. The default is Printo.
+
+Change it and the agent creates a queue under the new name at its next start. The old queue is left in place: removing a printer an operator may have set as their default is not something a policy refresh should do silently.
+
+Use the same name across the fleet. Anything that prints to Printo by name - a browser kiosk profile, a shortcut, an ERP print setting - is naming this.</string>
+
+      <string id="VirtualPrinterPort">Virtual printer port</string>
+      <string id="VirtualPrinterPort_Explain">The loopback TCP port the agent's IPP endpoint listens on. The default is 39631.
+
+The endpoint binds 127.0.0.1 only, so nothing outside the workstation can reach it and no firewall rule is needed.
+
+Change this only if another program on the workstation already uses the port. The Windows queue records the port in its port name, so after a change the agent recreates the queue - which briefly removes and re-adds the printer.</string>
+
+      <string id="VirtualPrinterManageQueue">Manage the Windows queue</string>
+      <string id="VirtualPrinterManageQueue_Explain">Whether the agent creates and repairs the Windows print queue itself.
+
+Enabled (the default): at startup, and every fifteen minutes after, the agent checks that the queue exists and points at its endpoint, and creates or repairs it if not. A printer somebody deleted comes back on its own.
+
+Disabled: the endpoint still listens, but the queue is left entirely to the administrator. Choose this if printers are deployed by Group Policy and an agent creating one locally would fight the deployment. Create the queue with:
+
+    Add-Printer -Name Printo -IppURL http://127.0.0.1:39631/ipp/print
+
+run while the agent service is running - Windows reads the printer's capabilities before it will bind a queue.</string>
+
       <string id="OcrLanguage">OCR language</string>
       <string id="OcrLanguage_Explain">Language tag for the Windows OCR recogniser, for example en-US or pl-PL.
 
@@ -95,6 +129,17 @@ If this policy is Not Configured, the agent uses the machine's own display langu
           <defaultValue>en-US</defaultValue>
         </textBox>
       </presentation>
+      <presentation id="VirtualPrinterName">
+        <textBox refId="VirtualPrinterName_Text">
+          <label>Printer name</label>
+          <defaultValue>Printo</defaultValue>
+        </textBox>
+      </presentation>
+
+      <presentation id="VirtualPrinterPort">
+        <decimalTextBox refId="VirtualPrinterPort_Decimal" defaultValue="39631">Loopback port</decimalTextBox>
+      </presentation>
+
     </presentationTable>
   </resources>
 </policyDefinitionResources>

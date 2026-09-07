@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Net.Http;
 using System.Runtime.Versioning;
 using System.Text;
 using Printo.Agent.Runtime;
@@ -147,6 +148,7 @@ public sealed class TrayApplication : ApplicationContext
 
         var text = new StringBuilder();
         text.AppendLine(CultureInfo.InvariantCulture, $"Mode: {configuration.DecisionMode}");
+        text.AppendLine(CultureInfo.InvariantCulture, $"Virtual printer: {VirtualPrinterStatus(configuration)}");
         text.AppendLine(CultureInfo.InvariantCulture, $"Watched folders: {configuration.HotFolders.Count}");
         text.AppendLine(CultureInfo.InvariantCulture, $"Printers: {configuration.Printers.Count}");
         foreach (var printer in configuration.Printers)
@@ -185,6 +187,37 @@ public sealed class TrayApplication : ApplicationContext
         }
 
         MessageBox.Show(text.ToString(), "Printo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    /// <summary>Whether documents printed to the queue are actually reaching the agent.</summary>
+    /// <remarks>
+    /// Asked of the endpoint rather than of the configuration, because "the settings say it is
+    /// on" is exactly the answer that wastes a support call. The queue can exist while the
+    /// service is stopped, and the service can be running while the port is taken by something
+    /// else; only a reply from the endpoint distinguishes those.
+    /// </remarks>
+    private static string VirtualPrinterStatus(AgentConfiguration configuration)
+    {
+        if (!configuration.VirtualPrinter.Enabled)
+        {
+            return "off";
+        }
+
+        var name = configuration.VirtualPrinter.PrinterName;
+        var url = $"http://127.0.0.1:{configuration.VirtualPrinter.Port}/";
+
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+            var body = client.GetStringAsync(url).GetAwaiter().GetResult();
+            return body.Contains("Printo virtual printer", StringComparison.Ordinal)
+                ? $"{name}, ready"
+                : $"{name}, port {configuration.VirtualPrinter.Port} answered by something else";
+        }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException)
+        {
+            return $"{name}, not listening (is the agent service running?)";
+        }
     }
 
     private void OpenSpoolFolder()

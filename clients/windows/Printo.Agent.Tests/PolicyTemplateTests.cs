@@ -50,6 +50,10 @@ public sealed class PolicyTemplateTests
             "DataDirectory",
             "OcrLanguage",
             "EnrollmentToken",
+            "VirtualPrinterEnabled",
+            "VirtualPrinterName",
+            "VirtualPrinterPort",
+            "VirtualPrinterManageQueue",
         };
 
         var declared = LoadAdmx()

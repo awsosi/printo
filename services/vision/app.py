@@ -1,6 +1,15 @@
 """Printo Vision Service.
 
-Classifies rendered PDF pages / page images as shipping labels vs. documents.
+Two jobs, and the second one is the important one:
+
+  * `/v1/page-features` measures a page for the shared routing engine - geometry, the ink
+    bounding box, decoded barcodes and, on request, OCR of named rectangles. The Node worker
+    has no rasterizer, and without an ink box the engine finds no labels at all (678 of 1266
+    corpus pages, every one of the misses a label), so this endpoint is what lets the server
+    path route with the same rules as the Windows agent instead of its own heuristic.
+  * `/v1/classify-page` is the older, self-contained classifier kept for the deployments and
+    tests that use it.
+
 Contract: docs/VISION_SERVICE.md in the repo root.
 
 The service is layered so it degrades gracefully:
@@ -19,8 +28,10 @@ import io
 import re
 from typing import Any, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+
+import features
 
 try:  # optional: PDF rasterization
     import pypdfium2 as pdfium  # type: ignore
@@ -256,6 +267,82 @@ def classify(request: ClassifyRequest) -> ClassifyResponse:
     )
 
 
+# ---------------------------------------------------------------------------
+# Page features for the shared routing engine
+# ---------------------------------------------------------------------------
+#
+# The measuring itself lives in `features.py`, which imports nothing from FastAPI, so the
+# parity check in tools/corpus/check_vision_features.py can run the exact production code
+# against the corpus PDFs and compare it with the measurements the rules were calibrated on.
+
+
+class RectMmIn(BaseModel):
+    x_mm: float
+    y_mm: float
+    width_mm: float
+    height_mm: float
+
+
+class PageFeaturesRequest(BaseModel):
+    page_number: int = 1
+    page_count: int = 1
+    page_pdf_base64: str
+    #: The text layer as the caller already extracted it. Passed through untouched so both
+    #: engines see one string; the service never re-extracts it.
+    text: Optional[str] = None
+    #: Decoding is expensive and most pages are settled by geometry, so it is opt-in - the
+    #: same two-phase contract the Windows agent follows.
+    barcodes: bool = False
+    ocr_regions: list[RectMmIn] = []
+
+
+class InkBoxOut(BaseModel):
+    x_mm: float
+    y_mm: float
+    width_mm: float
+    height_mm: float
+    aspect: Optional[float] = None
+    coverage: float
+
+
+class BarcodeFeatureOut(BaseModel):
+    symbology: str
+    value: str
+    x_mm: float
+    y_mm: float
+    width_mm: float
+    height_mm: float
+
+
+class OcrLineOut(BaseModel):
+    text: str
+    x_mm: float
+    y_mm: float
+    width_mm: float
+    height_mm: float
+
+
+class OcrRegionOut(BaseModel):
+    rect: RectMmIn
+    text: str
+    lines: list[OcrLineOut] = []
+
+
+class PageFeaturesResponse(BaseModel):
+    page_number: int
+    page_width_mm: float
+    page_height_mm: float
+    orientation: str
+    rotation: int
+    text: Optional[str] = None
+    ink_box: Optional[InkBoxOut] = None
+    #: `null` when nothing looked, `[]` when the page was scanned and had none. The engine
+    #: treats those differently and a rule can act on the second.
+    barcodes: Optional[list[BarcodeFeatureOut]] = None
+    ocr_regions: list[OcrRegionOut] = []
+    backends: dict = {}
+
+
 @app.get("/health")
 def health() -> dict:
     return {
@@ -267,6 +354,58 @@ def health() -> dict:
             "ocr": get_ocr() is not None,
         },
     }
+
+
+@app.post("/v1/page-features", response_model=PageFeaturesResponse)
+def page_features(request: PageFeaturesRequest) -> PageFeaturesResponse:
+    """Measure one page for the routing engine.
+
+    A caller that gets a 503 here is expected to fall back to its own classifier rather than
+    fail the document: a vision service that is down must slow routing down, not stop printing.
+    """
+    if not features.available():
+        raise HTTPException(
+            status_code=503,
+            detail="this build has no rasterizer; build the image with BUILD_PROFILE=geometry or full",
+        )
+
+    pdf = pdfium.PdfDocument(base64.b64decode(request.page_pdf_base64))
+    try:
+        page = pdf[0]
+        width_mm = features.mm(page.get_width())
+        height_mm = features.mm(page.get_height())
+        box = features.ink_box(page)
+
+        return PageFeaturesResponse(
+            page_number=request.page_number,
+            page_width_mm=width_mm,
+            page_height_mm=height_mm,
+            orientation="landscape" if width_mm > height_mm else "portrait",
+            rotation=page.get_rotation(),
+            text=request.text,
+            ink_box=InkBoxOut(**box) if box else None,
+            barcodes=(
+                [BarcodeFeatureOut(**barcode) for barcode in features.barcodes(page)]
+                if request.barcodes
+                else None
+            ),
+            ocr_regions=[
+                OcrRegionOut(
+                    rect=RectMmIn(**region["rect"]),
+                    text=region["text"],
+                    lines=[OcrLineOut(**line) for line in region["lines"]],
+                )
+                for region in features.recognise(
+                    page, [rect.model_dump() for rect in request.ocr_regions], get_ocr())
+            ],
+            backends={
+                "pdf_rasterizer": True,
+                "barcodes": zxingcpp is not None,
+                "ocr": get_ocr() is not None,
+            },
+        )
+    finally:
+        pdf.close()
 
 
 @app.post("/v1/classify-page", response_model=ClassifyResponse)

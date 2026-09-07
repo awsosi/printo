@@ -34,7 +34,12 @@ export interface PageClassifierInput {
   textItems?: PdfTextItem[];
   pageWidth?: number;
   pageHeight?: number;
-  /** Single-page PDF bytes, for classifiers that rasterize/OCR (Vision Service). */
+  /**
+   * Single-page PDF bytes, for classifiers that rasterize (Vision Service).
+   *
+   * Without these the routing engine has no ink box, and without an ink box it finds no
+   * labels at all: they are regions embedded on a carrier sheet, located by measurement.
+   */
   pagePdf?: Buffer;
   /** Rasterized page image (PNG), when already available. */
   imagePng?: Buffer;
@@ -43,6 +48,29 @@ export interface PageClassifierInput {
 export interface PageClassifier {
   readonly name: string;
   classifyPage(input: PageClassifierInput): Promise<PageClassification>;
+}
+
+/** A whole document, for classifiers that need to see it as one. */
+export interface DocumentClassifierInput {
+  /** File name as scanned. Routing profiles match on it. */
+  fileName: string;
+  pages: PageClassifierInput[];
+}
+
+/**
+ * A classifier that decides a document at a time.
+ *
+ * The shared routing engine works this way and cannot sensibly be driven page by page: a
+ * profile is matched on the document, and a rule set can say things like "expect exactly one
+ * thermal page in this document", which is a statement no single page can answer. Page-level
+ * classifiers stay the simpler contract and remain the fallback.
+ */
+export interface DocumentPageClassifier extends PageClassifier {
+  classifyDocument(input: DocumentClassifierInput): Promise<PageClassification[]>;
+}
+
+export function isDocumentClassifier(classifier: PageClassifier): classifier is DocumentPageClassifier {
+  return typeof (classifier as DocumentPageClassifier).classifyDocument === 'function';
 }
 
 export interface LabelDetectionSettings {

@@ -690,8 +690,14 @@ public sealed class JobProcessor
 
                     device.PrintPage(new PrintedPage
                     {
+                        // Three independent multipliers, and all three are real: the rule may
+                        // ask for two of every label, the printer profile may be configured to
+                        // duplicate everything it prints, and the person at the print dialog
+                        // may have asked for three copies of the document.
                         Composed = composed,
-                        Copies = Math.Max(1, page.Copies) * Math.Max(1, profile.Copies),
+                        Copies = Math.Max(1, page.Copies)
+                            * Math.Max(1, profile.Copies)
+                            * Math.Max(1, job.Copies),
                         PageNumber = page.PageNumber,
                     });
 

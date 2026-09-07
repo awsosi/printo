@@ -40,6 +40,69 @@ public sealed class SpoolTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// A spool written by an older agent keeps its queued work when the schema grows.
+    /// </summary>
+    /// <remarks>
+    /// The `copies` column arrived with the virtual printer. An upgrade must add it in place:
+    /// recreating the table would throw away whatever a workstation had not printed yet, and
+    /// the one moment a site is most likely to be upgrading is the one moment its queue is
+    /// least likely to be empty.
+    /// </remarks>
+    [Fact]
+    public void OpensASpoolWrittenBeforeTheCopiesColumnExisted()
+    {
+        var path = Path.Combine(directory, "legacy.db");
+
+        using (var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path}"))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                CREATE TABLE jobs (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_key         TEXT NOT NULL UNIQUE,
+                    source          TEXT NOT NULL,
+                    source_detail   TEXT,
+                    file_name       TEXT NOT NULL,
+                    doc_sha256      TEXT NOT NULL,
+                    payload_path    TEXT NOT NULL,
+                    page_count      INTEGER NOT NULL DEFAULT 0,
+                    state           TEXT NOT NULL,
+                    attempts        INTEGER NOT NULL DEFAULT 0,
+                    claim_owner     TEXT,
+                    claimed_at      TEXT,
+                    created_at      TEXT NOT NULL,
+                    updated_at      TEXT NOT NULL,
+                    next_attempt_at TEXT,
+                    error           TEXT,
+                    user_name       TEXT
+                );
+                INSERT INTO jobs
+                    (job_key, source, file_name, doc_sha256, payload_path, state, created_at, updated_at)
+                VALUES
+                    ('folder:old', 'HotFolder', 'queued.pdf', 'sha-old', 'C:\spool\old.pdf',
+                     'Pending', '2026-09-01T00:00:00.0000000Z', '2026-09-01T00:00:00.0000000Z');
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+
+        using var spool = new JobSpool(path);
+
+        var queued = Assert.Single(spool.List(JobState.Pending));
+        Assert.Equal("queued.pdf", queued.FileName);
+        Assert.Equal(1, queued.Copies);
+
+        var (fresh, created) = spool.Enqueue(
+            "printer:run:1:abc", JobSource.VirtualPrinter, "new.pdf", "sha-new", @"C:\spool\new.pdf", copies: 3);
+
+        Assert.True(created);
+        Assert.Equal(3, fresh.Copies);
+    }
+
     [Fact]
     public void AcceptsAJobAndRecordsIt()
     {

@@ -99,10 +99,16 @@ foreach ($project in @('Printo.Agent.Service', 'Printo.Agent.Tray')) {
     if ($LASTEXITCODE -ne 0) { throw "publishing $project failed" }
 }
 
-foreach ($required in @('Printo.Agent.exe', 'Printo.Tray.exe', 'pdfium.dll')) {
+foreach ($required in @(
+        'Printo.Agent.exe',
+        'Printo.Tray.exe',
+        'pdfium.dll',
+        'Printo.Agent.Ipp.dll',
+        'Microsoft.AspNetCore.Server.Kestrel.Core.dll')) {
     if (-not (Test-Path (Join-Path $publishDir $required))) {
-        # pdfium in particular is loaded by hand at runtime, so its absence would not surface
-        # until the agent tried to render a page on a customer's machine.
+        # pdfium in particular is loaded by hand at runtime, and Kestrel is what the virtual
+        # printer listens with - neither absence would surface until a customer's machine tried
+        # to render a page or accept a print job.
         throw "the publish output is missing $required"
     }
 }

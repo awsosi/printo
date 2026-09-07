@@ -196,6 +196,57 @@ has that thermal printer — and pushing them by GPO would mean one policy objec
 which is not a policy, it is a spreadsheet. They live in `agent.json`, or are set per agent from
 the fleet console.
 
+### 2.5a The virtual printer
+
+A workstation that has the agent installed presents a printer called **Printo**. Anything printed
+to it is captured, routed page by page, and sent on to the physical printers this machine is
+mapped to — the replacement for pointing Print&Share at a queue.
+
+The agent creates and maintains that queue itself: at startup, and every fifteen minutes after,
+it checks the queue exists and points at its own endpoint, and creates or repairs it if not. A
+printer somebody deleted comes back on its own. The endpoint is IPP on **127.0.0.1:39631** and
+is reachable only from the workstation, so there is no firewall rule to add.
+
+| Setting | Default | Policy value |
+|---|---|---|
+| Present a virtual printer | on | `VirtualPrinterEnabled` |
+| Queue name | `Printo` | `VirtualPrinterName` |
+| Loopback port | `39631` | `VirtualPrinterPort` |
+| Agent maintains the queue | on | `VirtualPrinterManageQueue` |
+
+Turn **Manage the Windows queue** off at sites that deploy printers by Group Policy and do not
+want an agent creating one locally. The endpoint still listens; create the queue yourself, while
+the agent service is running, with:
+
+```powershell
+Add-Printer -Name Printo -IppURL http://127.0.0.1:39631/ipp/print
+```
+
+Windows reads the printer's capabilities before it will bind a queue, which is why the service
+has to be running for that command — and why the agent, not the installer, owns this step.
+
+Two commands for a machine that needs it done by hand:
+
+```powershell
+& "$env:ProgramFiles\Printo Agent\Printo.Agent.exe" --install-virtual-printer
+& "$env:ProgramFiles\Printo Agent\Printo.Agent.exe" --remove-virtual-printer
+```
+
+The uninstall runs the second one for you. It is the package's only custom action, it runs on
+uninstall only, and its failure is ignored deliberately: a package that cannot be uninstalled
+would be a far worse outcome than a printer left behind.
+
+**What the queue offers applications.** PDF only, A4 and Letter plus whatever label sizes this
+machine's thermal printers are configured for, and colour by default — the capture path is the
+only chance the product gets at the original, and a page the client has already reduced to grey
+cannot be recovered. Anything that arrives in another page description language is refused with
+the format named, and the person who pressed print sees it fail in the Windows queue rather than
+losing the job silently.
+
+**If the port is taken.** The agent logs the failure loudly, keeps running its watched folders,
+and finishes whatever is already in its spool. Set `VirtualPrinterPort` to something free; the
+queue is recreated against the new port at the next start.
+
 ### 2.6 Unattended enrolment
 
 Issue a multi-use token in the console (**Fleet → Issue enrolment token**) and set it as the
@@ -233,6 +284,10 @@ Exclude, on workstations only:
 | Process | `%ProgramFiles%\Printo Agent\Printo.Tray.exe` |
 | Folder | `%ProgramData%\Printo\agent\` |
 
+Some endpoint products also inspect loopback traffic. The agent's virtual printer is an HTTP
+listener on 127.0.0.1, and a product that intercepts it will stop print jobs reaching the agent;
+exclude the port (39631 by default) if capture works with protection off and not with it on.
+
 The data folder matters most: the spool database is written on every job, and real-time scanning
 of a SQLite file in use is both slow and a source of spurious locking.
 
@@ -264,8 +319,14 @@ gaps in it:
   geometry is read from a real installed driver — but whether a given printer marks the stock
   where those numbers say needs the hardware session (plan §10.2).
 - **The MSI has not been installed.** It is built and its contents are verified — service
-  registration, upgrade sequencing, ACLs, registry values, 318 payload files, no debug symbols —
-  but installing it needs elevation. `Verify-Install.ps1` is written for exactly that and has
-  not been run.
-- **Virtual-printer ingress is not built.** It is blocked on the M1 capture spike, which needs
-  one elevated command to finish (plan §5.0). Hot folders work today.
+  registration, upgrade sequencing, ACLs, registry values, the payload, no debug symbols — but
+  installing it needs elevation. `Verify-Install.ps1` is written for exactly that and has not
+  been run. It now also covers the virtual printer end to end: it waits for the queue to appear,
+  checks the port points at the agent's endpoint, prints the Windows test page to it, and waits
+  for the agent's event-log entry saying the document arrived.
+- **The virtual printer has not been bound by the Windows class driver on a second machine.**
+  The endpoint, the queue management, the capture and the spooling are built and tested
+  (plan §5.0d), and the protocol half is replayed against the session Windows really produced
+  during the M1 spike. What no test here can show is Windows binding a queue to this endpoint on
+  a machine other than the one that spike ran on — that is what the elevated `Verify-Install.ps1`
+  run above is for. Hot folders remain an intake path in their own right, not a fallback.

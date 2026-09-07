@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Printo.Agent.Ipp</RootNamespace>
+    <AssemblyName>Printo.Agent.Ipp</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    Kestrel, not HttpListener. HttpListener sits on http.sys, which refuses to reserve a URL
+    prefix for a process that is not elevated - the service would be fine, but every test of
+    the capture path would need an administrator, and an ingress path nobody can test without
+    elevation is how the tray shipped empty. Kestrel binds an ordinary socket, and it is also
+    the stack the M1 spike proved against the inbox IPP Class Driver: chunked bodies,
+    100-continue and keep-alive all behave the way Windows expects because they are the same
+    code that answered it then.
+
+    Its own project rather than part of Printo.Agent.Runtime so the ASP.NET Core framework
+    reference does not follow the Runtime into the tray, which references it for the picker and
+    the settings window and has no business carrying a web server.
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Printo.Agent.Tests" />
+  </ItemGroup>
+
+</Project>

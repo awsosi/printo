@@ -5,8 +5,10 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { matchPdfPagesBySnippet } from '@printo/shared';
+import { extractSinglePagePdf } from './pdf-split.js';
 import { HeuristicPageClassifier } from './classify/heuristic-classifier.js';
-import type { PageClass, PageClassification, PageClassifier } from './classify/types.js';
+import type { PageClass, PageClassification, PageClassifier, PageClassifierInput } from './classify/types.js';
+import { isDocumentClassifier } from './classify/types.js';
 import { workerMetrics } from './metrics.js';
 import { extractPdfPages, type PdfTextItem } from './pdf.js';
 
@@ -633,26 +635,106 @@ export class WorkerPipeline {
     private readonly classifier: PageClassifier = new HeuristicPageClassifier()
   ) {}
 
-  private async classifyPages(ocrResult: OcrDocumentResult, file: ScannedFile): Promise<void> {
-    for (const page of ocrResult.pages) {
-      if (page.classification) {
-        continue;
-      }
-      try {
-        page.classification = await this.classifier.classifyPage({
+  /**
+   * Builds one classifier input per page, with the single-page PDF when we can produce one.
+   *
+   * The PDF is what lets a classifier measure the page rather than only read it, and
+   * measurement is the whole difference between finding a label embedded in an A4 sheet and
+   * missing every one of them. Splitting is best-effort: a source that is not a PDF, or a PDF
+   * that will not split, yields text-only inputs and the classifier says what it can.
+   */
+  private async classifierInputs(ocrResult: OcrDocumentResult, file: ScannedFile): Promise<PageClassifierInput[]> {
+    const isPdf = file.path.toLowerCase().endsWith('.pdf');
+    const buffer = isPdf ? (Buffer.isBuffer(file.content) ? file.content : Buffer.from(file.content)) : null;
+
+    return Promise.all(
+      ocrResult.pages.map(async (page) => {
+        let pagePdf: Buffer | undefined;
+        if (buffer) {
+          try {
+            pagePdf = (await extractSinglePagePdf(buffer, page.pageNumber)) ?? undefined;
+          } catch {
+            // A page that cannot be split is a page the classifier measures nothing on, which
+            // is a worse decision rather than a failed job.
+            pagePdf = undefined;
+          }
+        }
+
+        return {
           pageNumber: page.pageNumber,
           text: page.text ?? '',
           textItems: page.textItems,
           pageWidth: page.pageWidth,
-          pageHeight: page.pageHeight
+          pageHeight: page.pageHeight,
+          pagePdf
+        };
+      })
+    );
+  }
+
+  private record(page: OcrPageResult): void {
+    if (!page.classification) {
+      return;
+    }
+    workerMetrics.pagesClassifiedTotal.inc({
+      page_class: page.classification.pageClass,
+      classifier: page.classification.classifier
+    });
+    workerMetrics.classificationConfidence.observe(page.classification.confidence);
+  }
+
+  private async classifyPages(ocrResult: OcrDocumentResult, file: ScannedFile): Promise<void> {
+    const pending = ocrResult.pages.filter((page) => !page.classification);
+    if (pending.length === 0) {
+      return;
+    }
+
+    const inputs = await this.classifierInputs({ pages: pending }, file);
+
+    if (isDocumentClassifier(this.classifier)) {
+      // The shared routing engine decides a document at a time: it matches a profile on the
+      // file name and page count, and its rule sets can state document-level expectations
+      // such as "exactly one thermal page", which no page on its own can answer.
+      try {
+        const classifications = await this.classifier.classifyDocument({
+          fileName: file.path.split(/[\\/]/).pop() ?? file.path,
+          pages: inputs
         });
-        workerMetrics.pagesClassifiedTotal.inc({
-          page_class: page.classification.pageClass,
-          classifier: page.classification.classifier
-        });
-        workerMetrics.classificationConfidence.observe(page.classification.confidence);
+
+        for (const classification of classifications) {
+          const page = pending.find((candidate) => candidate.pageNumber === classification.pageNumber);
+          if (page) {
+            page.classification = classification;
+            this.record(page);
+          }
+        }
+
+        return;
       } catch (error) {
         // Classification is advisory; routing falls back to profile rules.
+        // eslint-disable-next-line no-console
+        console.warn(
+          JSON.stringify({
+            service: 'worker',
+            event: 'document_classification_failed',
+            filePath: file.path,
+            error: error instanceof Error ? error.message : 'CLASSIFIER_ERROR'
+          })
+        );
+        return;
+      }
+    }
+
+    for (const input of inputs) {
+      const page = pending.find((candidate) => candidate.pageNumber === input.pageNumber);
+      if (!page) {
+        continue;
+      }
+
+      try {
+        page.classification = await this.classifier.classifyPage(input);
+        this.record(page);
+      } catch (error) {
         // eslint-disable-next-line no-console
         console.warn(
           JSON.stringify({

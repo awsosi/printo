@@ -74,7 +74,8 @@ public sealed class JobSpool : IDisposable
         string documentSha256,
         string payloadPath,
         string? sourceDetail = null,
-        string? userName = null)
+        string? userName = null,
+        int copies = 1)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobKey);
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
@@ -100,10 +101,10 @@ public sealed class JobSpool : IDisposable
                     """
                     INSERT INTO jobs
                         (job_key, source, source_detail, file_name, doc_sha256, payload_path,
-                         page_count, state, attempts, created_at, updated_at, user_name)
+                         page_count, state, attempts, created_at, updated_at, user_name, copies)
                     VALUES
                         ($key, $source, $detail, $file, $sha, $payload,
-                         0, $state, 0, $now, $now, $user);
+                         0, $state, 0, $now, $now, $user, $copies);
                     """;
                 command.Parameters.AddWithValue("$key", jobKey);
                 command.Parameters.AddWithValue("$source", source.ToString());
@@ -114,6 +115,7 @@ public sealed class JobSpool : IDisposable
                 command.Parameters.AddWithValue("$state", JobState.Pending.ToString());
                 command.Parameters.AddWithValue("$now", Format(now));
                 command.Parameters.AddWithValue("$user", (object?)userName ?? DBNull.Value);
+                command.Parameters.AddWithValue("$copies", Math.Max(1, copies));
                 command.ExecuteNonQuery();
             }
 
@@ -590,6 +592,7 @@ public sealed class JobSpool : IDisposable
             NextAttemptAt = Nullable("next_attempt_at") is { } next ? Parse(next) : null,
             Error = Nullable("error"),
             UserName = Nullable("user_name"),
+            Copies = reader.GetInt32(reader.GetOrdinal("copies")),
         };
     }
 
@@ -614,9 +617,15 @@ public sealed class JobSpool : IDisposable
                 updated_at      TEXT NOT NULL,
                 next_attempt_at TEXT,
                 error           TEXT,
-                user_name       TEXT
+                user_name       TEXT,
+                copies          INTEGER NOT NULL DEFAULT 1
             );
             """);
+
+        // Spools created before the virtual printer existed have no `copies` column. Added
+        // here rather than by recreating the table, because the file may hold work that has
+        // not printed yet and an upgrade must not lose a queued job.
+        AddColumnIfMissing("jobs", "copies", "INTEGER NOT NULL DEFAULT 1");
 
         Execute("CREATE INDEX IF NOT EXISTS jobs_state_created ON jobs (state, created_at);");
         Execute("CREATE INDEX IF NOT EXISTS jobs_sha ON jobs (doc_sha256);");
@@ -648,6 +657,25 @@ public sealed class JobSpool : IDisposable
             """);
 
         Execute("CREATE INDEX IF NOT EXISTS seen_files_last ON seen_files (last_seen_at);");
+    }
+
+    /// <summary>Adds a column to an existing table when a previous version did not have it.</summary>
+    private void AddColumnIfMissing(string table, string column, string definition)
+    {
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = $"PRAGMA table_info({table});";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+        }
+
+        Execute($"ALTER TABLE {table} ADD COLUMN {column} {definition};");
     }
 
     private void Execute(string sql)

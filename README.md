@@ -104,8 +104,11 @@ Relevant environment variables from `.env.example`:
 - `WORKER_PRINTER_PROVIDER_OVERRIDES` (per-printer `provider`, `targetUri`, `timeoutMs`, `lpOptions`)
 - `WORKER_SECRET_<NORMALIZED_SECRET_REF>`
 - `WORKER_VISION_URL` (Vision Service base URL; unset = heuristic-only classification)
-- `WORKER_CLASSIFIER` (`heuristic` | `vision` | `auto`)
-- `WORKER_VISION_TIMEOUT_MS`
+- `WORKER_CLASSIFIER` (`engine` | `heuristic` | `vision` | `auto`; default `engine` when a vision
+  URL is set — it runs the same rule set as the Windows agent)
+- `WORKER_VISION_TIMEOUT_MS`, `WORKER_VISION_FEATURE_TIMEOUT_MS`
+- `VISION_BUILD_PROFILE` (`geometry` by default; `full` adds OCR, `minimal` has no rasterizer and
+  leaves the worker on its text-only heuristic)
 
 Provider behavior:
 
@@ -166,7 +169,16 @@ and the server route a page identically.
     zxing-cpp barcodes
   - `Printo.Agent.Printing` — GDI output, raw ZPL, printer profiles and discovery
   - `Printo.Agent.Ocr` — the inbox Windows recogniser
-  - `Printo.Agent.Tests` — unit, conformance, render-diff and corpus-parity tests
+  - `Printo.Agent.Ipp` — the virtual printer: an IPP Everywhere endpoint on loopback that the
+    inbox Microsoft IPP Class Driver binds a real Windows queue to
+  - `Printo.Agent.Runtime` / `.Service` / `.Tray` — spool, hot folders, work loop, the Windows
+    service, the tray and the fallback picker
+  - `Printo.Agent.Tests` — unit, conformance, render-diff, corpus-parity and capture tests
+
+The agent presents a printer called **Printo**. Anything printed to it is captured, routed page
+by page and sent on to this machine's physical printers; watched folders are a second intake
+path for sites that feed Printo from an export directory. The queue is created and repaired by
+the service itself, so a printer somebody deletes comes back — see `docs/DEPLOYMENT.md` §2.5a.
 - `tests/conformance/` — shared fixtures both engines execute; a divergence fails the build
 - `tests/corpus/` — extracted features and reviewed ground truth for the 1266-page sample set
 - `tests/render/` — reference images for the render-diff suite
@@ -183,6 +195,14 @@ npx tsx packages/routing-engine/scripts/export-profiles.ts
 
 # accept new render-diff output, after reviewing the images
 PRINTO_UPDATE_REFERENCES=1 dotnet test clients/windows/Printo.Agent.Tests
+```
+
+On the server the same rules run in the worker, with the Vision Service measuring each page
+(`/v1/page-features`) because the Node process has no rasterizer of its own. Check that the two
+agree on the measurements the rules were calibrated against:
+
+```bash
+python tools/corpus/check_vision_features.py <corpus-dir> --all
 ```
 
 The sample PDFs are customer data and live outside the repository; corpus tests skip when they

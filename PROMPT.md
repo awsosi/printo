@@ -5,19 +5,20 @@
 > assistant picks the work up — Claude Code, Codex or a person — and assumes no memory of any
 > earlier session.
 >
-> **Start here:** section 6 is where the project stands. Section 6a was the decision blocking
-> the next milestone; it was settled on 2026-09-06 — one rule set for both paths — and **it is
-> now built and proven** (plan section 5.0c). **Nothing blocks virtual-printer ingress but
-> effort.** Section 6b is a log of what the last sessions changed and why, including corrections
-> worth carrying forward.
+> **Start here:** section 6 is where the project stands. **The virtual printer is built** —
+> the agent presents a `Printo` queue, captures what is printed to it and spools it (plan
+> section 5.0d), and the worker now runs the shared routing engine too (plan section 10.3).
+> What is left needs hardware or an elevated install on a real machine, which the user has said
+> they will run. Section 6b is a log of what the last sessions changed and why, including
+> corrections worth carrying forward.
 >
 > **Lifecycle of this file:** delete it when every milestone in
 > `docs/WINDOWS_CLIENT_PLAN.md` section 10 is complete and the Definition of Done in section 12
 > is met. Until then, keep it accurate: after each milestone, update
 > "Current position" below and strike through what is finished. Never leave it stale.
 >
-> **Last updated:** 2026-09-06, after the cost measurement described in section 6b, on
-> `feat/windows-agent`.
+> **Last updated:** 2026-09-07, after the virtual printer and the worker's adoption of the
+> shared engine, on `feat/windows-agent`.
 
 ---
 
@@ -131,12 +132,19 @@ defect.
       calibration page (plan section 10.8)
 - [x] M2 — Corpus + engine core (complete; two gaps listed below)
 - [x] M3 — Print output (complete except the hardware pass, postponed by the user)
-- [~] M4 — Agent runtime + fallback picker (all but virtual-printer ingress — **now unblocked:
-      M1 is answered and the rule set that survives printing is built and proven, 5.0c**)
-- [~] M5 — Server integration (all but the worker's own engine adoption — plan §10.3)
+- [x] **M4 — Agent runtime, fallback picker and the virtual printer** (plan §5.0d)
+- [x] **M5 — Server integration, including the worker's adoption of the shared engine** (§10.3)
 - [x] M6 — Admin UI (Fleet tab; driven in a real browser against a real database)
-- [~] M7 — Packaging + delivery (all but an elevated install of the MSI — see below)
-- [~] M8 — Hardening (docs and migration guide done; the rest needs hardware or elevation)
+- [~] M7 — Packaging + delivery (all but an elevated install of the MSI — the user runs this)
+- [~] M8 — Hardening (everything but the hardware matrix and that elevated run)
+
+**The two open items are both on hardware the development machine does not have**, and the user
+has said they will run them on a remote system where the printers are:
+
+1. `pwsh clients/windows/installer/build.ps1 -Version 0.1.0` then an elevated
+   `Verify-Install.ps1` — install, virtual printer, a real printed page, upgrade, uninstall.
+2. The printer matrix in plan §10.2: CITIZEN, 4BARCODE and ZEBRA at 100x150 and 100x200, plus
+   the A4 lasers, printing each render-diff case and recording any per-printer offset.
 
 ### Environment answers already given by the user (2026-09-05)
 
@@ -148,7 +156,7 @@ defect.
 | CI | **Leave `.github/workflows/ci.yml` alone.** Do not add a Windows job. Keep the existing ubuntu pipeline green. |
 | Dev stack | Docker Desktop compose locally; compose stays the mandatory server form factor. |
 
-### 6a. THE DECISION THAT WAS BLOCKING — settled and built
+### 6a. The decision that was blocking — settled, built, and now shipped through the printer
 
 **M1 is answered and it changed the problem.** The virtual printer works, but the Windows print
 path transforms every page on its way through, and the rule set as shipped did not survive the
@@ -312,16 +320,19 @@ Verified:
 - **Service host:** run for real — accepts a drop, spools a copy, archives the original,
   routes, and records the failure with backoff when no printer is mapped.
 
-Still missing from M4: **virtual-printer ingress**. M1 answered which tier works (Tier 1, IPP)
-and the routing that survives printing is now built, so this is the next thing to do and nothing
-stands in front of it. Hot folders are the working intake path meanwhile.
+**Virtual-printer ingress landed on 2026-09-07** and M4 is complete. `Printo.Agent.Ipp` hosts an
+IPP Everywhere endpoint on loopback (Kestrel, so the tests need no administrator), the service
+creates and repairs the Windows queue through the same `Add-Printer -IppURL` the spike proved,
+and `VirtualPrinterIntake` spools each document *before* the job is acknowledged to the spooler.
+Plan section 5.0d is the write-up; `VirtualPrinterTests` is the evidence.
 
 ### Verification commands
 
 ```bash
 npm run lint && npm run typecheck                      # repo-wide, must stay green
 npx vitest run --root packages/routing-engine          # 146 tests incl. golden corpus and picture matching
-dotnet test clients/windows/Printo.Agent.Tests         # 227 tests incl. corpus parity, soak, captures
+dotnet test clients/windows/Printo.Agent.Tests         # 244 tests incl. corpus parity, soak, captures, the virtual printer
+python tools/corpus/check_vision_features.py "C:\Users\olek\Documents\code\si\printo-materials" --all   # vision measures the corpus as calibrated
 npm run smoke:prod                                     # builds the production images, asserts the stack
 pwsh clients/windows/installer/build.ps1 -Version 0.1.0           # builds the agent MSI
 Printo.Tray.exe --picker <document.pdf> [pages]        # measure the picker, prints timing
@@ -329,6 +340,8 @@ Printo.Tray.exe --settings                             # the settings window, st
 python tools/corpus/compare_captures.py tests/capture/session   # what printing did to each page
 PRINTO_MEASURE_COST=1 dotnet test clients/windows/Printo.Agent.Tests --filter CaptureCostTests                                                        # stage-by-stage cost; opt-in, ~2 min, run it idle
 Printo.Agent.exe --console --config <agent.json>       # run the service in the foreground
+Printo.Agent.exe --install-virtual-printer             # create the Windows queue by hand (elevated)
+Printo.Agent.exe --remove-virtual-printer              # remove it; the uninstaller runs this too
 npx tsx packages/routing-engine/scripts/export-profiles.ts        # after editing profiles.ts
 npx tsx packages/routing-engine/scripts/export-corpus-fixtures.ts # after changing the engine
 PRINTO_UPDATE_REFERENCES=1 dotnet test clients/windows/Printo.Agent.Tests  # accept new render output
@@ -361,12 +374,53 @@ Two things are worth knowing before touching this code:
   the C# engine throws on a predicate key it does not know. Without that check a bad rule set
   would be accepted, pushed to every workstation, and fail at print time on all of them.
 
-**Not done:** the worker still uses its own heuristic classifier. This is measured, not
-forgotten — with no rasterizer the worker has no ink box, and without an ink box the shared
-engine routes 678/1266 corpus pages, missing *every* label. Plan §10.3 has the numbers and the
-three ways forward; it needs a decision, and nothing else depends on it.
+**Now also done:** the worker runs the shared engine. It had no rasterizer and therefore no ink
+box, and without an ink box the engine routes 678/1266 corpus pages and misses *every* label.
+The Vision Service already rasterizes, so it grew `/v1/page-features` and measures the page for
+the worker. All 1266 corpus pages route correctly through the worker's own classifier in both
+text-layer modes, and the service's measurements are checked against the corpus the rules were
+calibrated on — 1266 pages, exact agreement. Plan §10.3.
 
 ## 6b. Session log
+
+### 2026-09-07 — the virtual printer, and the worker joins the same rule set
+
+Two things landed, and both close items this file had been carrying as "not done".
+
+**The virtual printer** (plan §5.0d). `Printo.Agent.Ipp` is the production form of the M1 spike:
+an IPP Everywhere endpoint on 127.0.0.1, PDF only, with the Windows queue created and repaired
+by the *service* rather than the installer — it can only be created while the endpoint answers,
+it has to come back when somebody deletes it, and a failure at install time would be a failure
+of the install. The MSI's one custom action removes the queue on uninstall and is
+`Return="ignore"`, because an un-uninstallable package is worse than an orphaned printer.
+
+Three things worth carrying forward:
+
+- **The recorded M1 session is now the test oracle.** `tests/capture/session/ipp-session.jsonl`
+  holds every request Windows really made, and reading it caught a defect written from
+  assumption: `copies` and `media-col` arrive as *job* attributes while `job-name` and
+  `requesting-user-name` arrive as *operation* attributes. Reading only the operation group
+  prints one copy of everything and nothing says why.
+- **A test caught the idempotency key.** Keying a document by its position in the IPP job means
+  a retried `Send-Document` becomes "document 2" and prints twice; the key is now the job id
+  plus the content hash, which separates a deliberate reprint from a retry.
+- **Kestrel, not `HttpListener`**, because http.sys will not reserve a URL prefix without
+  elevation, and an ingress path that only an administrator can test is how the tray shipped
+  empty once already.
+
+Also: `copies` from the print dialog now reaches the device (a spool column, multiplied with the
+rule's and the profile's), the work loop is woken by a capture instead of waiting up to five
+seconds for its poll, and `server` decision mode falls back to the cached rules when the server
+is unreachable instead of going straight to the picker — the bench keeps working through an
+outage, and a document the rules cannot settle still reaches a person.
+
+**The worker adopted the shared engine** (plan §10.3), which had been recorded as needing a
+decision. Option 2 was taken: the Vision Service measures the ink box, because it already
+rasterizes and the worker deliberately has no native dependencies. Proven twice over — 1266
+corpus pages through the worker's own classifier in both text-layer modes, and the service's
+measuring code checked against the corpus it was calibrated on, page for page, exactly.
+
+Suite: **244 C# tests, 146 routing-engine, 69 worker, lint and typecheck clean.**
 
 ### 2026-09-06 (later session) — one rule set for both paths
 
@@ -472,8 +526,9 @@ the assistant reported "it never ran" on that basis and was wrong. Both scripts 
 root against a landmark, kill orphaned listeners, and undo a previous run's default printer from
 a breadcrumb in ProgramData, because `finally` does not run when a window is closed.
 
-**Not done, deliberately:** virtual-printer ingress. It is the next milestone and it is blocked
-on the decision in 6a, not on effort.
+**Not done at the time, deliberately:** virtual-printer ingress. It was the next milestone and
+it was blocked on the decision in 6a. Both are now settled and built - see the 2026-09-07 entry
+at the top of this log.
 
 ### Corrections worth carrying forward
 

@@ -121,6 +121,38 @@ public static class PolicyConfiguration
             ReadString(root, "OcrLanguage"),
             sources);
 
+        var virtualPrinterEnabled = ResolveBool(
+            "VirtualPrinterEnabled",
+            fromFile.VirtualPrinter.Enabled,
+            defaults.VirtualPrinter.Enabled,
+            fileExists,
+            ReadString(root, "VirtualPrinterEnabled"),
+            sources);
+
+        var virtualPrinterName = Resolve(
+            "VirtualPrinterName",
+            fromFile.VirtualPrinter.PrinterName,
+            defaults.VirtualPrinter.PrinterName,
+            fileExists,
+            ReadString(root, "VirtualPrinterName"),
+            sources);
+
+        var virtualPrinterPort = ResolveInt(
+            "VirtualPrinterPort",
+            fromFile.VirtualPrinter.Port,
+            defaults.VirtualPrinter.Port,
+            fileExists,
+            ReadString(root, "VirtualPrinterPort"),
+            sources);
+
+        var manageQueue = ResolveBool(
+            "VirtualPrinterManageQueue",
+            fromFile.VirtualPrinter.ManageQueue,
+            defaults.VirtualPrinter.ManageQueue,
+            fileExists,
+            ReadString(root, "VirtualPrinterManageQueue"),
+            sources);
+
         var configuration = new AgentConfiguration
         {
             DataDirectory = dataDirectory,
@@ -136,6 +168,17 @@ public static class PolicyConfiguration
             HotFolders = fromFile.HotFolders,
             PollInterval = fromFile.PollInterval,
             DedupeRetention = fromFile.DedupeRetention,
+
+            // The virtual printer *is* policy-managed, unlike the printer map: whether a site
+            // captures print jobs at all, and under what name, is a fleet-wide decision, and an
+            // administrator turning it off by GPO must not be overridden by a local file.
+            VirtualPrinter = new VirtualPrinterSettings
+            {
+                Enabled = virtualPrinterEnabled,
+                PrinterName = virtualPrinterName,
+                Port = virtualPrinterPort,
+                ManageQueue = manageQueue,
+            },
         };
 
         return (configuration, sources);
@@ -219,6 +262,63 @@ public static class PolicyConfiguration
 
         var layer = fileExists && fromFile != fallback ? ConfigurationLayer.File : ConfigurationLayer.Default;
         sources.Add(new EffectiveSetting(name, fromFile.ToString(), layer));
+        return fromFile;
+    }
+
+    /// <summary>
+    /// Resolves a switch, accepting what an administrator is likely to have typed.
+    /// </summary>
+    /// <remarks>
+    /// ADMX policy writes a REG_DWORD, the MSI writes strings, and a person editing the key by
+    /// hand writes <c>true</c> or <c>yes</c>. All three mean the same thing, and a value that
+    /// means nothing leaves the lower layer standing rather than silently reading as false -
+    /// a typo must not be able to turn a fleet's virtual printers off.
+    /// </remarks>
+    private static bool ResolveBool(
+        string name,
+        bool fromFile,
+        bool fallback,
+        bool fileExists,
+        (string Value, ConfigurationLayer Layer)? fromRegistry,
+        List<EffectiveSetting> sources)
+    {
+        if (fromRegistry is { } registry && ParseBool(registry.Value) is { } parsed)
+        {
+            sources.Add(new EffectiveSetting(name, parsed ? "true" : "false", registry.Layer));
+            return parsed;
+        }
+
+        var layer = fileExists && fromFile != fallback ? ConfigurationLayer.File : ConfigurationLayer.Default;
+        sources.Add(new EffectiveSetting(name, fromFile ? "true" : "false", layer));
+        return fromFile;
+    }
+
+    internal static bool? ParseBool(string value) => value.Trim().ToLowerInvariant() switch
+    {
+        "1" or "true" or "yes" or "on" or "enabled" => true,
+        "0" or "false" or "no" or "off" or "disabled" => false,
+        _ => null,
+    };
+
+    private static int ResolveInt(
+        string name,
+        int fromFile,
+        int fallback,
+        bool fileExists,
+        (string Value, ConfigurationLayer Layer)? fromRegistry,
+        List<EffectiveSetting> sources)
+    {
+        if (fromRegistry is { } registry
+            && int.TryParse(registry.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            && parsed is >= 0 and <= 65535)
+        {
+            sources.Add(new EffectiveSetting(
+                name, parsed.ToString(CultureInfo.InvariantCulture), registry.Layer));
+            return parsed;
+        }
+
+        var layer = fileExists && fromFile != fallback ? ConfigurationLayer.File : ConfigurationLayer.Default;
+        sources.Add(new EffectiveSetting(name, fromFile.ToString(CultureInfo.InvariantCulture), layer));
         return fromFile;
     }
 

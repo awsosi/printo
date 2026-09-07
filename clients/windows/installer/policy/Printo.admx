@@ -122,5 +122,56 @@
       </elements>
     </policy>
 
+    <policy name="VirtualPrinterEnabled"
+            class="Machine"
+            displayName="$(string.VirtualPrinterEnabled)"
+            explainText="$(string.VirtualPrinterEnabled_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            valueName="VirtualPrinterEnabled">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_1" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+
+    <policy name="VirtualPrinterName"
+            class="Machine"
+            displayName="$(string.VirtualPrinterName)"
+            explainText="$(string.VirtualPrinterName_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            presentation="$(presentation.VirtualPrinterName)">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_1" />
+      <elements>
+        <text id="VirtualPrinterName_Text" valueName="VirtualPrinterName" required="true" maxLength="64" />
+      </elements>
+    </policy>
+
+    <policy name="VirtualPrinterPort"
+            class="Machine"
+            displayName="$(string.VirtualPrinterPort)"
+            explainText="$(string.VirtualPrinterPort_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            presentation="$(presentation.VirtualPrinterPort)">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_1" />
+      <elements>
+        <decimal id="VirtualPrinterPort_Decimal" valueName="VirtualPrinterPort"
+                 minValue="1024" maxValue="65535" required="true" />
+      </elements>
+    </policy>
+
+    <policy name="VirtualPrinterManageQueue"
+            class="Machine"
+            displayName="$(string.VirtualPrinterManageQueue)"
+            explainText="$(string.VirtualPrinterManageQueue_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            valueName="VirtualPrinterManageQueue">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_1" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+
   </policies>
 </policyDefinitions>

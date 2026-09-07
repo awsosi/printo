@@ -16,11 +16,17 @@
 
       1. a clean install succeeds silently
       2. the service exists, is set to start automatically, and is running
-      3. the unattended properties reached the registry the agent reads
-      4. an in-place upgrade to a higher version succeeds and keeps the service running
-      5. the data directory survives the upgrade - a site's spool and identity must not be
+      3. the virtual printer queue appears and points at the agent's own endpoint
+      4. a page printed to that queue reaches the agent
+      5. the unattended properties reached the registry the agent reads
+      6. an in-place upgrade to a higher version succeeds and keeps the service running
+      7. the data directory survives the upgrade - a site's spool and identity must not be
          thrown away by a version bump
-      6. uninstall removes the service, the install directory and the registry key
+      8. uninstall removes the service, the install directory, the registry key and the queue
+
+    Step 4 prints the Windows test page to the Printo queue. On a machine with no printers
+    mapped the agent will then fail to route it, which is expected and harmless: the point of
+    the check is that the document arrived at all.
 
 .PARAMETER Msi
     The package to test. Defaults to the newest MSI in `bin`.
@@ -115,6 +121,45 @@ Check 'there is a Start Menu shortcut to open' {
     Test-Path $target
 }
 
+Write-Host '==> the virtual printer'
+Check 'the queue exists' {
+    # Up to two minutes: the first Add-Printer on a machine stages the inbox IPP class driver,
+    # and the service does it on a background task so the rest of the agent starts meanwhile.
+    for ($i = 0; $i -lt 120; $i++) {
+        if (Get-Printer -Name Printo -ErrorAction SilentlyContinue) { return $true }
+        Start-Sleep -Seconds 1
+    }
+    $false
+}
+Check 'the queue points at the agent endpoint' {
+    $port = (Get-Printer -Name Printo -ErrorAction SilentlyContinue).PortName
+    # Loopback and the agent's port: a queue pointing anywhere else would accept jobs and lose
+    # them, which is the one failure this whole path must not have.
+    $port -match '^http://127\.0\.0\.1:\d+/ipp/print/?$'
+}
+Check 'the endpoint answers' {
+    $port = (Get-Printer -Name Printo -ErrorAction SilentlyContinue).PortName
+    try { (Invoke-WebRequest -Uri $port -UseBasicParsing -TimeoutSec 10).Content -match 'Printo virtual printer' }
+    catch { $false }
+}
+
+Write-Host '==> a printed page reaches the agent'
+$since = Get-Date
+Check 'the Windows test page is captured' {
+    # Through the real spooler and the real class driver - the half of this path that no unit
+    # test can reach. The agent logs every captured document to the event log, which is also
+    # where a domain administrator would look.
+    & rundll32.exe printui.dll,PrintUIEntry /k /n "Printo"
+    for ($i = 0; $i -lt 60; $i++) {
+        $entry = Get-WinEvent -FilterHashtable @{
+            LogName = 'Application'; ProviderName = 'Printo Agent'; StartTime = $since
+        } -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'Capture captured' }
+        if ($entry) { return $true }
+        Start-Sleep -Seconds 1
+    }
+    $false
+}
+
 Write-Host '==> unattended configuration reached the agent'
 Check 'the server address was written' { (Get-ItemProperty $machineKey -Name ServerUrl).ServerUrl -eq $ServerUrl }
 Check 'the decision mode was written' { (Get-ItemProperty $machineKey -Name DecisionMode).DecisionMode -eq $DecisionMode }
@@ -173,6 +218,11 @@ Check 'the autostart entry is gone' {
     $null -eq (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name PrintoTray -ErrorAction SilentlyContinue)
 }
 Check 'the machine registry key is gone' { -not (Test-Path $machineKey) }
+Check 'the virtual printer queue is gone' {
+    # Removed by the package's one custom action. A queue left behind would go on accepting
+    # jobs into a socket that no longer has anything listening on it.
+    $null -eq (Get-Printer -Name Printo -ErrorAction SilentlyContinue)
+}
 Check 'the Start Menu folder is gone' {
     -not (Test-Path (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Printo'))
 }

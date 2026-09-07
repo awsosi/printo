@@ -125,6 +125,12 @@ Page classification (separate from the OCR provider seam):
   pypdfium2 rasterization as optional layers). Contract in `docs/VISION_SERVICE.md`.
 - `composite` — vision first, heuristic fallback; selected via `WORKER_CLASSIFIER` /
   `WORKER_VISION_URL` / `WORKER_VISION_TIMEOUT_MS`.
+- `routing-engine` — **the default when a vision URL is set.** Runs the shared rule set from
+  `packages/routing-engine`, the same rules the Windows agent executes, with the Vision Service
+  measuring each page (`/v1/page-features`) because the worker has no rasterizer of its own. It
+  decides a document at a time rather than a page at a time, since profiles match on the
+  document and rule sets can state document-level expectations. Falls back to the heuristic
+  classifier whenever it cannot settle — see `docs/WINDOWS_CLIENT_PLAN.md` section 10.3.
 
 Planned provider slots:
 - `tesseract` (offline)
