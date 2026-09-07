@@ -122,6 +122,70 @@ if ($installerService -and $installerService.StartType -eq 'Disabled') {
 }
 
 # ---------------------------------------------------------------------------------------------
+Write-Host 'Software restriction' -ForegroundColor Cyan
+
+# An unsigned MSI on a managed workstation is exactly what AppLocker and SRP are configured to
+# stop, and a refusal looks like every other 1603: the install ends immediately, elevated or not.
+$appLocker = $null
+try { $appLocker = Get-AppLockerPolicy -Effective -ErrorAction Stop } catch { }
+
+if ($appLocker) {
+    $collections = @($appLocker.RuleCollections | Where-Object { $_.EnforcementMode -ne 'NotConfigured' })
+    if ($collections.Count -gt 0) {
+        $kinds = ($collections | ForEach-Object { "$($_.RuleCollectionType)=$($_.EnforcementMode)" }) -join ', '
+        Say 'INFO' "AppLocker is configured: $kinds"
+        if ($collections | Where-Object { $_.RuleCollectionType -eq 'Msi' -and $_.EnforcementMode -eq 'Enabled' }) {
+            Say 'STOP' 'AppLocker is enforcing rules for Windows Installer files'
+            $blockers += 'AppLocker enforces MSI rules on this machine. An unsigned package will be refused whoever runs it. Sign the MSI with the internal ADCS certificate, deploy it by Group Policy, or have an administrator add a path rule.'
+        }
+    } else {
+        Say 'OK' 'AppLocker is present but enforcing nothing'
+    }
+} else {
+    Say 'OK' 'no effective AppLocker policy'
+}
+
+$srp = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Safer\CodeIdentifiers'
+$srpLevel = Get-PolicyValue $srp 'DefaultLevel'
+if ($null -ne $srpLevel -and $srpLevel -eq 0) {
+    # 0 is Disallowed: everything is blocked unless a rule allows it.
+    Say 'STOP' 'Software Restriction Policy defaults to Disallowed'
+    $blockers += 'Software Restriction Policy is set to disallow by default, so an unsigned package in a user folder will not run. Sign it, or deploy by Group Policy.'
+} else {
+    Say 'OK' 'no restrictive Software Restriction Policy'
+}
+
+# ---------------------------------------------------------------------------------------------
+Write-Host 'Room to install' -ForegroundColor Cyan
+
+$systemDrive = (Get-Item $env:SystemRoot).PSDrive
+$freeMb = [math]::Round($systemDrive.Free / 1MB)
+if ($freeMb -lt 1024) {
+    # The package is 57 MB, but Windows Installer stages the cab, writes a rollback script and
+    # keeps a cached copy: a machine with a nearly full disk fails early and reports 1603.
+    Say 'STOP' "only $freeMb MB free on $($systemDrive.Name):"
+    $blockers += "There is not enough room on the system drive ($freeMb MB). Windows Installer stages the payload, writes a rollback script and caches the package; clear a couple of gigabytes and try again."
+} else {
+    Say 'OK' "$freeMb MB free on $($systemDrive.Name):"
+}
+
+$temp = $env:TEMP
+if (-not (Test-Path $temp)) {
+    Say 'STOP' "TEMP points at $temp, which does not exist"
+    $blockers += "TEMP points at a directory that does not exist ($temp). Windows Installer extracts the payload there."
+} else {
+    try {
+        $probe = Join-Path $temp ("printo-probe-{0}.tmp" -f (Get-Random))
+        [System.IO.File]::WriteAllText($probe, 'probe')
+        Remove-Item $probe -Force
+        Say 'OK' "TEMP is writable ($temp)"
+    } catch {
+        Say 'STOP' "TEMP is not writable ($temp)"
+        $blockers += "Windows Installer cannot write to TEMP ($temp), which is where it extracts the payload."
+    }
+}
+
+# ---------------------------------------------------------------------------------------------
 Write-Host 'The package itself' -ForegroundColor Cyan
 
 if (-not $Msi -or -not (Test-Path $Msi)) {
@@ -158,22 +222,24 @@ if (-not $Msi -or -not (Test-Path $Msi)) {
 # ---------------------------------------------------------------------------------------------
 Write-Host 'Previous attempts' -ForegroundColor Cyan
 
-$service = Get-Service PrintoAgent -ErrorAction SilentlyContinue
-if ($service) {
-    Say 'STOP' ("the PrintoAgent service still exists (status {0})" -f $service.Status)
-    $blockers += 'A service left behind by a failed install blocks the next one until the machine is restarted. Close Services and Event Viewer, restart, then install.'
-} else {
-    Say 'OK' 'no PrintoAgent service is registered'
-}
-
 $installed = Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue |
     ForEach-Object { Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue } |
     Where-Object { $_.DisplayName -eq 'Printo Agent' }
 
-if ($installed) {
-    Say 'INFO' ("Printo Agent {0} is registered as installed" -f $installed.DisplayVersion)
+$service = Get-Service PrintoAgent -ErrorAction SilentlyContinue
+
+if ($service -and $installed) {
+    # Both present is an ordinary installed machine, whatever the service happens to be doing.
+    Say 'INFO' ("Printo Agent {0} is installed; the service is {1}" -f $installed.DisplayVersion, $service.Status)
+} elseif ($service) {
+    # A service with no product behind it is the leftover that blocks the next install until the
+    # machine restarts - Windows only marks it deleted while something still holds it open.
+    Say 'STOP' ("a PrintoAgent service exists with no product behind it (status {0})" -f $service.Status)
+    $blockers += 'A service left behind by a failed install blocks the next one until the machine is restarted. Close Services and Event Viewer, restart, then install.'
+} elseif ($installed) {
+    Say 'INFO' ("Printo Agent {0} is registered but has no service" -f $installed.DisplayVersion)
 } else {
-    Say 'OK' 'no Printo Agent product is registered'
+    Say 'OK' 'no previous install to trip over'
 }
 
 $installDir = Join-Path ${env:ProgramFiles} 'Printo Agent'
@@ -209,11 +275,24 @@ if ($Install) {
             $blockers += 'This is a per-machine package: it installs a service and cannot be installed by a standard user. Install from an administrator account, or deploy it with Group Policy, which installs as the machine.'
         }
 
+        # Policy refusals name themselves, and are worth calling out before the raw log.
+        $forbidden = Select-String -Path $log -Pattern 'forbidden by system policy|1625|AppLocker|Safer' |
+            Select-Object -First 1
+        if ($forbidden) {
+            Say 'STOP' 'the installation was refused by system policy'
+            $blockers += 'Windows refused the package by policy (AppLocker or Software Restriction Policy). Sign the MSI, or deploy it by Group Policy.'
+        }
+
         Write-Host ''
-        Write-Host '  the log lines that carry an error:' -ForegroundColor Cyan
-        Select-String -Path $log -Pattern 'Note: 1:|Error 1:|error status|MainEngineThread is returning|Product: .* -- ' |
-            Select-Object -Last 12 |
-            ForEach-Object { Write-Host ("    " + $_.Line.Trim()) }
+        Write-Host '  the 25 lines before the failure - this is the part worth sending:' -ForegroundColor Cyan
+        $context = Get-Content $log | Select-String -Pattern 'Return value 3' -Context 25, 2 | Select-Object -First 1
+        if ($context) {
+            $context.Context.PreContext | ForEach-Object { Write-Host ("    " + $_.Trim()) }
+            Write-Host ("    " + $context.Line.Trim()) -ForegroundColor Yellow
+            $context.Context.PostContext | ForEach-Object { Write-Host ("    " + $_.Trim()) }
+        } else {
+            Get-Content $log -Tail 25 | ForEach-Object { Write-Host ("    " + $_.Trim()) }
+        }
     }
 }
 
