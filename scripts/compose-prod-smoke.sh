@@ -159,6 +159,69 @@ echo "==> the agent API refuses an unenrolled machine through the proxy"
 code="$(curl -ksS -o /dev/null -w '%{http_code}' "$BASE/api/agents/me")"
 [ "$code" = "401" ] || { echo "!!! expected 401 from /api/agents/me, got $code" >&2; exit 1; }
 
+echo "==> the vision service can measure a page for the routing engine"
+# The one assertion that catches a vision image built without a rasterizer. Without an ink box
+# the shared engine routes 678 of 1266 corpus pages and misses every label - and it does that
+# quietly, because the worker falls back to its text-only classifier and nothing fails loudly.
+# The test page is assembled here rather than checked in: the subject is the endpoint, not the
+# document, and a PDF built from bytes needs nothing installed to produce.
+if ! compose exec -T vision python - <<'PY'
+import base64, json, sys, urllib.request
+
+content = b"0 0 0 rg 100 500 200 100 re f"
+objects = [
+    b"<< /Type /Catalog /Pages 2 0 R >>",
+    b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << >> >>",
+    b"<< /Length " + str(len(content)).encode() + b" >>\nstream\n" + content + b"\nendstream",
+]
+
+pdf = bytearray(b"%PDF-1.7\n")
+offsets = []
+for number, body in enumerate(objects, start=1):
+    offsets.append(len(pdf))
+    pdf += str(number).encode() + b" 0 obj\n" + body + b"\nendobj\n"
+
+start = len(pdf)
+pdf += b"xref\n0 " + str(len(objects) + 1).encode() + b"\n0000000000 65535 f \n"
+for offset in offsets:
+    pdf += ("%010d 00000 n \n" % offset).encode()
+pdf += b"trailer\n<< /Size " + str(len(objects) + 1).encode() + b" /Root 1 0 R >>\nstartxref\n"
+pdf += str(start).encode() + b"\n%%EOF\n"
+
+request = urllib.request.Request(
+    "http://localhost:6000/v1/page-features",
+    data=json.dumps({"page_number": 1, "page_count": 1,
+                     "page_pdf_base64": base64.b64encode(bytes(pdf)).decode()}).encode(),
+    headers={"content-type": "application/json"})
+
+try:
+    with urllib.request.urlopen(request, timeout=120) as response:
+        body = json.load(response)
+except urllib.error.HTTPError as error:
+    print("    /v1/page-features answered %s: %s" % (error.code, error.read()[:200]))
+    print("    a 503 means the image was built without a rasterizer (VISION_BUILD_PROFILE)")
+    sys.exit(1)
+
+box = body.get("ink_box")
+if box is None:
+    print("    no ink box was measured on a page with a filled rectangle on it")
+    sys.exit(1)
+
+# 595 x 842 pt is 209.9 x 297 mm, and the rectangle is 200 x 100 pt = 70.6 x 35.3 mm.
+if not (209 <= body["page_width_mm"] <= 211 and 69 <= box["width_mm"] <= 72):
+    print("    measured %s mm page with a %s mm ink box, which is not the page that was sent"
+          % (body["page_width_mm"], box["width_mm"]))
+    sys.exit(1)
+
+print("    measured a %s mm page with a %s x %s mm ink box"
+      % (body["page_width_mm"], box["width_mm"], box["height_mm"]))
+PY
+then
+  echo "!!! the vision service could not measure a page for the routing engine" >&2
+  exit 1
+fi
+
 echo "==> migrations ran: the fleet schema is present"
 tables="$(compose exec -T db psql -U printo -d printo -tAc \
   "SELECT COUNT(*) FROM information_schema.tables WHERE table_name IN ('agents','rule_bundles','fallback_events')")"
