@@ -5,8 +5,13 @@
 .DESCRIPTION
     Windows Installer reports almost everything as 1603, and the event log says nothing more.
     This collects the handful of things that actually produce a 1603 before the first file is
-    copied - elevation, policy, a service left pending deletion, a blocked download - and, with
-    -Install, runs the installation with a verbose log and reports the action that failed.
+    copied - a broken Windows Installer, elevation, policy, a service left pending deletion, a
+    blocked download - and, with -Install, runs the installation with a verbose log and reports
+    the action that failed.
+
+    The first check is the one that matters most: whether msiexec works on this machine at all,
+    asked with a package that cannot exist so that nothing is installed and no package is
+    blamed.
 
     Safe to run as an ordinary user: without -Install it only reads.
 
@@ -67,6 +72,31 @@ Write-Host ("  windows : {0}" -f (Get-CimInstance Win32_OperatingSystem).Caption
 Write-Host ''
 
 $blockers = @()
+
+# ---------------------------------------------------------------------------------------------
+Write-Host 'Windows Installer itself' -ForegroundColor Cyan
+
+# The first question, because everything else assumes the answer is yes: does msiexec work on
+# this machine at all? Asked with a package that cannot exist, so nothing is installed and no
+# package is blamed. A working installer reports 1619 - "this installation package could not be
+# opened" - after thirty-odd lines of log. A machine where Windows Installer is broken or hooked
+# returns 1603 in three lines, for every package, including one that is not there.
+#
+# This is not hypothetical: a workstation spent a day being blamed for rejecting our MSI, and it
+# rejected Notepad++'s signed MSI in exactly the same way.
+$controlLog = Join-Path $env:TEMP ("printo-msi-control-{0}.log" -f (Get-Random))
+$controlPath = Join-Path $env:TEMP 'printo-no-such-package.msi'
+$control = Start-Process msiexec.exe -ArgumentList @('/i', "`"$controlPath`"", '/qn', '/l*v', "`"$controlLog`"") -Wait -PassThru
+$controlLines = 0
+if (Test-Path $controlLog) { $controlLines = (Get-Content $controlLog).Count }
+
+if ($control.ExitCode -eq 1619 -or $controlLines -gt 10) {
+    Say 'OK' "Windows Installer answers normally (exit $($control.ExitCode), $controlLines log lines)"
+} else {
+    Say 'STOP' "Windows Installer failed on a package that does not exist (exit $($control.ExitCode), $controlLines log lines)"
+    $blockers += 'Windows Installer is not working on this machine: it fails the same way for every package, including one that does not exist, so no MSI will install until that is fixed. Try, in order: msiexec /unregister then msiexec /regserver; check HKLM and HKCU \SOFTWARE\Policies\Microsoft\Windows\Installer for DisableMSI; check for an application-control policy (AppLocker, WDAC) or an EDR agent hooking msiexec; and confirm the same package installs on another workstation.'
+}
+Remove-Item $controlLog -ErrorAction SilentlyContinue
 
 # ---------------------------------------------------------------------------------------------
 Write-Host 'Elevation' -ForegroundColor Cyan
