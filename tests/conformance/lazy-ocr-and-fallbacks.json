@@ -423,7 +423,7 @@
     },
     {
       "name": "A page scanned and found to have no barcode is not asked about again",
-      "rationale": "The other half of the contract: an empty array is an answer, not a gap. Were it treated as 'nobody looked', the engine would ask on the second pass too and the job would fail as a rule set that asked twice - blaming the rules for a page that simply has no barcode.",
+      "rationale": "The other half of the contract: an empty array is an answer, not a gap. Were it treated as 'nobody looked', the engine would ask on the second pass too and the job would fail as a rule set that asked twice - blaming the rules for a page that simply has no barcode. And a label-shaped page that nothing identified is not printed on A4 unasked: it goes to the picker, pre-selected for thermal, below the confidence threshold.",
       "profile": "builtin:OneClickPrint",
       "document": {
         "fileName": "OneClickPrint_TEST.pdf",
@@ -466,16 +466,17 @@
         "pages": [
           {
             "pageNumber": 1,
-            "route": "A4",
-            "ruleId": null,
-            "carrier": null
+            "route": "THERMAL",
+            "ruleId": "label-shaped-region",
+            "carrier": null,
+            "fallbackReason": "LOW_CONFIDENCE"
           }
         ]
       }
     },
     {
-      "name": "A printed FedEx return label is told apart from an outgoing one by what is read on it",
-      "rationale": "Printing turns the page and replaces its medium, so the Letter sheet the fast-path rule keys on is gone: ink 150.6x101.6mm on plain A4, the same rectangle as an outgoing label, turned. Only the recognised text separates them, and the keyed phrase is 'REF:'/'PO:' rather than the 'RETURN DEPT' printed on the page - the recogniser reads the label's interleaved columns in visual order and splits those two words apart.",
+      "name": "A printed FedEx return label stands upright and says it is a return, so it stays on A4",
+      "rationale": "Printing replaces the Letter sheet the fast-path rule keys on with A4, but places the content 1:1 without turning a portrait page, so the return label arrives upright at its original position: ink 100.8x151.6mm. The marking alone is not enough - outgoing labels for return shipments carry it too - so the rule needs both. The keyed phrase is 'REF:'/'PO:' rather than the 'RETURN DEPT' printed on the page, because the recogniser reads the label's interleaved columns in visual order and splits those two words apart.",
       "profile": "builtin:OneClickPrint",
       "document": {
         "fileName": "OneClickPrint_TEST.pdf",
@@ -490,22 +491,22 @@
             "rotation": 0,
             "text": null,
             "inkBox": {
-              "xMm": 54.0,
-              "yMm": 72.0,
-              "widthMm": 150.6,
-              "heightMm": 101.6,
-              "aspect": 0.675,
+              "xMm": 11.9,
+              "yMm": 12.4,
+              "widthMm": 100.8,
+              "heightMm": 151.6,
+              "aspect": 1.504,
               "coverage": 0.06
             },
             "barcodes": [],
             "ocrRegions": [
               {
-                "key": "54.0,72.0,150.6,101.6",
+                "key": "11.9,12.4,100.8,151.6",
                 "rect": {
-                  "xMm": 54.0,
-                  "yMm": 72.0,
-                  "widthMm": 150.6,
-                  "heightMm": 101.6
+                  "xMm": 11.9,
+                  "yMm": 12.4,
+                  "widthMm": 100.8,
+                  "heightMm": 151.6
                 },
                 "text": "ORIGIN ID:REPR 30075371423400 LUKAS TOMASZ AALTO WAREHOUSE ACTWGT: 6.40 KG BILL SENDER INV: PO: RETURN OJX058644430 REF: RETURN 808292H2ND03227236 DEPT: TRK# 8037 2219 9923 INTL ECONOMY CLR",
                 "lines": []
@@ -572,6 +573,196 @@
             "route": "THERMAL",
             "ruleId": "fedex-label-region",
             "carrier": "FEDEX"
+          }
+        ]
+      }
+    },
+    {
+      "name": "A printed outgoing FedEx label for a return shipment carries the same marking and still goes to thermal",
+      "rationale": "Measured on the print-simulated corpus: OCR reads 'PO: RETURN' on 140 of 423 outgoing FedEx labels, because the shipments are returns to the warehouse. They arrive lying down - the A4-landscape sheet is turned on the way through - which is what keeps them off the return-label rule. Keyed on the marking alone, 148 of them went to A4 silently.",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.0,
+            "pageHeightMm": 297.0,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "inkBox": {
+              "xMm": 18.8,
+              "yMm": 162.4,
+              "widthMm": 150.1,
+              "heightMm": 100.3,
+              "aspect": 0.668,
+              "coverage": 0.06
+            },
+            "barcodes": [],
+            "ocrRegions": [
+              {
+                "key": "18.8,162.4,150.1,100.3",
+                "rect": {
+                  "xMm": 18.8,
+                  "yMm": 162.4,
+                  "widthMm": 150.1,
+                  "heightMm": 100.3
+                },
+                "text": "ID:UOSQ EMMA ELENA ACTNGT: 0.40 KG CAD: 255145792ZFAP12208 BILL SENDER WAREHOUSE KALDIS MALBORK REF : RETURN 876031520262 DEPT: po: RETURN UTN189042S92 TRK# 1013 7291 8474 FedEx Express INTL ECONOMY ETD PL WAW",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "fedex-label-region",
+            "carrier": "FEDEX"
+          }
+        ]
+      }
+    },
+    {
+      "name": "A lying 4x6in region with nothing recognised yet asks for OCR of its ink box",
+      "rationale": "The FedEx carrier gate below can only resolve from recognised text, so something must ask for it. With the return-label rule now limited to upright labels, that is the UPS rule, which covers every label shape.",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.0,
+            "pageHeightMm": 297.0,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "inkBox": {
+              "xMm": 18.8,
+              "yMm": 162.4,
+              "widthMm": 150.1,
+              "heightMm": 100.3,
+              "aspect": 0.668,
+              "coverage": 0.06
+            },
+            "barcodes": []
+          }
+        ]
+      },
+      "expectNeedsOcr": [
+        {
+          "pageNumber": 1,
+          "key": "18.8,162.4,150.1,100.3",
+          "ruleId": "ups-label-region-ocr"
+        }
+      ]
+    },
+    {
+      "name": "A printed 99x170mm UPS label is identified by what is read on it",
+      "rationale": "Printed off its 231x318mm carrier sheet the page frame is gone, and at aspect 1.72 this layout is just short of the tall-label band, so only content claims it. It went to A4 silently on 10 corpus pages.",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.0,
+            "pageHeightMm": 297.0,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "inkBox": {
+              "xMm": 10.4,
+              "yMm": 10.4,
+              "widthMm": 99.1,
+              "heightMm": 169.9,
+              "aspect": 1.714,
+              "coverage": 0.06
+            },
+            "barcodes": [],
+            "ocrRegions": [
+              {
+                "key": "10.4,10.4,99.1,169.9",
+                "rect": {
+                  "xMm": 10.4,
+                  "yMm": 10.4,
+                  "widthMm": 99.1,
+                  "heightMm": 169.9
+                },
+                "text": "MARIUSZ BRULINSKI 48663887797 JUTRZENKI 177 SHP WT: 0.5 KG 02231 WARSAW SHIP TO: WAREHOUSE NORBEX 1 KG 1 OF1 SHP#: 1447 W8TV 388 UPS STANDARD BILLING: TPS GB",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "ups-label-region-ocr"
+          }
+        ]
+      }
+    },
+    {
+      "name": "A UPS label in the FedEx 4x6in shape is identified as UPS, not left to fall through",
+      "rationale": "Eleven corpus labels on A4-landscape sheets have the FedEx proportions but read 'UPS STANDARD' and 'SHP WT'. No FedEx signal resolves on them, so the FedEx region rule cannot claim them either.",
+      "profile": "builtin:OneClickPrint",
+      "document": {
+        "fileName": "OneClickPrint_TEST.pdf",
+        "pageCount": 1,
+        "pages": [
+          {
+            "pageNumber": 1,
+            "pageCount": 1,
+            "pageWidthMm": 210.0,
+            "pageHeightMm": 297.0,
+            "orientation": "portrait",
+            "rotation": 0,
+            "text": null,
+            "inkBox": {
+              "xMm": 18.8,
+              "yMm": 162.4,
+              "widthMm": 151.4,
+              "heightMm": 100.6,
+              "aspect": 0.664,
+              "coverage": 0.06
+            },
+            "barcodes": [],
+            "ocrRegions": [
+              {
+                "key": "18.8,162.4,151.4,100.6",
+                "rect": {
+                  "xMm": 18.8,
+                  "yMm": 162.4,
+                  "widthMm": 151.4,
+                  "heightMm": 100.6
+                },
+                "text": "33759937088 KRISTIN SHP#: 1447 W8V3 WGG 15 RUE SHP WT: 0.5 KG 75003 DATE: 20 AUG 2026 CZECHIA SHIP TO: WAREHOUSE KALDIS UPS STANDARD TRACKING 9J 779 3B6 42 BILLING: PIP TPS",
+                "lines": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "pages": [
+          {
+            "pageNumber": 1,
+            "route": "THERMAL",
+            "ruleId": "ups-label-region-ocr"
           }
         ]
       }

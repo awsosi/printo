@@ -5,6 +5,8 @@ import {
   decide,
   loadCorpus,
   loadExpected,
+  PRINTED_FEATURES_PATH,
+  printedCorpusAvailable,
   stripTextLayer,
   type ExpectedPage
 } from './helpers/corpus.js';
@@ -143,6 +145,65 @@ suite('golden corpus', () => {
     for (const page of withFooter) {
       expect(resolveCarrier(page).carrier).toBe('DHL');
     }
+  });
+});
+
+/**
+ * The same 1266 pages as the virtual printer delivers them.
+ *
+ * The file-path runs above cannot see the print path: a page keeps its frame there, so the
+ * geometry fast paths claim it before any content rule is reached. That is how a return-label
+ * rule that sent 148 outgoing FedEx labels to A4 once printed passed both of them. This run has
+ * no text layer and no page frame to lean on, so it is the one that proves Ctrl+P.
+ *
+ * Asserted strictly: every page on the right printer, and nobody asked about any of them. A
+ * prompt on a page the rules should know is a regression in the product's speed even when the
+ * user's answer would have been right.
+ */
+const printedSuite = printedCorpusAvailable() ? describe : describe.skip;
+
+printedSuite('golden corpus, printed', () => {
+  it('routes every printed page correctly without asking anybody', () => {
+    const expected = loadExpected();
+    const expectedByPage = new Map<string, ExpectedPage>(
+      expected.pages.map((page) => [key(page.doc, page.pageNumber), page])
+    );
+
+    const mismatches: Mismatch[] = [];
+    const prompted: string[] = [];
+    let pages = 0;
+
+    for (const document of loadCorpus(PRINTED_FEATURES_PATH)) {
+      const decision = decide(ONE_CLICK_PRINT_PROFILE, document);
+      if (decision.fallback) {
+        prompted.push(`${document.fileName}: ${decision.fallback.reason}`);
+      }
+
+      for (const page of decision.pages) {
+        pages++;
+        const want = expectedByPage.get(key(document.fileName, page.pageNumber));
+        if (!want) {
+          throw new Error(`no ground truth for ${document.fileName} p${page.pageNumber}`);
+        }
+        if (page.fallback) {
+          prompted.push(`${document.fileName} p${page.pageNumber}: ${page.fallback.reason} via ${page.ruleId}`);
+        }
+        if (page.route !== want.route) {
+          mismatches.push({
+            doc: document.fileName,
+            pageNumber: page.pageNumber,
+            expectedClass: want.pageClass,
+            expectedRoute: want.route,
+            actualRoute: page.route,
+            ruleId: page.ruleId
+          });
+        }
+      }
+    }
+
+    expect(pages).toBe(expected.pageCount);
+    expect(mismatches.length, summarize(mismatches)).toBe(0);
+    expect(prompted, prompted.slice(0, 10).join('\n')).toEqual([]);
   });
 });
 

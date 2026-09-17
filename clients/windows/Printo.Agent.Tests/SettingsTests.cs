@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using System.Windows.Forms;
 using Printo.Agent.Printing;
 using Printo.Agent.Runtime;
 using Printo.Agent.Tray;
@@ -34,6 +35,48 @@ public sealed class SettingsTests : IDisposable
         {
             // A temporary directory left behind is not worth failing a run over.
         }
+    }
+
+    [Fact]
+    public void TheCloseButtonClosesTheWindowTheTrayOpens()
+    {
+        // The tray shows this window modeless. Close used to rely on DialogResult, which only
+        // closes a form shown with ShowDialog, so the button did nothing.
+        var config = Path.Combine(directory, "agent.json");
+        new AgentConfiguration().Save(config);
+
+        var closed = false;
+        UiThread.Run(() =>
+        {
+            using var form = new SettingsForm(config);
+            form.FormClosed += (_, _) => closed = true;
+            form.Show();
+
+            var button = FindButton(form, "Close");
+            Assert.NotNull(button);
+            button.PerformClick();
+            Application.DoEvents();
+        });
+
+        Assert.True(closed, "clicking Close left the settings window open");
+    }
+
+    private static Button? FindButton(Control parent, string text)
+    {
+        foreach (Control child in parent.Controls)
+        {
+            if (child is Button button && button.Text == text)
+            {
+                return button;
+            }
+
+            if (FindButton(child, text) is { } nested)
+            {
+                return nested;
+            }
+        }
+
+        return null;
     }
 
     [Fact]

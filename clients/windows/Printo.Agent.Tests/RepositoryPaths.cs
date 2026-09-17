@@ -22,6 +22,17 @@ internal static class RepositoryPaths
 
     public static string? CorpusExpected => Combine("tests", "corpus", "expected.json");
 
+    /// <summary>
+    /// The corpus as the virtual printer delivers it: every page printed, measured and read.
+    /// </summary>
+    /// <remarks>
+    /// Produced from print-simulated copies of the 258 sample PDFs - text layer gone, landscape
+    /// turned, content placed 1:1 at the top-left of A4 - which route rule-for-rule like the
+    /// seven real captures. Barcodes and OCR of the ink box are recorded with the agent's own
+    /// decoder and recogniser, so the engine can be run over the printed corpus without either.
+    /// </remarks>
+    public static string? PrintedCorpusFeatures => Combine("tests", "corpus", "printed-features.jsonl.gz");
+
     public static string? Profiles => Combine("profiles");
 
     /// <summary>

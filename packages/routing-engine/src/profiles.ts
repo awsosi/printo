@@ -222,32 +222,66 @@ export const ONE_CLICK_PRINT_PROFILE: RoutingProfileRules = {
     {
       // The return label, once printing has taken the page size away.
       //
-      // On the file path the rule above catches these by their Letter page. Printed, a return
-      // label and an outgoing label are the same rectangle - ink 100.8x151.6mm against
-      // 101.1x149.9mm, both aspect 1.5 - so only content can separate them, and getting it
-      // wrong sends a return label to a parcel printer.
+      // On the file path the rule above catches these by their Letter page. Printed, the page
+      // frame is gone and the content does not help: the outgoing FedEx labels in this corpus
+      // are return *shipments* to the same warehouses, and OCR reads `PO: RETURN` and
+      // `REF: RETURN` on 140 of the 423 of them, exactly as on the three return labels. The text
+      // layer never showed that - it omits those fields - which is how an earlier version of
+      // this rule, keyed on the marking alone, came to send 148 outgoing labels to A4 once
+      // printed while passing every file-path test.
       //
-      // Keyed on `REF:` or `PO:` rather than the phrase `RETURN DEPT` that is printed on the
-      // page. The recogniser reads a label in visual line order and this label's columns
-      // interleave, so the two words come back separated by half the address block:
-      // `PO: RETURN OJX058644430 REF: RETURN 808292H2ND03227236 DEPT:`. Either keyed form
-      // appears on exactly 3 of the 1266 corpus pages, which are the three return labels;
-      // bare `RETURN` appears on 467, because DHL outgoing labels carry `Ref No: Return` for
-      // return *shipments* and must still print on thermal stock.
+      // What does survive is which way the label stands. Content is placed 1:1 and a landscape
+      // page is turned to portrait on the way through, so an outgoing label from an A4-landscape
+      // sheet arrives lying down (`inkAspect` 0.66-0.68), while a return label from a portrait
+      // Letter page arrives upright (1.50). Measured on the print-simulated corpus: upright 4x6in
+      // regions are the three return labels and nothing else. The marking is kept as well, so an
+      // upright label must still say it is a return before it is kept off the thermal printer.
       id: 'fedex-return-label-ocr',
-      name: 'FedEx return label (OCR)',
+      name: 'FedEx return label (OCR, upright on the page)',
       when: {
         all: [
           {
             geometry: {
               inkShortEdgeMm: { min: 88, max: 118 },
-              inkAspectNormalised: { min: 1.35, max: 1.7 }
+              inkAspectNormalised: { min: 1.35, max: 1.7 },
+              inkAspect: { min: 1.35, max: 1.7 }
             }
           },
           { ocr: { rect: 'inkBox', matches: 'REF:\\s*RETURN|PO:\\s*RETURN' } }
         ]
       },
       then: { route: 'A4', confidence: 0.9 }
+    },
+    {
+      // A UPS label identified by what is printed on it, in either of the shapes UPS uses.
+      //
+      // The file path knows UPS by its 231x318mm carrier sheet, which printing replaces with
+      // A4. Two layouts then fall through every shape rule: a 99x170mm label (aspect 1.72, just
+      // short of the tall-label band) and a 4x6in UPS label on an A4-landscape sheet, which the
+      // corpus files under FedEx by page shape but which reads `UPS STANDARD`. Both went to A4
+      // silently - 21 pages. `SHP WT`, `SHP#` and `UPS STANDARD` are on all 30 of those
+      // labels that reach this rule and on no other page in the corpus, OCR or text layer.
+      //
+      // Also the rule that has the ink box recognised for every 4x6in region lying down, which
+      // is what lets the carrier gate on `fedex-label-region` resolve FedEx below.
+      id: 'ups-label-region-ocr',
+      name: 'UPS label region (OCR)',
+      when: {
+        all: [
+          {
+            geometry: {
+              inkShortEdgeMm: { min: 88, max: 118 },
+              inkAspectNormalised: { min: 1.35, max: 2.2 }
+            }
+          },
+          { ocr: { rect: 'inkBox', matches: 'UPS\\s*STANDARD|SHP\\s*WT|SHP\\s*#' } }
+        ]
+      },
+      then: {
+        route: 'THERMAL',
+        confidence: 0.85,
+        transform: { source: 'inkBox', padMm: 1, rotate: 'auto', fit: 'contain' }
+      }
     },
     {
       // Anything tall-label-shaped that survived the waybill checks is a parcel label.
@@ -288,9 +322,9 @@ export const ONE_CLICK_PRINT_PROFILE: RoutingProfileRules = {
       // day one, but below the threshold, so the user confirms and the admin gets a review-queue
       // entry that can become a template (plan section 6.3, confirmed decision 7).
       //
-      // The carrier is resolvable here because the rule above has already had the ink box
-      // recognised, so `Fed Ex` and `TRK#` are available to the resolver as OCR signals on the
-      // second pass. On the file path this rule is not reached at all: `fedex-label-embedded`
+      // The carrier is resolvable here because `ups-label-region-ocr` has already had the ink
+      // box recognised, so `Fed Ex` and `TRK#` are available to the resolver as OCR signals on
+      // the next pass. On the file path this rule is not reached at all: `fedex-label-embedded`
       // claims those pages by geometry long before.
       id: 'fedex-label-region',
       name: 'FedEx-shaped outgoing label region',
@@ -332,6 +366,37 @@ export const ONE_CLICK_PRINT_PROFILE: RoutingProfileRules = {
       then: {
         route: 'THERMAL',
         confidence: 0.6,
+        transform: { source: 'inkBox', padMm: 1, rotate: 'auto', fit: 'contain' }
+      }
+    },
+    {
+      // The last word on anything shaped like a label: ask, never print it on A4 unasked.
+      //
+      // A page no rule claims takes the profile default silently, which is right for the
+      // invoices and return notes that make up most of every bundle and wrong for a label. The
+      // generic rule above only catches a label whose barcode decodes, and on the corpus the
+      // decoder reads none of the FedEx or UPS labels, so an unrecognised label used to go to
+      // A4 with nobody told. This one routes it to thermal below the threshold instead: the
+      // picker opens with the page already selected, and Enter prints it.
+      //
+      // Safe to be broad because of where it sits. Measured on the corpus, the only pages of
+      // this shape are labels, courier sheets and return labels, and every courier sheet and
+      // return label has already been claimed by a rule above.
+      id: 'label-shaped-region',
+      name: 'Label-shaped region nothing identified',
+      when: {
+        all: [
+          {
+            geometry: {
+              inkShortEdgeMm: { min: 70, max: 120 },
+              inkAspectNormalised: { min: 1.3, max: 2.4 }
+            }
+          }
+        ]
+      },
+      then: {
+        route: 'THERMAL',
+        confidence: 0.5,
         transform: { source: 'inkBox', padMm: 1, rotate: 'auto', fit: 'contain' }
       }
     }

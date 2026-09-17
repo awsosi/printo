@@ -61,6 +61,50 @@ public sealed class PickerTests
         Assert.Empty(picker.ThermalPages());
     }
 
+    [Fact]
+    public void ClosingWithoutAnAnswerIsEscapeNotConfirmation()
+    {
+        // Alt+F4 used to leave the suggestions selected and the resolution pending, which the
+        // tray reported as "print" - so dismissing the question printed the labels unconfirmed.
+        var picker = Model(5, 2, 4);
+
+        Assert.True(picker.Dismiss());
+        Assert.Equal(PickerResolution.AllA4, picker.Resolution);
+        Assert.Empty(picker.ThermalPages());
+    }
+
+    [Fact]
+    public void ClosingAfterAnAnswerKeepsTheAnswer()
+    {
+        // The form closes itself after Enter, and that close must not overturn the choice.
+        var picker = Model(5, 2, 4);
+        picker.HandleKey(PickerKey.Enter);
+
+        Assert.False(picker.Dismiss());
+        Assert.Equal(PickerResolution.Print, picker.Resolution);
+        Assert.Equal([2, 4], picker.ThermalPages().OrderBy(page => page));
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public void ClosingThePickerWindowSendsEverythingToA4()
+    {
+        var resolution = PickerResolution.Pending;
+        IReadOnlySet<int> pages = new HashSet<int> { -1 };
+
+        UiThread.Run(() =>
+        {
+            using var form = new Printo.Agent.Tray.PickerForm(Model(3, 2), "document");
+            form.Show();
+            form.Close();
+            resolution = form.Resolution;
+            pages = form.ThermalPages;
+        });
+
+        Assert.Equal(PickerResolution.AllA4, resolution);
+        Assert.Empty(pages);
+    }
+
     [Theory]
     [InlineData('1', 1)]
     [InlineData('3', 3)]

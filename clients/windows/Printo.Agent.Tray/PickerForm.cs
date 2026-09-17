@@ -74,6 +74,13 @@ public sealed class PickerForm : Form
     /// <summary>The pages the user chose as labels, once the form has closed.</summary>
     public IReadOnlySet<int> ThermalPages => model.ThermalPages();
 
+    /// <summary>A window closed without Enter or Escape answers "all A4", never "print the selection".</summary>
+    protected override void OnFormClosing(FormClosingEventArgs args)
+    {
+        model.Dismiss();
+        base.OnFormClosing(args);
+    }
+
     public PickerResolution Resolution => model.Resolution;
 
     /// <summary>

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Net.Http;
 using System.Runtime.Versioning;
 using System.Text;
+using Microsoft.Win32;
 using Printo.Agent.Runtime;
 
 namespace Printo.Agent.Tray;
@@ -52,6 +53,12 @@ public sealed class TrayApplication : ApplicationContext
         refresh.Tick += (_, _) => UpdateTooltip();
         refresh.Start();
 
+        // A person has just become reachable, so anything that was waiting for one is asked
+        // again. Unlock and reconnect count as well as sign-in: a question raised while the
+        // session was locked or disconnected reached nobody, and the tray was running throughout.
+        SystemEvents.SessionSwitch += OnSessionSwitch;
+        ReofferWaitingJobs("the tray started", announce: false);
+
         UpdateTooltip();
     }
 
@@ -62,6 +69,7 @@ public sealed class TrayApplication : ApplicationContext
         menu.Items.Add("Status…", null, (_, _) => ShowStatus());
         menu.Items.Add("Open spool folder", null, (_, _) => OpenSpoolFolder());
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Show jobs waiting for me", null, (_, _) => ReofferWaitingJobs("asked for from the tray", announce: true));
         menu.Items.Add("Retry failed jobs", null, (_, _) => RetryFailed());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => ExitThread());
@@ -256,10 +264,74 @@ public sealed class TrayApplication : ApplicationContext
         UpdateTooltip();
     }
 
+    private void OnSessionSwitch(object? sender, SessionSwitchEventArgs args)
+    {
+        if (args.Reason is SessionSwitchReason.SessionUnlock
+            or SessionSwitchReason.ConsoleConnect
+            or SessionSwitchReason.RemoteConnect
+            or SessionSwitchReason.SessionLogon)
+        {
+            ReofferWaitingJobs($"session {args.Reason}", announce: false);
+        }
+    }
+
+    /// <summary>
+    /// Hands documents that were waiting for a person back to the service, which asks again.
+    /// </summary>
+    /// <remarks>
+    /// The service owns the question as it owns printing: the tray only moves the jobs back into
+    /// the queue, and the picker then arrives through the pipe exactly as it does for a new job.
+    /// The job whose picker is on screen right now is left alone, or answering it would race a
+    /// second copy of the same question.
+    /// </remarks>
+    private void ReofferWaitingJobs(string reason, bool announce)
+    {
+        using var spool = OpenSpool();
+        if (spool is null)
+        {
+            if (announce)
+            {
+                MessageBox.Show("The agent service is not running.", "Printo");
+            }
+
+            return;
+        }
+
+        int count;
+        try
+        {
+            count = spool.ReofferAwaitingUser(
+                reason,
+                server.ShowingJobId is { } showing ? new HashSet<long> { showing } : null);
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or UnauthorizedAccessException
+            or Microsoft.Data.Sqlite.SqliteException)
+        {
+            if (announce)
+            {
+                MessageBox.Show($"The waiting jobs could not be reopened.\n\n{error.Message}", "Printo");
+            }
+
+            return;
+        }
+
+        if (announce)
+        {
+            MessageBox.Show(
+                count == 0 ? "Nothing is waiting for you." : $"Reopening {count} job(s); each will ask in turn.",
+                "Printo");
+        }
+
+        UpdateTooltip();
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
+            // A static event: left subscribed, it would keep this context alive and fire into a
+            // disposed tray.
+            SystemEvents.SessionSwitch -= OnSessionSwitch;
             refresh.Dispose();
             icon.Visible = false;
             icon.Dispose();

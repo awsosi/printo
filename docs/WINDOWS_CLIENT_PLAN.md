@@ -474,8 +474,13 @@ cost, and implemented in both engines:
   UPS label printed off its carrier sheet, both of which arrive as a tall 99x196 mm region on
   plain A4.
 - `fedex-return-label-ocr` separates a return label from an outgoing one once printing has taken
-  the page size away. They are the same rectangle — 100.8x151.6 mm against 101.1x149.9 mm — so
-  only content can do it.
+  the page size away. They are the same rectangle — 100.8x151.6 mm against 101.1x149.9 mm.
+  **Corrected 2026-09-17:** content alone does not separate them. Outgoing labels for return
+  shipments carry the same `PO: RETURN` marking (OCR finds it on 140 of 423), and keyed on it
+  alone the rule sent 148 outgoing labels to A4 once printed. What survives printing is which way
+  the label stands: from a portrait Letter page it arrives upright, from an A4-landscape sheet it
+  arrives turned. The rule now requires the upright ink box as well, and both engines route the
+  whole corpus as printed (`tests/corpus/printed-features.jsonl.gz`) at 1266 of 1266.
 - `fedex-label-region` claims what is left of the FedEx family, **gated on the resolved carrier
   as well as the shape**. Without that gate it claims any 4x6in region above the confidence
   threshold, which silently routes an unknown carrier's label to thermal and defeats the generic

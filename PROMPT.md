@@ -17,8 +17,8 @@
 > is met. Until then, keep it accurate: after each milestone, update
 > "Current position" below and strike through what is finished. Never leave it stale.
 >
-> **Last updated:** 2026-09-07, after the virtual printer and the worker's adoption of the
-> shared engine, on `feat/windows-agent`.
+> **Last updated:** 2026-09-17, after proving the standalone agent against the whole corpus
+> as printed (section 6b, first entry), on `feat/windows-agent`.
 
 ---
 
@@ -382,6 +382,50 @@ text-layer modes, and the service's measurements are checked against the corpus 
 calibrated on — 1266 pages, exact agreement. Plan §10.3.
 
 ## 6b. Session log
+
+### 2026-09-17 — the whole corpus as printed, and what the seven captures could not show
+
+Asked whether the standalone agent was fit to route on its own, and it was not. Proven only on
+the seven real captures and on the corpus *as files*, it sent **169 of 588 labels to A4 silently
+once printed**, and asked nobody about any of them.
+
+**How it was found, and now how it is pinned.** `tools/corpus/simulate_print.py` does to every
+corpus page what printing measurably does - text layer gone, landscape turned so (x, y) lands at
+(y, W - x), content 1:1 at the top-left of A4. Those copies route rule-for-rule like the seven
+captures (21 of 21), so they stand in for the 251 documents nobody printed. Their features, with
+the agent's own barcode decodes and OCR of every ink box, are
+`tests/corpus/printed-features.jsonl.gz` (regenerate with `PrintedCorpusExport`, opt-in behind
+`PRINTO_PRINTED_CORPUS_DIR`). Both engines now route it in the default suite and must get
+**1266 of 1266 with no prompts**. Reverting the return-label fix fails both with 148 mismatches.
+
+What was wrong, all measured before being changed:
+
+- **148 outgoing FedEx labels matched `fedex-return-label-ocr`.** These shipments are returns to
+  the warehouse, and OCR reads `PO: RETURN` / `REF: RETURN` on 140 of 423 outgoing labels. The
+  text layer omits those fields, which is why "the marking is on exactly 3 pages" looked true.
+  The three corpus return labels have the same content; what separates them once printed is that
+  a portrait Letter page arrives upright (`inkAspect` 1.50) while an A4-landscape one arrives
+  lying down (0.66-0.68). The rule now requires both.
+- **21 UPS labels matched nothing**: a 99x170 mm layout (aspect 1.72, just below the tall band)
+  and 11 UPS labels in the FedEx 4x6in shape that the corpus files under FedEx by page shape.
+  `ups-label-region-ocr` keys on `UPS STANDARD` / `SHP WT` / `SHP#`, present on all 30 of them
+  and on no other page.
+- **The barcode decoder reads none of the FedEx or UPS labels**, so `generic-label-region` could
+  never catch an unrecognised label. `label-shaped-region` now sends anything label-shaped that
+  nothing identified to the picker, pre-selected for thermal, instead of to A4 unasked.
+
+Three agent defects fixed on the way: a job whose question reached nobody (no tray yet, locked
+session) was parked forever - the tray now re-offers parked jobs when it starts, on unlock or
+reconnect, and from its menu; closing the picker without a key (Alt+F4) printed the suggestions
+unconfirmed - it is now Escape; and the Settings window's Close button did nothing, because
+`DialogResult` only closes a form shown with `ShowDialog` and the tray shows it modeless. OCR also
+falls back to any installed recogniser language, because the service runs as LocalSystem.
+
+Not proven: how a Letter page really lands on A4 through Chrome (simulated, not captured - the
+capture scripts need an elevated shell), and a FedEx label printed from a native 4x6in PDF
+would stand upright and, if marked as a return, stay on A4.
+
+Suite: **294 C#, 151 routing-engine, 69 worker; lint and typecheck clean.**
 
 ### 2026-09-07 — the virtual printer, and the worker joins the same rule set
 

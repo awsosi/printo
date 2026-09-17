@@ -158,6 +158,19 @@ public sealed class PickerModel
     }
 
     /// <summary>
+    /// Resolves a picker that was closed without an answer, as Escape would.
+    /// </summary>
+    /// <remarks>
+    /// Alt+F4, or the window being closed by anything other than a key, used to leave the
+    /// resolution pending, and the tray reads anything that is not "all A4" as "print the
+    /// selection" - so dismissing the question printed the engine's suggestions as if the user
+    /// had confirmed them. Closing is not a confirmation. It takes the safe default instead.
+    /// </remarks>
+    /// <returns><c>true</c> when this call resolved it; <c>false</c> when it was already answered.</returns>
+    public bool Dismiss() =>
+        Resolution == PickerResolution.Pending && HandleKey(PickerKey.Escape);
+
+    /// <summary>
     /// The pages to print on thermal stock, given how the picker was resolved.
     /// </summary>
     /// <remarks>

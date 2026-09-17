@@ -60,6 +60,15 @@ public sealed class WindowsOcrEngine : IOcrEngine
         engine ??= OcrEngine.TryCreateFromLanguage(new Language("en-US"));
         engine ??= OcrEngine.TryCreateFromLanguage(new Language("en-GB"));
 
+        // Then anything installed at all. The service runs as LocalSystem, whose language list
+        // is not the signed-in user's, and a machine can have a Polish recogniser and no English
+        // one. Any Latin-script recogniser reads `SHP WT` and `WAYBILL DOC` well enough, and
+        // without one every printed courier sheet goes to the picker.
+        foreach (var language in OcrEngine.AvailableRecognizerLanguages)
+        {
+            engine ??= OcrEngine.TryCreateFromLanguage(language);
+        }
+
         return engine is null ? null : new WindowsOcrEngine(engine);
     }
 

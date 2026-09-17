@@ -445,9 +445,14 @@ public sealed class SettingsForm : Form
     private Control BuildFooter()
     {
         var save = new Button { Text = "Save", AutoSize = true };
-        var close = new Button { Text = "Close", AutoSize = true, DialogResult = DialogResult.Cancel };
+        var close = new Button { Text = "Close", AutoSize = true };
 
         save.Click += (_, _) => Save();
+
+        // Closed explicitly rather than through DialogResult. The tray opens this window
+        // modeless, and a button's DialogResult only closes a form shown with ShowDialog - set
+        // on its own it made Close, and Esc through CancelButton, do nothing at all.
+        close.Click += (_, _) => Close();
 
         var panel = new FlowLayoutPanel
         {

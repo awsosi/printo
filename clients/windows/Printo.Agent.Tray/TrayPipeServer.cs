@@ -28,6 +28,12 @@ public sealed class TrayPipeServer(int sessionId) : IDisposable
 
     private Task? loop;
 
+    /// <summary>The job whose picker is on screen, or 0.</summary>
+    private long showingJobId;
+
+    /// <summary>The job a picker is showing right now, which must not be re-offered under it.</summary>
+    public long? ShowingJobId => Interlocked.Read(ref showingJobId) is > 0 and var id ? id : null;
+
     /// <summary>
     /// Starts listening, and returns once the pipe actually exists.
     /// </summary>
@@ -134,7 +140,7 @@ public sealed class TrayPipeServer(int sessionId) : IDisposable
         }
     }
 
-    private static TrayResponse Handle(string line)
+    private TrayResponse Handle(string line)
     {
         TrayRequest? request;
         try
@@ -160,7 +166,7 @@ public sealed class TrayPipeServer(int sessionId) : IDisposable
         };
     }
 
-    private static TrayResponse ShowPicker(TrayRequest request)
+    private TrayResponse ShowPicker(TrayRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.PayloadPath) || !File.Exists(request.PayloadPath))
         {
@@ -168,6 +174,7 @@ public sealed class TrayPipeServer(int sessionId) : IDisposable
         }
 
         var stopwatch = Stopwatch.StartNew();
+        Interlocked.Exchange(ref showingJobId, request.JobId);
 
         try
         {
@@ -192,6 +199,10 @@ public sealed class TrayPipeServer(int sessionId) : IDisposable
         catch (Exception error) when (error is IOException or InvalidOperationException)
         {
             return TrayResponse.Failure(error.Message);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref showingJobId, 0);
         }
     }
 

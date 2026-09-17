@@ -327,6 +327,36 @@ public sealed class SpoolTests : IDisposable
     }
 
     [Fact]
+    public void ParkedJobsAreOfferedAgainWhenSomebodyCanAnswer()
+    {
+        // A question that reached nobody - no tray yet, a locked session - used to park the job
+        // for good: the claim query skips it and nothing ever put it back.
+        using var spool = OpenSpool();
+
+        var ids = new List<long>();
+        foreach (var name in new[] { "nobody-home", "on-screen", "already-printed" })
+        {
+            var (key, file, sha, payload) = Job(name);
+            spool.Enqueue(key, JobSource.VirtualPrinter, file, sha, payload);
+            var claimed = spool.ClaimNext("worker-1")!;
+            spool.AwaitUser(claimed.Id, "LOW_CONFIDENCE");
+            ids.Add(claimed.Id);
+        }
+
+        spool.Complete(ids[2], "resolved meanwhile");
+
+        // The job whose picker is showing is left alone; a completed job is not resurrected.
+        var reoffered = spool.ReofferAwaitingUser("the tray started", except: new HashSet<long> { ids[1] });
+
+        Assert.Equal(1, reoffered);
+        Assert.Equal(ids[0], spool.ClaimNext("worker-1")!.Id);
+        Assert.Null(spool.ClaimNext("worker-1"));
+        Assert.Equal(JobState.AwaitingUser, spool.FindById(ids[1])!.State);
+        Assert.Equal(JobState.Completed, spool.FindById(ids[2])!.State);
+        Assert.Contains(spool.Events(ids[0]), entry => entry.Code == "reoffered" && entry.Detail == "the tray started");
+    }
+
+    [Fact]
     public void CompletesAndCancelsAreTerminal()
     {
         using var spool = OpenSpool();

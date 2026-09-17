@@ -313,14 +313,11 @@ public sealed class JobProcessorTests : IDisposable
     [Fact]
     public void HoldsTheWholeDocumentWhenAPageNeedsAPerson()
     {
-        // A label-shaped region with a barcode and no carrier: the generic rule claims it below
-        // the confidence threshold, which is a prompt.
-        var pdf = TestPdf.Build(new TestPage(210, 297, new InkRect(12, 12, 100, 152)));
+        // A bundle that should have carried a label and did not: nothing on the page is
+        // label-shaped, so no rule claims it, and the profile's expectation raises the question.
+        var pdf = TestPdf.Build(TestPdf.A4Document());
         var job = Enqueue(pdf);
 
-        // The generic rule also wants a barcode; without one nothing claims the page and it
-        // takes the profile default. Use a profile whose expectations demand a label instead,
-        // which is the realistic "this bundle should have had a label" case.
         var profile = new RoutingProfileRules
         {
             Profile = BuiltinProfiles.OneClickPrint.Profile,
@@ -331,12 +328,7 @@ public sealed class JobProcessorTests : IDisposable
             Expectations = new DocumentExpectations { ThermalPagesPerDocument = new RangeMm { Min = 1 } },
         };
 
-        // A recogniser is needed even to get this far: a 4x6in region is checked for the FedEx
-        // return marking before anything else can claim it, and a machine with no recogniser
-        // would raise OCR_UNAVAILABLE instead - a different question for the user, and not the
-        // one this test is about. Nothing in the recognised text names a carrier or a return.
-        var ocr = new StubOcr("Sendungsnummer 0034 5566 7788 Empfaenger");
-        var processor = new JobProcessor(spool, Catalog(), ocr: ocr) { Profiles = [profile] };
+        var processor = new JobProcessor(spool, Catalog()) { Profiles = [profile] };
         var result = processor.Process(job);
 
         Assert.Equal(JobOutcome.NeedsUser, result.Outcome);
@@ -351,8 +343,28 @@ public sealed class JobProcessorTests : IDisposable
 
         // The prompt carries what the picker and the review queue both need.
         Assert.Equal(1, result.Prompt.PageCount);
-        Assert.NotEmpty(result.Prompt.SuggestedThermalPages);
         Assert.Contains("\"pageNumber\"", result.Prompt.TraceJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AsksAboutALabelShapedPageNothingIdentifiedInsteadOfPrintingItOnA4()
+    {
+        // The printed-path gap: a label whose carrier nothing recognised and whose barcode did not
+        // decode used to fall through every rule and print on A4 with nobody told. It now reaches
+        // the picker below the threshold, pre-selected for thermal, so Enter prints it right.
+        var pdf = TestPdf.Build(TestPdf.A4Document(), new TestPage(210, 297, new InkRect(12, 12, 100, 152)));
+        var job = Enqueue(pdf);
+
+        // A recogniser is needed to get this far: an upright 4x6in region is checked for the FedEx
+        // return marking first. Nothing in the recognised text names a carrier or a return.
+        var ocr = new StubOcr("Sendungsnummer 0034 5566 7788 Empfaenger");
+        var result = new JobProcessor(spool, Catalog(), ocr: ocr).Process(job);
+
+        Assert.Equal(JobOutcome.NeedsUser, result.Outcome);
+        Assert.Equal("LOW_CONFIDENCE", result.Prompt!.ReasonCode);
+        Assert.Equal([2], result.Prompt.SuggestedThermalPages);
+        Assert.Empty(thermal.Pages);
+        Assert.Empty(a4.Pages);
     }
 
     [Fact]

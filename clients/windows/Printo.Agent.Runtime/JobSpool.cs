@@ -301,6 +301,66 @@ public sealed class JobSpool : IDisposable
     }
 
     /// <summary>
+    /// Puts every job waiting for a person back in the queue, so the service asks again.
+    /// </summary>
+    /// <remarks>
+    /// A job is parked when its question reached nobody: no tray running in any session, or a
+    /// session that was locked or disconnected at the time. Nothing used to bring it back - the
+    /// claim query skips parked jobs and the tray could only retry failed ones - so a document
+    /// printed before the tray started waited forever, visible only as a count in a tooltip.
+    /// The tray calls this when a person becomes reachable: when it starts, when the session is
+    /// unlocked or reconnected, and on request from its menu.
+    ///
+    /// Guarded on the state in the same statement, so a job the service has meanwhile resolved
+    /// or cancelled is left alone.
+    /// </remarks>
+    /// <param name="reason">Recorded on each job's audit trail.</param>
+    /// <param name="except">Jobs not to touch - the one a picker is showing right now.</param>
+    /// <returns>How many jobs were put back.</returns>
+    public int ReofferAwaitingUser(string reason, IReadOnlySet<long>? except = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+
+        lock (gate)
+        {
+            var parked = List(JobState.AwaitingUser)
+                .Where(job => except is null || !except.Contains(job.Id))
+                .ToList();
+
+            var reoffered = 0;
+            using var transaction = connection.BeginTransaction();
+            foreach (var job in parked)
+            {
+                using var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText =
+                    """
+                    UPDATE jobs
+                       SET state = $pending,
+                           claim_owner = NULL,
+                           claimed_at = NULL,
+                           next_attempt_at = NULL,
+                           updated_at = $now
+                     WHERE id = $id AND state = $awaiting;
+                    """;
+                command.Parameters.AddWithValue("$pending", JobState.Pending.ToString());
+                command.Parameters.AddWithValue("$awaiting", JobState.AwaitingUser.ToString());
+                command.Parameters.AddWithValue("$now", Format(Clock()));
+                command.Parameters.AddWithValue("$id", job.Id);
+
+                if (command.ExecuteNonQuery() == 1)
+                {
+                    AppendEvent(job.Id, "info", "reoffered", reason, transaction);
+                    reoffered++;
+                }
+            }
+
+            transaction.Commit();
+            return reoffered;
+        }
+    }
+
+    /// <summary>
     /// Releases claims left behind by a process that died, so its work is picked up again.
     /// </summary>
     /// <returns>How many jobs were recovered.</returns>

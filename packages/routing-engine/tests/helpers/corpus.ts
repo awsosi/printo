@@ -16,6 +16,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 export const CORPUS_DIR = resolve(here, '../../../../tests/corpus');
 export const FEATURES_PATH = resolve(CORPUS_DIR, 'features.jsonl.gz');
 export const EXPECTED_PATH = resolve(CORPUS_DIR, 'expected.json');
+/**
+ * The same corpus as the virtual printer delivers it: text layer gone, landscape pages turned,
+ * every page on A4, with barcodes and OCR of the ink box recorded by the agent's own decoder and
+ * recogniser. Produced by `tools/corpus/simulate_print.py` and `PrintedCorpusExport` in the agent
+ * test suite; the copies route rule-for-rule like the seven real captures in `tests/capture/`.
+ */
+export const PRINTED_FEATURES_PATH = resolve(CORPUS_DIR, 'printed-features.jsonl.gz');
 
 export interface ExpectedPage {
   doc: string;
@@ -36,9 +43,13 @@ export function corpusAvailable(): boolean {
   return existsSync(FEATURES_PATH) && existsSync(EXPECTED_PATH);
 }
 
+export function printedCorpusAvailable(): boolean {
+  return existsSync(PRINTED_FEATURES_PATH) && existsSync(EXPECTED_PATH);
+}
+
 /** Loads the extracted page features, grouped into documents in file order. */
-export function loadCorpus(): DocumentFeatures[] {
-  const raw = gunzipSync(readFileSync(FEATURES_PATH)).toString('utf8');
+export function loadCorpus(path: string = FEATURES_PATH): DocumentFeatures[] {
+  const raw = gunzipSync(readFileSync(path)).toString('utf8');
   const byDocument = new Map<string, PageFeatures[]>();
 
   for (const line of raw.split('\n')) {
