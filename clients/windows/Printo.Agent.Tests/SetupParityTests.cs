@@ -330,4 +330,22 @@ public sealed class SetupParityTests
             offered.SetEquals(understood),
             "the help offers " + string.Join(", ", offered) + "; the agent reads " + string.Join(", ", understood));
     }
+
+    /// <summary>An upgrade can set the recovery actions it sets on a fresh install.</summary>
+    /// <remarks>
+    /// ChangeServiceConfig2 refuses restart actions on a handle without SERVICE_START (0x0010),
+    /// with nothing but "access denied". A created service's handle has every right, so a fresh
+    /// install passed; reopening the existing service for an upgrade did not ask for it, and
+    /// 0.1.13 failed to install over 0.1.12 after writing its files. Registering a service needs
+    /// elevation, so the right itself is what is pinned here.
+    /// </remarks>
+    [Fact]
+    public void AnExistingServiceIsReopenedWithTheRightToSetRestartActions()
+    {
+        const uint serviceStart = 0x0010;
+        const uint serviceChangeConfig = 0x0002;
+
+        Assert.Equal(serviceStart, WindowsService.ReconfigureAccess & serviceStart);
+        Assert.Equal(serviceChangeConfig, WindowsService.ReconfigureAccess & serviceChangeConfig);
+    }
 }

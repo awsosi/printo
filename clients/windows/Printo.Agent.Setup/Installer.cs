@@ -171,13 +171,20 @@ internal static class Installer
         log.Step("registering the " + Product.ServiceName + " service");
         try
         {
-            WindowsService.Register(
+            var warning = WindowsService.Register(
                 Product.ServiceName,
                 Product.ServiceDisplayName,
                 Product.ServiceDescription,
                 Path.Combine(installDirectory, Product.AgentExecutable));
 
-            log.Done("automatic start, as LocalSystem, restarting twice on failure");
+            if (warning is null)
+            {
+                log.Done("automatic start, as LocalSystem, restarting twice on failure");
+            }
+            else
+            {
+                log.Warn("automatic start, as LocalSystem, but it will not restart itself on failure: " + warning);
+            }
         }
         catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
         {

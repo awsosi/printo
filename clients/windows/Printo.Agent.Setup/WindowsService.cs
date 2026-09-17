@@ -49,6 +49,15 @@ internal static unsafe partial class WindowsService
     private const uint ServiceStop = 0x0020;
     private const uint StandardDelete = 0x00010000;
 
+    /// <summary>What an existing service is opened with to bring it up to date.</summary>
+    /// <remarks>
+    /// Includes SERVICE_START although nothing here starts it: ChangeServiceConfig2 refuses to set
+    /// recovery actions that restart the service unless the handle could start it, and says only
+    /// "access denied". A fresh install never met this, because a created service's handle has
+    /// every right; every upgrade did, which is how 0.1.13 failed to install over 0.1.12.
+    /// </remarks>
+    internal const uint ReconfigureAccess = ServiceChangeConfig | ServiceQueryConfig | ServiceStart;
+
     private const uint ServiceAllAccess =
         ServiceQueryConfig | ServiceChangeConfig | ServiceQueryStatus |
         ServiceStart | ServiceStop | StandardDelete;
@@ -98,7 +107,13 @@ internal static unsafe partial class WindowsService
     /// behaviour is the most common way a working installer starts failing on one workstation,
     /// and reconfiguring in place avoids the whole class of it.
     /// </remarks>
-    public static void Register(string name, string displayName, string description, string binaryPath)
+    /// <returns>
+    /// A warning when the service is registered but its recovery actions could not be set, or
+    /// <c>null</c>. Not a failure: the agent runs without them, and an install that stops here
+    /// leaves new files beside a stopped service, which is worse than a service that will not
+    /// restart itself.
+    /// </returns>
+    public static string? Register(string name, string displayName, string description, string binaryPath)
     {
         // Quoted: without quotes the service control manager reads `C:\Program` as the image
         // and `Files\Printo...` as arguments, which is both a start failure and, historically,
@@ -107,7 +122,7 @@ internal static unsafe partial class WindowsService
 
         using var manager = OpenManager(ScManagerConnect | ScManagerCreateService);
 
-        using (var existing = OpenService(manager, name, ServiceChangeConfig | ServiceQueryConfig))
+        using (var existing = OpenService(manager, name, ReconfigureAccess))
         {
             if (!existing.IsInvalid)
             {
@@ -119,8 +134,7 @@ internal static unsafe partial class WindowsService
                 }
 
                 Describe(existing, description);
-                SetFailureActions(existing);
-                return;
+                return SetFailureActions(existing);
             }
 
             var error = Marshal.GetLastWin32Error();
@@ -160,7 +174,7 @@ internal static unsafe partial class WindowsService
         }
 
         Describe(created, description);
-        SetFailureActions(created);
+        return SetFailureActions(created);
     }
 
     /// <summary>
@@ -319,7 +333,7 @@ internal static unsafe partial class WindowsService
     /// opened - into a machine that quietly restarts a failing service all day; two attempts
     /// cover the transient cases and then leave a clear record.
     /// </remarks>
-    private static void SetFailureActions(ServiceHandle service)
+    private static string? SetFailureActions(ServiceHandle service)
     {
         var actions = stackalloc ScAction[3];
         actions[0] = new ScAction { Type = ActionRestart, Delay = 60_000 };
@@ -337,10 +351,9 @@ internal static unsafe partial class WindowsService
             Actions = (IntPtr)actions,
         };
 
-        if (!ChangeServiceConfig2(service, ConfigFailureActions, (IntPtr)(&failure)))
-        {
-            throw Failure("setting the service recovery actions");
-        }
+        return ChangeServiceConfig2(service, ConfigFailureActions, (IntPtr)(&failure))
+            ? null
+            : Failure("setting the service recovery actions").Message;
     }
 
     private static ServiceHandle OpenManager(uint access)
