@@ -72,7 +72,7 @@ public sealed class SettingsForm : Form
         ClientSize = new Size(760, 600);
         AutoScaleMode = AutoScaleMode.Dpi;
         Font = SystemFonts.MessageBoxFont!;
-        Icon = SystemIcons.Application;
+        Icon = BrandIcon.Window();
 
         var tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(12, 6) };
         tabs.TabPages.Add(BuildPrintersTab());

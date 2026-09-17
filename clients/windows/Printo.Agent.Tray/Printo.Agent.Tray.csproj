@@ -33,7 +33,25 @@
       is the common setup: a laptop panel plus an external screen.
     -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <ApplicationIcon>$(PrintoIcon)</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The same file again, as a resource this time.
+
+      ApplicationIcon puts the mark on the executable, which is what the shell reads. It is not
+      reachable as an icon at a chosen size, and the notification area needs exactly that: the
+      small-icon size for the current DPI, so that a 125% display gets the 20-pixel drawing
+      rather than the 16-pixel one stretched. Hence one file embedded twice - see BrandIcon.
+    -->
+    <EmbeddedResource Include="$(PrintoIcon)" LogicalName="Printo.Tray.Brand.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Printo.Agent.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Printo.Agent.Core\Printo.Agent.Core.csproj" />

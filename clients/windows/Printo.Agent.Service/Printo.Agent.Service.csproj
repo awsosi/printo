@@ -8,6 +8,9 @@
     <AssemblyName>Printo.Agent</AssemblyName>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <UserSecretsId>printo-agent</UserSecretsId>
+
+    <!-- Task Manager and Explorer show this; the Services list does not. -->
+    <ApplicationIcon>$(PrintoIcon)</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

@@ -38,7 +38,7 @@ public sealed class TrayApplication : ApplicationContext
 
         icon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = BrandIcon.Notification(),
             Text = "Printo",
             Visible = true,
             ContextMenuStrip = BuildMenu(),

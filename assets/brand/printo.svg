@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img"
+     aria-label="Printo">
+  <title>Printo</title>
+  <defs>
+    <linearGradient id="printo-tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#256B52"/>
+      <stop offset="1" stop-color="#164739"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="60.16" fill="url(#printo-tile)"/>
+  <g stroke="#FFFDFA" stroke-width="26.62" stroke-linecap="round" fill="none">
+    <path d="M 95.90 128.00 L 43.52 128.00"/>
+    <path d="M 95.90 128.00 L 168.99 73.46"/>
+    <path d="M 95.90 128.00 L 168.99 182.54"/>
+  </g>
+  <polygon points="209.10,43.52 174.88,102.28 143.03,59.60" fill="#FFFDFA"/>
+  <polygon points="209.10,212.48 143.03,196.40 174.88,153.72" fill="#FFFDFA"/>
+</svg>

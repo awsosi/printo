@@ -94,7 +94,7 @@ if ($control.ExitCode -eq 1619 -or $controlLines -gt 10) {
     Say 'OK' "Windows Installer answers normally (exit $($control.ExitCode), $controlLines log lines)"
 } else {
     Say 'STOP' "Windows Installer failed on a package that does not exist (exit $($control.ExitCode), $controlLines log lines)"
-    $blockers += 'Windows Installer is not working on this machine: it fails the same way for every package, including one that does not exist, so no MSI will install until that is fixed. Try, in order: msiexec /unregister then msiexec /regserver; check HKLM and HKCU \SOFTWARE\Policies\Microsoft\Windows\Installer for DisableMSI; check for an application-control policy (AppLocker, WDAC) or an EDR agent hooking msiexec; and confirm the same package installs on another workstation.'
+    $blockers += 'Windows Installer is not working on this machine: it fails the same way for every package, including one that does not exist, so no MSI will install until that is fixed. Use PrintoAgent-<version>.exe instead - it installs the same product without Windows Installer, and needs nothing repaired first. To fix msiexec itself, try in order: msiexec /unregister then msiexec /regserver; check HKLM and HKCU \SOFTWARE\Policies\Microsoft\Windows\Installer for DisableMSI; check for an application-control policy (AppLocker, WDAC) or an EDR agent hooking msiexec; and confirm the same package installs on another workstation.'
 }
 Remove-Item $controlLog -ErrorAction SilentlyContinue
 

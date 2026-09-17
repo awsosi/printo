@@ -1,0 +1,82 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Printo Agent installer, as a plain Windows executable.
+
+    It exists because Windows Installer does not work on every machine this has to reach. One
+    workstation refused our MSI for a day and was rightly suspected of rejecting the package -
+    until `Diagnose-Install.ps1` asked it to install a file that does not exist and got the same
+    1603 back in three lines of log. It was refusing every package, Notepad++'s signed MSI
+    included. Wrapping the MSI in a bootstrapper would have changed nothing, because a
+    bootstrapper still ends in a call to msiexec; so this does the install itself, with the
+    service control manager and the registry, and never involves Windows Installer at all.
+
+    The MSI is still built and is still what Group Policy deploys, because GPO software
+    installation only accepts MSIs. The two are kept to the same behaviour by
+    `Verify-Install.ps1`, which runs the same checks against either one.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+
+    <!--
+      A lower Windows floor than the agent's own. This touches the service control manager, the
+      registry and the shell, all of which long predate 17763; the agent's own 19041 floor
+      comes from the WinRT recogniser, which is no part of installing it.
+    -->
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <RootNamespace>Printo.Agent.Setup</RootNamespace>
+    <AssemblyName>Printo.Setup</AssemblyName>
+
+    <!-- Required by the LibraryImport and GeneratedComInterface source generators. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!--
+      Trimmed, single-file and self-contained. An installer that needs a runtime installed first
+      is not an installer, and the payload it carries is already ~50 MB - an untrimmed host
+      would add another 60 MB to every copy that crosses the network. Trimming is only viable
+      because nothing here reflects: the shell interop is source-generated COM rather than the
+      built-in marshaller, which is what `TrimMode=full` would otherwise remove.
+    -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+
+    <!--
+      asInvoker, not requireAdministrator, on purpose. With requireAdministrator a standard user
+      who declines the prompt - or whose workstation declines it for them - gets a shell error
+      and no explanation, which is the failure the MSI was given a dialog to avoid. Running as
+      the invoker means the program starts, works out that it needs elevation, asks for it, and
+      can say something useful when the answer is no.
+    -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <!--
+      The package a person downloads, so this is the icon that has to look like something before
+      anyone has installed anything. It is also what Add/Remove Programs shows, through the copy
+      the install leaves beside the product.
+    -->
+    <ApplicationIcon>$(PrintoIcon)</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The argument parsing and the parity with the MSI are tested; the rest needs a machine. -->
+    <InternalsVisibleTo Include="Printo.Agent.Tests" />
+  </ItemGroup>
+
+  <!--
+    The payload: everything the MSI would have laid down, zipped by `build.ps1` and handed here
+    as a path. Absent when the project is built on its own - for the tests, which exercise the
+    argument parsing and the plan rather than the files - and the program says so rather than
+    extracting nothing.
+  -->
+  <ItemGroup Condition="'$(PayloadZip)' != ''">
+    <EmbeddedResource Include="$(PayloadZip)" LogicalName="Printo.Agent.Payload.zip" />
+  </ItemGroup>
+
+</Project>

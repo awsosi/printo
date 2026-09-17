@@ -1,7 +1,8 @@
 # Deploying Printo
 
 Two halves, deployed independently: the **server**, as a Docker Compose stack behind Traefik,
-and the **agent**, as an MSI pushed to workstations by Group Policy.
+and the **agent**, as an MSI pushed to workstations by Group Policy — or, for the machines where
+Windows Installer will not have it, as an EXE that installs the same product without msiexec.
 
 They are loosely coupled on purpose. An agent with no server routes on the rules it shipped
 with; a server with no agents still runs the scan-to-print pipeline. Neither half has to be
@@ -91,33 +92,62 @@ from an external cron instead.
 
 ## 2. Agent
 
-### 2.1 Build the MSI
+### 2.1 Build the packages
 
 ```powershell
 dotnet tool install --global wix --version 5.*
 pwsh clients/windows/installer/build.ps1 -Version 0.1.0
 ```
 
-Roughly 48 MB, containing a self-contained .NET runtime. Self-contained on purpose: a fleet is
-much easier to keep correct when the MSI carries its own runtime than when every workstation
-needs a matching .NET version deployed first, and one missing prerequisite is a packing bench
-that cannot print.
+That produces two installers from one publish:
 
-### 2.2 Sign it
+| Package | Size | For |
+|---|---|---|
+| `PrintoAgent-0.1.0.msi` | ~57 MB | the fleet, deployed by Group Policy |
+| `PrintoAgent-0.1.0.exe` | ~82 MB | machines the MSI cannot reach, and installs by hand |
+
+Both carry a self-contained .NET runtime. Self-contained on purpose: a fleet is much easier to
+keep correct when the package carries its own runtime than when every workstation needs a
+matching .NET version deployed first, and one missing prerequisite is a packing bench that
+cannot print.
+
+**Why there are two.** Group Policy software installation accepts nothing but an MSI, so the MSI
+is what a fleet is deployed with. But Windows Installer does not work on every machine: one
+workstation refused this package for a day, and it turned out to be refusing *every* package —
+a signed MSI from another vendor, and a file name that did not exist — with three lines of log
+and 1603 before msiexec read a single property. A bootstrapper would not have helped, because a
+bootstrapper ends in a call to msiexec. The EXE does the install itself, against the service
+control manager and the registry, and never involves Windows Installer at all.
+
+The EXE is the larger of the two by about 25 MB: the MSI's cab uses LZX where the EXE's embedded
+payload is a deflate zip, and the EXE additionally carries the installer program itself (~11 MB).
+It also leaves a copy of itself in the install directory, which is what Add/Remove Programs runs
+to uninstall — so the installed footprint is ~11 MB larger too.
+
+Build just one:
+
+```powershell
+pwsh clients/windows/installer/build.ps1 -Version 0.1.0 -Package Exe   # needs no WiX
+pwsh clients/windows/installer/build.ps1 -Version 0.1.0 -Package Msi
+```
+
+### 2.2 Sign them
 
 The certificate comes from the customer's internal ADCS and is not in this repository, so the
-build produces an **unsigned** MSI by default.
+build produces **unsigned** packages by default.
 
 ```powershell
 pwsh clients/windows/installer/build.ps1 -Version 0.1.0 -CertificateThumbprint <thumbprint>
 ```
 
-That signs the two executables *and* the MSI. Signing only the MSI would leave the installed
-binaries unsigned, and it is those that AV inspects every time the service starts.
+That signs the two agent executables *and* each finished package. Signing only the package would
+leave the installed binaries unsigned, and it is those that AV inspects every time the service
+starts.
 
-An unsigned MSI installs perfectly well by GPO on a domain-joined machine. Signing is what
-stops SmartScreen complaining when someone runs it by hand, and what lets the AV exclusions
-below be scoped to a publisher rather than to a path.
+An unsigned MSI installs perfectly well by GPO on a domain-joined machine. Signing is what stops
+SmartScreen complaining when someone runs it by hand — which matters rather more for the EXE,
+since running it by hand is what it is for — and what lets the AV exclusions below be scoped to
+a publisher rather than to a path.
 
 To issue the certificate (on a domain-joined machine, as an operator who may enrol
 certificates, using a template with the Code Signing EKU):
@@ -127,23 +157,31 @@ $cert = Get-Certificate -Template CodeSigning -CertStoreLocation Cert:\CurrentUs
 $cert.Certificate.Thumbprint
 ```
 
-### 2.3 Verify the package before deploying it
+### 2.3 Verify a package before deploying it
 
-Install, upgrade and uninstall cannot be proved by inspecting the MSI. On a **test machine or a
-VM**, from an elevated PowerShell:
+Install, upgrade and uninstall cannot be proved by inspecting a package. On a **test machine or
+a VM**, from an elevated PowerShell:
 
 ```powershell
 pwsh clients/windows/installer/build.ps1 -Version 0.1.0
 pwsh clients/windows/installer/build.ps1 -Version 0.1.1
 pwsh clients/windows/installer/Verify-Install.ps1 `
-    -Msi clients/windows/installer/bin/PrintoAgent-0.1.0.msi `
-    -UpgradeMsi clients/windows/installer/bin/PrintoAgent-0.1.1.msi
+    -Package clients/windows/installer/bin/PrintoAgent-0.1.0.msi `
+    -UpgradePackage clients/windows/installer/bin/PrintoAgent-0.1.1.msi
 ```
 
 It checks a clean install, that the service is registered, automatic and running, that the
-unattended properties reached the agent, that the data directory excludes ordinary users, that
-an in-place upgrade keeps the service running and keeps the site's data, and that uninstall
-leaves no service, no install directory and no registry key.
+virtual printer appears and captures a printed page, that the unattended settings reached the
+agent, that the data directory excludes ordinary users, that an in-place upgrade keeps the
+service running and keeps the site's data, and that uninstall leaves no service, no install
+directory, no registry key and no Add/Remove Programs entry.
+
+**Run it against both packages.** It takes either — pass the `.exe` in place of the `.msi` — and
+the checks are the contract the two share. A machine installed by one has to be upgradable and
+removable by the other, and running the same checks against each is what stops them drifting
+apart. What can be proved without a machine is proved by `SetupParityTests`, which compares what
+each package declares: the same service name, the same registry values under the same key, the
+same autostart entry and the same unattended settings.
 
 ### 2.4 Deploy by GPO
 
@@ -160,6 +198,59 @@ Upgrades: build a higher version, put it on the share, and add it to the same GP
 *upgrade* of the existing package, replacing it. The MSI's `MajorUpgrade` removes the old
 product after the new files are staged, so a machine that loses power mid-upgrade comes back
 with one working version rather than none.
+
+### 2.4a Install with the EXE
+
+For a workstation the MSI cannot reach, and for installing by hand. It needs nothing installed
+first and nothing repaired first.
+
+Double-click it: it asks Windows for administrator rights, then prints what it is doing, step by
+step, and stays on screen at the end. An install and a failure look nothing alike, which was not
+true of the MSI until it was given a user interface.
+
+Unattended, from an already-elevated prompt:
+
+```powershell
+.\PrintoAgent-0.1.0.exe /quiet `
+    SERVERURL=https://printo.example.local/api/ `
+    DECISIONMODE=auto `
+    ENROLLMENTTOKEN=<token>
+```
+
+The settings are the MSI's properties, spelled the same and meaning the same, so an existing
+install command carries over unchanged. A setting left out is left alone — an upgrade run with
+no settings cannot blank a working machine's configuration. A **misspelt** setting stops the
+install and says so, rather than being ignored.
+
+| Switch | |
+|---|---|
+| `/quiet` | no prompts and no pause. Must be started already elevated: an unattended run must not stop at a consent dialog nobody is there to answer. |
+| `/uninstall` | remove it. Also what Add/Remove Programs runs. |
+| `/force` | install even though this exact version already is. Without it, that does nothing. |
+| `/dir <path>` | somewhere other than `%ProgramFiles%\Printo Agent`. |
+| `/log <path>` | the transcript, which is written by default to `%TEMP%\printo-setup-<stamp>.log`. |
+| `/keep-printer` | on uninstall, leave the Windows print queue alone. |
+
+Exit codes: `0` done, `1` a step failed (the transcript says which), `2` the command line could
+not be read, `5` it needs an administrator and did not have one, `6` this machine cannot run it.
+
+Upgrades: run the higher version. It stops the service, replaces the files it installed, removes
+the ones the new version no longer ships, and starts the service again; the data directory and
+the machine's configuration are untouched. It refuses to go backwards.
+
+**Group Policy cannot deploy an EXE** through Software Installation — that accepts MSIs only.
+Push it with a machine startup script, or with whatever management agent the site already has:
+
+```powershell
+# Computer Configuration → Policies → Windows Settings → Scripts → Startup
+\\<domain>\NETLOGON\Printo\PrintoAgent-0.1.0.exe /quiet SERVERURL=https://printo.example.local/api/
+```
+
+A startup script runs as the machine, so it is already elevated. It also runs on every boot, and
+the installer is built for that: a version that is already installed is reported and left alone,
+a lower one is refused, and only a higher one does any work. Nothing is rewritten and the
+service is not bounced on a bench that is already correct. `/force` overrides that, and is the
+repair path for a machine somebody has deleted a file from.
 
 ### 2.5 Configuration, and where each value comes from
 
@@ -232,9 +323,10 @@ Two commands for a machine that needs it done by hand:
 & "$env:ProgramFiles\Printo Agent\Printo.Agent.exe" --remove-virtual-printer
 ```
 
-The uninstall runs the second one for you. It is the package's only custom action, it runs on
-uninstall only, and its failure is ignored deliberately: a package that cannot be uninstalled
-would be a far worse outcome than a printer left behind.
+Both installers run the second one for you when they remove the agent, and both ignore its
+failure deliberately: a package that cannot be uninstalled would be a far worse outcome than a
+printer left behind. In the MSI it is the package's only custom action and it runs on uninstall
+only; the EXE takes `/keep-printer` to skip it, for a site that created the queue itself.
 
 **What the queue offers applications.** PDF only, A4 and Letter plus whatever label sizes this
 machine's thermal printers are configured for, and colour by default — the capture path is the
@@ -265,14 +357,23 @@ machine's configuration, the document the picker is asking about, and the queue 
 tooltip; a directory locked to administrators reads better in a review and leaves an operator
 with a settings window that will not open. The secret is protected where the secret is.
 
-Alternatively pass it to the MSI directly, which is what a one-off install wants:
+Alternatively pass it to the installer directly, which is what a one-off install wants. The
+settings are spelled the same either way:
 
 ```
 msiexec /i PrintoAgent-0.1.0.msi /qn ^
   SERVERURL=https://printo.example.local/api/ ^
   DECISIONMODE=auto ^
   ENROLLMENTTOKEN=<token>
+
+PrintoAgent-0.1.0.exe /quiet ^
+  SERVERURL=https://printo.example.local/api/ ^
+  DECISIONMODE=auto ^
+  ENROLLMENTTOKEN=<token>
 ```
+
+Neither writes the token anywhere a log will pick it up: the MSI marks the property hidden, and
+the EXE keeps it out of its transcript.
 
 If the server later rejects an agent's key — the machine was disabled, retired or re-imaged —
 the agent drops the credential rather than retrying forever, so a freshly issued token is all
@@ -308,8 +409,13 @@ Windows Components → Microsoft Defender Antivirus → Exclusions**.
 
 ### 2.7a When an install fails
 
-Double-clicking the package shows a short welcome, a progress bar, and a page saying whether it
-worked. If it ends in an error, or if you are deploying unattended and want the detail, install
+**The EXE says so itself.** It prints each step and its outcome, keeps the same transcript in
+`%TEMP%\printo-setup-<stamp>.log`, and leaves the window open when it was double-clicked. There
+is no separate logging switch to remember and no return code to look up. If it will not install,
+the reason is the last line printed.
+
+**The MSI is the one that needs a log.** Double-clicking it shows a short welcome, a progress
+bar, and a page saying whether it worked; for the detail, or when deploying unattended, install
 with a log:
 
 ```powershell
@@ -378,9 +484,20 @@ disappears".
 take the install - elevation, policy, a blocked download, a service left behind - and with
 `-Install` runs the installation with a verbose log and names the action that failed.
 
+**Windows Installer itself was broken.** The one that cost the most, and the reason the EXE
+exists. A workstation spent a day being blamed for rejecting this package; it was rejecting every
+package, including a signed MSI from another vendor and a file name that did not exist — three
+lines of log and 1603, before msiexec read a single property. `Diagnose-Install.ps1` now asks
+that question first, with a package that cannot exist so that nothing is installed and no
+package is implicated: a working machine answers 1619 in about thirty lines, a broken one 1603
+in three.
+
+On such a machine, do not spend the day on msiexec. Install `PrintoAgent-<version>.exe` (§2.4a),
+which does not use Windows Installer at all, and repair the workstation separately.
+
 ### 2.8 What the agent needs on a workstation
 
-- 64-bit Windows 10 22H2 or Windows 11. The MSI refuses to install on 32-bit.
+- 64-bit Windows 10 22H2 or Windows 11. Both packages refuse to install on 32-bit, and say so.
 - No .NET prerequisite: the runtime is in the package.
 - Outbound HTTPS to the server, if one is configured.
 - A Windows OCR language pack, if documents in a language other than the machine's own have to

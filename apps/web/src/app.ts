@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { getDefaultLocale, resolveMessages } from './i18n.js';
 import { fleetPanelHtml, fleetPanelScript } from './fleet-panel.js';
+import { BRAND_MARK_SVG } from './brand.js';
 
 type FetchLike = typeof fetch;
 type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
@@ -101,6 +102,7 @@ function renderAdminPage(): string {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Printo Admin</title>
     <style>
       :root {
@@ -2681,9 +2683,18 @@ export function createWebApp(options: CreateWebAppOptions = {}) {
     res.json({ service: 'web', status: 'ok' });
   });
 
-  app.get('/favicon.ico', (_req, res) => {
-    return res.status(204).end();
+  // The mark, as vector. Inlined from a generated module rather than read off disk: this is
+  // built with plain `tsc`, which copies no assets into dist, and shipped as an image that
+  // copies only what it needs - a file route would work in development and 404 in production.
+  app.get('/favicon.svg', (_req, res) => {
+    res.type('image/svg+xml');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.send(BRAND_MARK_SVG);
   });
+
+  // Browsers honour the <link> above, but bookmarks, feed readers and anything older ask for
+  // this path regardless, and answering 204 left them showing a blank page beside the console.
+  app.get('/favicon.ico', (_req, res) => res.redirect(301, '/favicon.svg'));
 
   app.get('/', (_req, res) => {
     res.redirect('/admin/config');

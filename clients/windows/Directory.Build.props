@@ -15,6 +15,20 @@
     <Product>Printo Agent</Product>
     <Company>Printo</Company>
     <Version>0.1.0</Version>
+
+    <!--
+      The product mark, shared by the three executables and by the admin console.
+
+      Defined here rather than repeated as a relative path in each project, because it is three
+      directories up and getting one of them wrong fails as a missing-file error in a place that
+      has nothing to do with icons. It is drawn by tools/branding/generate_icons.py, which is
+      also where the geometry and the reasoning live; the .ico is committed, so a build needs no
+      Python.
+
+      Only the executables set ApplicationIcon from it. A library with an icon is a few hundred
+      wasted bytes and a resource nothing will ever look at.
+    -->
+    <PrintoIcon>$(MSBuildThisFileDirectory)..\..\assets\brand\printo.ico</PrintoIcon>
   </PropertyGroup>
 
 </Project>

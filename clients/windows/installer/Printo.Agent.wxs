@@ -51,6 +51,18 @@
     <ui:WixUI Id="WixUI_Minimal" />
     <WixVariable Id="WixUILicenseRtf" Value="$(var.NoticeRtf)" />
 
+    <!--
+      The Add/Remove Programs icon.
+
+      Windows Installer does not take it from the files being installed, so without this the
+      product sits in the list with a blank page beside it - next to every other application
+      that does have a mark, which reads as something that was pushed onto the machine rather
+      than installed on purpose. The shortcuts need no such declaration: they point at
+      Printo.Tray.exe and the shell reads the icon out of the executable itself.
+    -->
+    <Icon Id="PrintoIcon" SourceFile="$(var.BrandIcon)" />
+    <Property Id="ARPPRODUCTICON" Value="PrintoIcon" />
+
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT"
               Value="Open Printo Settings, to map this machine's printers" />

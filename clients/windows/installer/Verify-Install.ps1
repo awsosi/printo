@@ -1,12 +1,16 @@
 <#
 .SYNOPSIS
-    Installs, upgrades and removes the Printo Agent MSI, checking each step.
+    Installs, upgrades and removes a Printo Agent package, checking each step.
 
 .DESCRIPTION
-    The one part of the installer that cannot be proved by inspecting the package: whether
-    Windows Installer actually installs it, upgrades it in place, and removes it without
-    residue. That needs elevation, so it is a script to run rather than something the build
-    does.
+    The one part of an installer that cannot be proved by inspecting the package: whether it
+    actually installs, upgrades in place, and removes itself without residue. That needs
+    elevation, so it is a script to run rather than something the build does.
+
+    It takes either package. There are two - an MSI for Group Policy, which accepts nothing
+    else, and an EXE for the machines where Windows Installer does not work - and the checks
+    below are the contract they share. Running the same checks against both is what stops the
+    two drifting into installing subtly different machines.
 
     RUN THIS ON A TEST MACHINE OR A VM, not on a workstation you care about. It installs and
     uninstalls a service, writes to HKLM and to ProgramData, and it removes what it created -
@@ -28,11 +32,11 @@
     mapped the agent will then fail to route it, which is expected and harmless: the point of
     the check is that the document arrived at all.
 
-.PARAMETER Msi
-    The package to test. Defaults to the newest MSI in `bin`.
+.PARAMETER Package
+    The package to test, `.msi` or `.exe`. Defaults to the newest of either in `bin`.
 
-.PARAMETER UpgradeMsi
-    A higher-versioned package, to test the upgrade path. Build one with
+.PARAMETER UpgradePackage
+    A higher-versioned package of the same kind, to test the upgrade path. Build one with
     `build.ps1 -Version 0.1.1`. When omitted, the upgrade steps are reported as not run.
 
 .EXAMPLE
@@ -40,12 +44,20 @@
     pwsh clients/windows/installer/build.ps1 -Version 0.1.0
     pwsh clients/windows/installer/build.ps1 -Version 0.1.1
     pwsh clients/windows/installer/Verify-Install.ps1 `
-        -Msi bin/PrintoAgent-0.1.0.msi -UpgradeMsi bin/PrintoAgent-0.1.1.msi
+        -Package bin/PrintoAgent-0.1.0.msi -UpgradePackage bin/PrintoAgent-0.1.1.msi
+
+.EXAMPLE
+    pwsh clients/windows/installer/Verify-Install.ps1 `
+        -Package bin/PrintoAgent-0.1.0.exe -UpgradePackage bin/PrintoAgent-0.1.1.exe
 #>
 [CmdletBinding()]
 param(
-    [string]$Msi,
-    [string]$UpgradeMsi,
+    [Alias('Msi')]
+    [string]$Package,
+
+    [Alias('UpgradeMsi')]
+    [string]$UpgradePackage,
+
     [string]$ServerUrl = 'https://printo.verify.local/api/',
     [string]$DecisionMode = 'auto'
 )
@@ -53,10 +65,13 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
-if (-not $Msi) {
-    $Msi = (Get-ChildItem (Join-Path $here 'bin') -Filter '*.msi' | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+if (-not $Package) {
+    $Package = (Get-ChildItem (Join-Path $here 'bin') -Include '*.msi', '*.exe' -File -Recurse |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
 }
-if (-not $Msi -or -not (Test-Path $Msi)) { throw "No MSI found. Run build.ps1 first." }
+if (-not $Package -or -not (Test-Path $Package)) { throw 'No package found. Run build.ps1 first.' }
+
+$kind = if ([IO.Path]::GetExtension($Package) -eq '.exe') { 'EXE' } else { 'MSI' }
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 if (-not (New-Object Security.Principal.WindowsPrincipal($identity)).IsInRole(
@@ -77,12 +92,45 @@ function Check([string]$what, [scriptblock]$test) {
     }
 }
 
-function Invoke-Msi([string]$package, [string[]]$arguments, [string]$logName) {
+# Either package, driven the same way. The unattended settings are spelled identically - that is
+# a deliberate property of the two installers and `SetupParityTests` is what holds them to it -
+# so the only thing that differs here is how each one is asked to be quiet and where it logs.
+function Invoke-Installer([string]$package, [string[]]$settings, [string]$logName) {
     $log = Join-Path $logDir $logName
-    $all = @('/i', "`"$package`"", '/qn', '/norestart', '/l*v', "`"$log`"") + $arguments
-    $process = Start-Process msiexec.exe -ArgumentList $all -Wait -PassThru
+
+    if ([IO.Path]::GetExtension($package) -eq '.exe') {
+        $all = @('/quiet', '/log', "`"$log`"") + $settings
+        $process = Start-Process $package -ArgumentList $all -Wait -PassThru
+    } else {
+        $all = @('/i', "`"$package`"", '/qn', '/norestart', '/l*v', "`"$log`"") + $settings
+        $process = Start-Process msiexec.exe -ArgumentList $all -Wait -PassThru
+    }
+
     if ($process.ExitCode -ne 0) {
-        throw "msiexec returned $($process.ExitCode); see $log"
+        throw "$(Split-Path -Leaf $package) returned $($process.ExitCode); see $log"
+    }
+}
+
+function Uninstall-Package([string]$package, [string]$logName) {
+    $log = Join-Path $logDir $logName
+
+    if ([IO.Path]::GetExtension($package) -eq '.exe') {
+        # The downloaded package rather than the copy it left in Program Files. Both remove the
+        # product; the installed copy has to restart itself out of %TEMP% first so it can delete
+        # the directory it is running from, and returns as soon as it has handed over, which is
+        # not something to race in a check.
+        $process = Start-Process $package -ArgumentList @('/uninstall', '/quiet', '/log', "`"$log`"") -Wait -PassThru
+    } else {
+        $process = Start-Process msiexec.exe -ArgumentList @('/x', "`"$package`"", '/qn', '/norestart', '/l*v', "`"$log`"") -Wait -PassThru
+    }
+
+    if ($process.ExitCode -ne 0) { throw "uninstall returned $($process.ExitCode); see $log" }
+
+    # And then wait for the service to actually go, so that a removal which finished in the
+    # background is not read as one that did not happen.
+    for ($i = 0; $i -lt 60; $i++) {
+        if (-not (Get-Service -Name PrintoAgent -ErrorAction SilentlyContinue)) { break }
+        Start-Sleep -Seconds 1
     }
 }
 
@@ -90,8 +138,8 @@ $dataDir = Join-Path $env:ProgramData 'Printo\agent'
 $installDir = Join-Path ${env:ProgramFiles} 'Printo Agent'
 $machineKey = 'HKLM:\SOFTWARE\Printo\Agent'
 
-Write-Host "==> installing $Msi"
-Invoke-Msi $Msi @("SERVERURL=$ServerUrl", "DECISIONMODE=$DecisionMode") 'install.log'
+Write-Host "==> installing $Package ($kind)"
+Invoke-Installer $Package @("SERVERURL=$ServerUrl", "DECISIONMODE=$DecisionMode") 'install.log'
 
 Write-Host '==> a clean install'
 Check 'the service is registered' { $null -ne (Get-Service -Name PrintoAgent -ErrorAction SilentlyContinue) }
@@ -215,9 +263,9 @@ Check 'the enrolment credential is out of their reach' {
 $marker = Join-Path $dataDir 'verify-marker.txt'
 Set-Content -Path $marker -Value 'survives upgrades' -Encoding utf8
 
-if ($UpgradeMsi -and (Test-Path $UpgradeMsi)) {
-    Write-Host "==> upgrading in place with $UpgradeMsi"
-    Invoke-Msi $UpgradeMsi @() 'upgrade.log'
+if ($UpgradePackage -and (Test-Path $UpgradePackage)) {
+    Write-Host "==> upgrading in place with $UpgradePackage"
+    Invoke-Installer $UpgradePackage @() 'upgrade.log'
 
     Check 'the service survived the upgrade' {
         for ($i = 0; $i -lt 20; $i++) {
@@ -227,7 +275,13 @@ if ($UpgradeMsi -and (Test-Path $UpgradeMsi)) {
         $false
     }
     Check 'only one product is registered' {
-        @(Get-CimInstance Win32_Product -Filter "Name='Printo Agent'" -ErrorAction SilentlyContinue).Count -le 1
+        # Add/Remove Programs rather than Win32_Product: the EXE installs nothing that Windows
+        # Installer knows about, and enumerating Win32_Product asks every installed MSI on the
+        # machine to reconfigure itself, which is slow and not free of side effects.
+        $entries = @(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' |
+            ForEach-Object { (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).DisplayName } |
+            Where-Object { $_ -eq 'Printo Agent' })
+        $entries.Count -eq 1
     }
     Check 'the data directory survived the upgrade' { Test-Path $marker }
     Check 'the configuration survived the upgrade' {
@@ -235,15 +289,13 @@ if ($UpgradeMsi -and (Test-Path $UpgradeMsi)) {
         (Get-ItemProperty $machineKey -Name ServerUrl -ErrorAction SilentlyContinue).ServerUrl -eq $ServerUrl
     }
 } else {
-    Write-Host '==> upgrade NOT TESTED (pass -UpgradeMsi with a higher-versioned package)'
+    Write-Host '==> upgrade NOT TESTED (pass -UpgradePackage with a higher-versioned package)'
     $failures += 'upgrade not tested'
 }
 
 Write-Host '==> uninstalling'
-$last = if ($UpgradeMsi -and (Test-Path $UpgradeMsi)) { $UpgradeMsi } else { $Msi }
-$log = Join-Path $logDir 'uninstall.log'
-$process = Start-Process msiexec.exe -ArgumentList @('/x', "`"$last`"", '/qn', '/norestart', '/l*v', "`"$log`"") -Wait -PassThru
-if ($process.ExitCode -ne 0) { throw "uninstall returned $($process.ExitCode); see $log" }
+$last = if ($UpgradePackage -and (Test-Path $UpgradePackage)) { $UpgradePackage } else { $Package }
+Uninstall-Package $last 'uninstall.log'
 
 Check 'the service is gone' { $null -eq (Get-Service -Name PrintoAgent -ErrorAction SilentlyContinue) }
 Check 'the install directory is gone' { -not (Test-Path (Join-Path $installDir 'Printo.Agent.exe')) }
@@ -258,6 +310,13 @@ Check 'the virtual printer queue is gone' {
 }
 Check 'the Start Menu folder is gone' {
     -not (Test-Path (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Printo'))
+}
+Check 'the Add/Remove Programs entry is gone' {
+    # An entry left behind is worse than no entry: it offers a person a Uninstall button that
+    # runs a program which is no longer there.
+    @(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' |
+        ForEach-Object { (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).DisplayName } |
+        Where-Object { $_ -eq 'Printo Agent' }).Count -eq 0
 }
 
 # Data is deliberately left behind by the uninstall - a reinstall should find its spool and its

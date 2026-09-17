@@ -1,25 +1,41 @@
 <#
 .SYNOPSIS
-    Builds the Printo Agent MSI.
+    Builds the Printo Agent installers.
 
 .DESCRIPTION
     Publishes the service and the tray self-contained for win-x64 into one directory, then
-    packages that directory with WiX.
+    packages that directory two ways: as an MSI with WiX, and as a self-contained EXE that
+    installs without Windows Installer being involved at all.
+
+    Both are built by default because they are for different machines. Group Policy software
+    installation accepts nothing but an MSI, so the MSI is what a fleet is deployed with. The
+    EXE is for the machines the MSI cannot reach - and those exist: one workstation refused our
+    package for a day and turned out to be refusing every package, a signed one from another
+    vendor and a file name that did not exist included, with three lines of log and 1603 before
+    msiexec read a single property. A bootstrapper would not have helped, because a bootstrapper
+    ends in a call to msiexec.
 
     Self-contained rather than framework-dependent: a domain fleet is much easier to keep
-    correct when the MSI carries its own runtime. The alternative makes every workstation
+    correct when the package carries its own runtime. The alternative makes every workstation
     depend on a matching .NET version having been deployed first, and a single missing
     prerequisite is a packing bench that cannot print.
 
     Signing is deliberately a separate, optional step. The certificate is issued by the
-    customer's internal ADCS and is not available in this repository, so the build produces an
-    unsigned MSI and tells you how to sign it. An unsigned MSI installs perfectly well by GPO
-    on a domain-joined machine; signing is what stops SmartScreen complaining when someone runs
-    it by hand, and what lets the AV exclusions be scoped to a publisher rather than a path.
+    customer's internal ADCS and is not available in this repository, so the build produces
+    unsigned packages and tells you how to sign them. An unsigned MSI installs perfectly well by
+    GPO on a domain-joined machine; signing is what stops SmartScreen complaining when someone
+    runs it by hand, and what lets the AV exclusions be scoped to a publisher rather than a
+    path. It matters rather more for the EXE, which is the one a person downloads and
+    double-clicks.
 
 .PARAMETER Version
     Product version, three or four parts. Windows Installer compares only the first three, so
-    two builds that differ in the fourth part will not upgrade each other.
+    two builds that differ in the fourth part will not upgrade each other. The EXE compares the
+    same three, so that a machine cannot be talked into a downgrade by either package.
+
+.PARAMETER Package
+    Which installers to build: Both (the default), Msi or Exe. `Exe` is the one to ask for on a
+    machine with no WiX installed - the EXE needs nothing but the .NET SDK.
 
 .PARAMETER Portable
     Also emit a zip of the same binaries that runs without being installed. For proving the
@@ -27,11 +43,14 @@
     same files in the same layout, so what it does is what an installed agent does.
 
 .PARAMETER CertificateThumbprint
-    Optional. When given, the published binaries and the finished MSI are Authenticode-signed
-    with the matching certificate from the current user's store.
+    Optional. When given, the published binaries and the finished packages are
+    Authenticode-signed with the matching certificate from the current user's store.
 
 .EXAMPLE
     pwsh clients/windows/installer/build.ps1 -Version 0.1.0
+
+.EXAMPLE
+    pwsh clients/windows/installer/build.ps1 -Version 0.1.0 -Package Exe
 
 .EXAMPLE
     pwsh clients/windows/installer/build.ps1 -Version 0.1.0 -CertificateThumbprint A1B2...
@@ -41,6 +60,10 @@ param(
     [Parameter()]
     [ValidatePattern('^\d+\.\d+\.\d+(\.\d+)?$')]
     [string]$Version = '0.1.0',
+
+    [Parameter()]
+    [ValidateSet('Both', 'Msi', 'Exe')]
+    [string]$Package = 'Both',
 
     [Parameter()]
     [switch]$Portable,
@@ -64,6 +87,14 @@ $serviceDir = Join-Path $here 'obj/service'
 $trayDir = Join-Path $here 'obj/tray'
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $here 'bin' }
 
+# The product mark. Committed, and drawn by tools/branding/generate_icons.py; the three
+# executables take it through $(PrintoIcon) in Directory.Build.props, and the MSI needs it by
+# path for its Add/Remove Programs entry.
+$brandIcon = Join-Path (Split-Path -Parent (Split-Path -Parent $clientRoot)) 'assets/brand/printo.ico'
+if (-not (Test-Path $brandIcon)) {
+    throw "the product icon is missing at $brandIcon. Regenerate it with: python tools/branding/generate_icons.py"
+}
+
 function Assert-Tool {
     param([string]$Name, [string]$InstallHint)
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
@@ -71,21 +102,30 @@ function Assert-Tool {
     }
 }
 
-Assert-Tool -Name 'dotnet' -InstallHint 'Install the .NET 10 SDK.'
-Assert-Tool -Name 'wix' -InstallHint 'Install it with: dotnet tool install --global wix --version 5.*'
+$buildMsi = $Package -in @('Both', 'Msi')
+$buildExe = $Package -in @('Both', 'Exe')
 
-# Util supplies ServiceConfig, PermissionEx and the well-known-SID lookup; UI supplies the
-# dialogs somebody sees when they double-click the package. Both versions have to match the WiX
-# major version: `wix extension add` without one resolves to the newest package, which is v7,
-# and fails with a "could not find expected package root folder wixext5" warning and then an
-# unresolved-extension error at build time.
-$wixExtensionVersion = '5.0.2'
-foreach ($wixExtension in @('WixToolset.Util.wixext', 'WixToolset.UI.wixext')) {
-    if (-not ((& wix extension list -g 2>&1) -match [regex]::Escape("$wixExtension $wixExtensionVersion"))) {
-        Write-Host "==> adding $wixExtension/$wixExtensionVersion"
-        & wix extension remove -g $wixExtension 2>&1 | Out-Null
-        & wix extension add -g "$wixExtension/$wixExtensionVersion"
-        if ($LASTEXITCODE -ne 0) { throw "could not add $wixExtension/$wixExtensionVersion" }
+Assert-Tool -Name 'dotnet' -InstallHint 'Install the .NET 10 SDK.'
+
+# WiX is only a prerequisite of the MSI. Asking for it unconditionally would mean a machine that
+# only needs the EXE - which is the machine this whole second package exists for - could not
+# build one without installing a toolchain it has no use for.
+if ($buildMsi) {
+    Assert-Tool -Name 'wix' -InstallHint 'Install it with: dotnet tool install --global wix --version 5.*'
+
+    # Util supplies ServiceConfig, PermissionEx and the well-known-SID lookup; UI supplies the
+    # dialogs somebody sees when they double-click the package. Both versions have to match the
+    # WiX major version: `wix extension add` without one resolves to the newest package, which is
+    # v7, and fails with a "could not find expected package root folder wixext5" warning and then
+    # an unresolved-extension error at build time.
+    $wixExtensionVersion = '5.0.2'
+    foreach ($wixExtension in @('WixToolset.Util.wixext', 'WixToolset.UI.wixext')) {
+        if (-not ((& wix extension list -g 2>&1) -match [regex]::Escape("$wixExtension $wixExtensionVersion"))) {
+            Write-Host "==> adding $wixExtension/$wixExtensionVersion"
+            & wix extension remove -g $wixExtension 2>&1 | Out-Null
+            & wix extension add -g "$wixExtension/$wixExtensionVersion"
+            if ($LASTEXITCODE -ne 0) { throw "could not add $wixExtension/$wixExtensionVersion" }
+        }
     }
 }
 
@@ -145,8 +185,8 @@ foreach ($manifest in Get-ChildItem -Path $publishDir -Filter '*.deps.json') {
     $deps = Get-Content $manifest.FullName -Raw | ConvertFrom-Json
 
     foreach ($target in $deps.targets.PSObject.Properties) {
-        foreach ($package in $target.Value.PSObject.Properties) {
-            $runtime = $package.Value.runtime
+        foreach ($dependency in $target.Value.PSObject.Properties) {
+            $runtime = $dependency.Value.runtime
             if (-not $runtime) { continue }
 
             foreach ($assembly in $runtime.PSObject.Properties) {
@@ -203,30 +243,105 @@ if ($CertificateThumbprint) {
     if ($LASTEXITCODE -ne 0) { throw 'signing the binaries failed' }
 }
 
-$msi = Join-Path $OutputDirectory "PrintoAgent-$Version.msi"
+# ---------------------------------------------------------------------------------------------
+# One staged copy of the installed product, which both the EXE and the portable zip are made
+# from. It is the publish directory with the two executables put back: they are only ever
+# separated for WiX's benefit, and nothing outside the MSI wants them anywhere but beside the
+# assemblies they load.
+# ---------------------------------------------------------------------------------------------
+$payloadDir = Join-Path $here 'obj/payload'
 
-Write-Host "==> building $msi"
-& wix build `
-    (Join-Path $here 'Printo.Agent.wxs') `
-    (Join-Path $here 'Printo.Agent.Payload.wxs') `
-    -ext WixToolset.Util.wixext `
-    -ext WixToolset.UI.wixext `
-    -arch x64 `
-    -define "ProductVersion=$Version" `
-    -define "PublishDir=$publishDir" `
-    -define "ServiceDir=$serviceDir" `
-    -define "TrayDir=$trayDir" `
-    -define "NoticeRtf=$(Join-Path $here 'Notice.rtf')" `
-    -out $msi
-if ($LASTEXITCODE -ne 0) { throw 'wix build failed' }
+function New-PayloadDirectory {
+    if (Test-Path $payloadDir) { Remove-Item -Recurse -Force $payloadDir }
+    New-Item -ItemType Directory -Force -Path $payloadDir | Out-Null
 
-if ($CertificateThumbprint) {
-    Write-Host '==> signing the MSI'
-    & signtool sign /sha1 $CertificateThumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 $msi
-    if ($LASTEXITCODE -ne 0) { throw 'signing the MSI failed' }
-} else {
+    Copy-Item (Join-Path $publishDir '*') $payloadDir -Recurse -Force
+    Copy-Item (Join-Path $serviceDir 'Printo.Agent.exe') $payloadDir -Force
+    Copy-Item (Join-Path $trayDir 'Printo.Tray.exe') $payloadDir -Force
+}
+
+if ($buildExe -or $Portable) { New-PayloadDirectory }
+
+$built = @()
+
+if ($buildMsi) {
+    $msi = Join-Path $OutputDirectory "PrintoAgent-$Version.msi"
+
+    Write-Host "==> building $msi"
+    & wix build `
+        (Join-Path $here 'Printo.Agent.wxs') `
+        (Join-Path $here 'Printo.Agent.Payload.wxs') `
+        -ext WixToolset.Util.wixext `
+        -ext WixToolset.UI.wixext `
+        -arch x64 `
+        -define "ProductVersion=$Version" `
+        -define "PublishDir=$publishDir" `
+        -define "ServiceDir=$serviceDir" `
+        -define "TrayDir=$trayDir" `
+        -define "NoticeRtf=$(Join-Path $here 'Notice.rtf')" `
+        -define "BrandIcon=$brandIcon" `
+        -out $msi
+    if ($LASTEXITCODE -ne 0) { throw 'wix build failed' }
+
+    if ($CertificateThumbprint) {
+        Write-Host '==> signing the MSI'
+        & signtool sign /sha1 $CertificateThumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 $msi
+        if ($LASTEXITCODE -ne 0) { throw 'signing the MSI failed' }
+    }
+
+    $built += $msi
+}
+
+if ($buildExe) {
+    # ------------------------------------------------------------------------------------------
+    # The EXE carries the same files, zipped and embedded in it, and installs them itself: it
+    # copies the directory, registers the service with the service control manager, writes the
+    # same registry values the MSI writes, and leaves an Add/Remove Programs entry that runs it
+    # again with /uninstall. No part of that goes through Windows Installer, which is the whole
+    # point of it - see Printo.Agent.Setup/Program.cs.
+    # ------------------------------------------------------------------------------------------
+    $payloadZip = Join-Path $here 'obj/payload.zip'
+    if (Test-Path $payloadZip) { Remove-Item -Force $payloadZip }
+
+    Write-Host '==> compressing the payload'
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::CreateFromDirectory(
+        $payloadDir, $payloadZip, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+
+    $setupDir = Join-Path $here 'obj/setup'
+    if (Test-Path $setupDir) { Remove-Item -Recurse -Force $setupDir }
+
+    Write-Host '==> building the EXE installer'
+    & dotnet publish (Join-Path $clientRoot 'Printo.Agent.Setup/Printo.Agent.Setup.csproj') `
+        --configuration Release `
+        -p:Version=$Version `
+        -p:PayloadZip=$payloadZip `
+        --output $setupDir
+    if ($LASTEXITCODE -ne 0) { throw 'building the EXE installer failed' }
+
+    $exe = Join-Path $OutputDirectory "PrintoAgent-$Version.exe"
+    Copy-Item (Join-Path $setupDir 'Printo.Setup.exe') $exe -Force
+
+    # The payload is embedded, so this is the one check that it actually got in: a setup program
+    # that installs nothing looks exactly like one that installs everything until it is run.
+    if ((Get-Item $exe).Length -lt 20MB) {
+        throw "the EXE installer is only $([math]::Round((Get-Item $exe).Length / 1MB, 1)) MB, which means the payload was not embedded"
+    }
+
+    if ($CertificateThumbprint) {
+        Write-Host '==> signing the EXE'
+        # This is the package a person downloads and double-clicks, so an unsigned one is the
+        # one SmartScreen complains about loudest.
+        & signtool sign /sha1 $CertificateThumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 $exe
+        if ($LASTEXITCODE -ne 0) { throw 'signing the EXE failed' }
+    }
+
+    $built += $exe
+}
+
+if (-not $CertificateThumbprint) {
     Write-Host ''
-    Write-Host 'The MSI is UNSIGNED. To sign it with the internal ADCS certificate:'
+    Write-Host 'The packages are UNSIGNED. To sign them with the internal ADCS certificate:'
     Write-Host "  pwsh $($MyInvocation.MyCommand.Path) -Version $Version -CertificateThumbprint <thumbprint>"
 }
 
@@ -238,9 +353,7 @@ if ($Portable) {
     if (Test-Path $portableDir) { Remove-Item -Recurse -Force $portableDir }
     New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
 
-    Copy-Item (Join-Path $publishDir '*') $portableDir -Recurse -Force
-    Copy-Item (Join-Path $serviceDir 'Printo.Agent.exe') $portableDir -Force
-    Copy-Item (Join-Path $trayDir 'Printo.Tray.exe') $portableDir -Force
+    Copy-Item (Join-Path $payloadDir '*') $portableDir -Recurse -Force
 
     @"
 Printo Agent $Version - portable
@@ -292,4 +405,6 @@ Remove it again with:
 }
 
 Write-Host ''
-Write-Host "built $msi ($([math]::Round((Get-Item $msi).Length / 1MB, 1)) MB)"
+foreach ($artifact in $built) {
+    Write-Host "built $artifact ($([math]::Round((Get-Item $artifact).Length / 1MB, 1)) MB)"
+}

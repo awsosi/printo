@@ -256,6 +256,38 @@ describe('web app', () => {
     expect(init.body).toBe(JSON.stringify(payload));
   });
 
+  // The console had no favicon at all until the product had a mark: /favicon.ico answered 204,
+  // so every browser tab showed a blank page beside it.
+  it('serves the product mark as its favicon', async () => {
+    const app = createWebApp();
+    const res = await request(app).get('/favicon.svg');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('image/svg+xml');
+
+    // Not res.text: supertest only fills that in for types it knows are text, and an SVG
+    // arrives as a Buffer.
+    const svg = Buffer.from(res.body).toString('utf8');
+    expect(svg).toContain('<svg');
+    expect(svg).toContain('aria-label="Printo"');
+  });
+
+  it('points the rendered page at that favicon', async () => {
+    const app = createWebApp();
+    const res = await request(app).get('/admin/config');
+
+    expect(res.text).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml" />');
+  });
+
+  // Bookmarks, feed readers and anything older ask for this path whatever the <link> says.
+  it('sends the legacy favicon path to the same mark', async () => {
+    const app = createWebApp();
+    const res = await request(app).get('/favicon.ico');
+
+    expect(res.status).toBe(301);
+    expect(res.headers.location).toBe('/favicon.svg');
+  });
+
   it('returns 401 when proxy auth token is missing', async () => {
     const fetchMock = vi.fn();
     const app = createWebApp({ fetchImpl: fetchMock as typeof fetch, apiBaseUrl: 'http://api.internal' });
