@@ -268,7 +268,7 @@ internal sealed record SetupOptions
         writer.WriteLine("Settings. These are the MSI's properties, spelled the same and meaning the same.");
         writer.WriteLine();
         writer.WriteLine("  SERVERURL=<url>            the fleet server this machine reports to");
-        writer.WriteLine("  DECISIONMODE=<mode>        auto, ask or local");
+        writer.WriteLine("  DECISIONMODE=<mode>        local, server or auto");
         writer.WriteLine("  CONFIDENCETHRESHOLD=<n>    how sure the router has to be before it acts");
         writer.WriteLine("  ENROLLMENTTOKEN=<token>    spent once, on the agent's first start");
         writer.WriteLine();

@@ -302,4 +302,32 @@ public sealed class SetupParityTests
         Assert.True(second.Quiet);
         Assert.True(second.Detached);
     }
+
+    /// <summary>The modes the help offers are the modes the agent reads.</summary>
+    /// <remarks>
+    /// The installer writes <c>DECISIONMODE</c> through without checking it, and the agent
+    /// ignores a value it cannot parse and falls back to its default. So a mode the help invents -
+    /// it once offered <c>ask</c> - installs cleanly and quietly routes some other way.
+    /// </remarks>
+    [Fact]
+    public void TheHelpOffersExactlyTheAgentsDecisionModes()
+    {
+        using var usage = new StringWriter();
+        SetupOptions.WriteUsage(usage);
+
+        var line = usage.ToString().Split(Environment.NewLine)
+            .Single(candidate => candidate.TrimStart().StartsWith("DECISIONMODE=", StringComparison.Ordinal));
+
+        var offered = line[(line.IndexOf('>') + 1)..]
+            .Replace(" or ", ",", StringComparison.Ordinal)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var understood = Enum.GetNames<Printo.Agent.Runtime.DecisionMode>()
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        Assert.True(
+            offered.SetEquals(understood),
+            "the help offers " + string.Join(", ", offered) + "; the agent reads " + string.Join(", ", understood));
+    }
 }
