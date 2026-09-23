@@ -672,7 +672,13 @@ public sealed class AgentService(
             QueueCheckedAt = lastQueueCheck,
             OcrAvailable = ocr is not null,
             OcrLanguage = ocr?.Language,
-            WaybillHandling = (current.WaybillHandling is { } handling ? WaybillHandlings.ToWire(handling) : "route (rule bundle)")
+            WaybillHandling = (current.WaybillHandling switch
+                {
+                    WaybillHandling.A4 => "always A4",
+                    WaybillHandling.Thermal => "always thermal",
+                    WaybillHandling.Skip => "not printed",
+                    _ => "route normally",
+                })
                 + $" - {current.WaybillHandlingSource}",
             ThermalMedia = $"{MediaSizes.Format(current.ThermalMedia)} - {current.ThermalMediaSource}",
             Logging = $"{current.Logging} - {current.LoggingSource}",

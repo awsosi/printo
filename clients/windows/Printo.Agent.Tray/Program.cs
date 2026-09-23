@@ -24,6 +24,7 @@ internal static class Program
         ApplicationConfiguration.Initialize();
 
         var command = TrayCommandLine.Parse(args, AgentConfiguration.DefaultPath);
+        TrayLog.Configure(command.ConfigPath);
 
         // `--picker <pdf>` shows the picker for a document and prints the answer. It is how the
         // "Ctrl+P to on-screen in under a second" criterion is measured, and how an installer
@@ -34,22 +35,41 @@ internal static class Program
             TrayMode.Picker => ShowPicker(command.DocumentPath!, command.SuggestedPages),
             TrayMode.Settings => ShowSettings(command.ConfigPath),
             TrayMode.Apply => SettingsSaver.Apply(command.ApplyFrom!, command.ConfigPath),
-            _ => RunTray(command.ConfigPath),
+            TrayMode.Service => ControlService(command.ServiceAction!),
+            TrayMode.Show => RunTray(command.ConfigPath, command.Page),
+            _ => RunTray(command.ConfigPath, openPage: null),
         };
     }
 
     /// <summary>
-    /// The settings window on its own, without a tray icon.
+    /// The Printo window on its settings pages - in the running tray when there is one.
     /// </summary>
     /// <remarks>
-    /// Reachable from the Start Menu shortcut's context menu and from a support call, and the
-    /// way to configure a machine whose tray the operator has exited.
+    /// What the "Printo Settings" Start Menu shortcut runs. Unelevated it starts the tray too,
+    /// because a machine whose operator is configuring it is a machine about to print, and the
+    /// picker needs the tray. Elevated - an administrator who chose "Run as administrator" - it
+    /// opens the window alone: an elevated tray would own this session's picker and run it with
+    /// administrator rights, which nobody at the bench should be doing.
     /// </remarks>
     private static int ShowSettings(string configPath)
     {
-        using var form = new SettingsForm(configPath);
+        if (!Environment.IsPrivilegedProcess)
+        {
+            return RunTray(configPath, "settings");
+        }
+
+        using var form = new MainWindow(configPath);
+        form.ShowPage("settings");
         Application.Run(form);
         return 0;
+    }
+
+    /// <summary>The elevated half of the window's service buttons.</summary>
+    private static int ControlService(string action)
+    {
+        var result = TrayActions.Run(action);
+        TrayLog.Info($"elevated service {action}: {result.Outcome}, {result.Detail}");
+        return result.Succeeded ? 0 : 1;
     }
 
     /// <summary>
@@ -59,25 +79,44 @@ internal static class Program
     /// One instance per session, enforced with a mutex in the session-local namespace. Two
     /// trays would race for the same named pipe, and the loser would be a tray icon that looks
     /// entirely healthy while the service's picker requests go to the other one.
+    ///
+    /// A second launch asks the running tray to open its window and exits. That is what somebody
+    /// clicking the Start Menu's "Printo" wants - it used to exit silently, which looked like the
+    /// shortcut being broken. The sign-in autostart never lands here, because at sign-in there
+    /// is no tray yet.
     /// </remarks>
-    private static int RunTray(string configPath)
+    private static int RunTray(string configPath, string? openPage)
     {
         using var single = new Mutex(initiallyOwned: true, @"Local\Printo.Tray", out var owned);
         if (!owned)
         {
-            // Silent: the autostart entry and a manual launch both land here routinely, and a
-            // message box on every sign-in would be its own defect.
+            Signal(openPage ?? "status");
             return 0;
         }
 
         try
         {
-            Application.Run(new TrayApplication(configPath));
+            Application.Run(new TrayApplication(configPath, openPage));
             return 0;
         }
         finally
         {
             single.ReleaseMutex();
+        }
+    }
+
+    private static void Signal(string page)
+    {
+        try
+        {
+            using var show = EventWaitHandle.OpenExisting(
+                page == "settings" ? TrayApplication.ShowSettingsEvent : TrayApplication.ShowStatusEvent);
+            show.Set();
+        }
+        catch (Exception error) when (error is WaitHandleCannotBeOpenedException or UnauthorizedAccessException)
+        {
+            // The running tray is from a version without the signal, or is still starting. It
+            // stays running either way; the icon is there to double-click.
         }
     }
 

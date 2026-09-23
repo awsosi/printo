@@ -11,8 +11,25 @@ public enum TrayMode
     /// <summary>Show the fallback picker for one document and print the answer.</summary>
     Picker,
 
-    /// <summary>Show the settings window.</summary>
+    /// <summary>Show the Printo window on its own, without a tray icon.</summary>
     Settings,
+
+    /// <summary>
+    /// Sit in the notification area, and open the Printo window straight away - or, when a tray
+    /// is already running in this session, ask that one to open it.
+    /// </summary>
+    Show,
+
+    /// <summary>
+    /// Start, stop or restart the agent service, then exit.
+    /// </summary>
+    /// <remarks>
+    /// The elevated fallback for the window's service buttons, like <see cref="Apply"/> is for
+    /// saving: interactive users are normally allowed to control the service themselves, and
+    /// this exists for the site that withheld that right, where an administrator approves each
+    /// action instead.
+    /// </remarks>
+    Service,
 
     /// <summary>
     /// Copy an already-edited configuration into place and restart the service, then exit.
@@ -44,6 +61,12 @@ public sealed record TrayCommand
 
     /// <summary>The staged configuration to install, in <see cref="TrayMode.Apply"/> mode.</summary>
     public string? ApplyFrom { get; init; }
+
+    /// <summary><c>start</c>, <c>stop</c> or <c>restart</c>, in <see cref="TrayMode.Service"/> mode.</summary>
+    public string? ServiceAction { get; init; }
+
+    /// <summary>Which page the window opens on: <c>status</c> (the default) or <c>settings</c>.</summary>
+    public string Page { get; init; } = "status";
 }
 
 /// <summary>
@@ -64,6 +87,8 @@ public static class TrayCommandLine
 
         var configPath = defaultConfigPath;
         string? applyFrom = null;
+        string? serviceAction = null;
+        string? showPage = null;
         var settings = false;
         var positional = new List<string>();
 
@@ -87,6 +112,22 @@ public static class TrayCommandLine
                 continue;
             }
 
+            if (string.Equals(args[i], "--service", StringComparison.OrdinalIgnoreCase)
+                && i + 1 < args.Length
+                && args[i + 1].ToLowerInvariant() is "start" or "stop" or "restart")
+            {
+                serviceAction = args[++i].ToLowerInvariant();
+                continue;
+            }
+
+            if (string.Equals(args[i], "--show", StringComparison.OrdinalIgnoreCase))
+            {
+                showPage = i + 1 < args.Length && args[i + 1].ToLowerInvariant() is "status" or "settings"
+                    ? args[++i].ToLowerInvariant()
+                    : "status";
+                continue;
+            }
+
             positional.Add(args[i]);
         }
 
@@ -95,9 +136,19 @@ public static class TrayCommandLine
             return new TrayCommand { Mode = TrayMode.Apply, ConfigPath = configPath, ApplyFrom = applyFrom };
         }
 
+        if (serviceAction is not null)
+        {
+            return new TrayCommand { Mode = TrayMode.Service, ConfigPath = configPath, ServiceAction = serviceAction };
+        }
+
         if (settings)
         {
-            return new TrayCommand { Mode = TrayMode.Settings, ConfigPath = configPath };
+            return new TrayCommand { Mode = TrayMode.Settings, ConfigPath = configPath, Page = "settings" };
+        }
+
+        if (showPage is not null)
+        {
+            return new TrayCommand { Mode = TrayMode.Show, ConfigPath = configPath, Page = showPage };
         }
 
         var wantsPicker = positional.Count >= 2

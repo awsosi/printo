@@ -88,6 +88,43 @@ public sealed class TrayCommandLineTests
     }
 
     [Fact]
+    public void ShowRunsTheTrayAndOpensTheWindowOnTheRequestedPage()
+    {
+        var status = TrayCommandLine.Parse(["--show"], DefaultConfig);
+        Assert.Equal(TrayMode.Show, status.Mode);
+        Assert.Equal("status", status.Page);
+
+        var settings = TrayCommandLine.Parse(["--show", "settings"], DefaultConfig);
+        Assert.Equal(TrayMode.Show, settings.Mode);
+        Assert.Equal("settings", settings.Page);
+
+        // The installer's post-install launch passes a config path as well; order must not matter.
+        var both = TrayCommandLine.Parse(["--config", @"D:\x.json", "--show", "settings"], DefaultConfig);
+        Assert.Equal(@"D:\x.json", both.ConfigPath);
+        Assert.Equal("settings", both.Page);
+    }
+
+    [Theory]
+    [InlineData("start")]
+    [InlineData("STOP")]
+    [InlineData("restart")]
+    public void ServiceCarriesTheActionForTheElevatedFallback(string action)
+    {
+        var command = TrayCommandLine.Parse(["--service", action], DefaultConfig);
+
+        Assert.Equal(TrayMode.Service, command.Mode);
+        Assert.Equal(action.ToLowerInvariant(), command.ServiceAction);
+    }
+
+    [Fact]
+    public void AnUnknownServiceActionIsNotRunElevated()
+    {
+        // Whatever reaches the elevated process is run as an administrator, so anything that is
+        // not one of the three actions falls through to the harmless default.
+        Assert.Equal(TrayMode.Tray, TrayCommandLine.Parse(["--service", "delete"], DefaultConfig).Mode);
+    }
+
+    [Fact]
     public void ApplyCarriesTheStagedFileAndTheTarget()
     {
         // The elevated half of saving: a copy and a service restart, and nothing else.

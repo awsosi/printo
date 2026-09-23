@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.Versioning;
 using Printo.Agent.Runtime;
 
@@ -21,33 +20,42 @@ public enum SaveOutcome
 /// What a save actually achieved.
 /// </summary>
 /// <param name="Outcome">Whether, and how, the configuration was written.</param>
-/// <param name="ServiceRestarted">
-/// Whether the agent is now running on it. False means the file is in place but the running
-/// service has not re-read it - on a bench where no service is installed, or where the restart
-/// was refused - and the window must say so rather than claim a restart that did not happen.
+/// <param name="Restart">
+/// What happened to the agent afterwards - restarted, not installed, or why not - in the state
+/// the service control manager reports, never inferred. The window shows it as it is.
 /// </param>
-public sealed record SaveResult(SaveOutcome Outcome, bool ServiceRestarted);
+public sealed record SaveResult(SaveOutcome Outcome, ServiceActionResult Restart)
+{
+    public bool ServiceRestarted => Restart.Succeeded;
+}
 
 /// <summary>
 /// Puts an edited configuration into force.
 /// </summary>
 /// <remarks>
-/// Two halves, because the data directory is deliberately ACL'd to SYSTEM and Administrators -
-/// the enrolment credential lives beside the configuration - so an operator's tray, running as
-/// that operator, cannot write it. The unprivileged half stages the file and asks for
-/// elevation; the elevated half validates, copies and restarts the service.
-///
-/// The elevated half is kept to those three steps on purpose. Running the whole settings
-/// window as administrator would be less code and much worse: a message loop, a PDF renderer
-/// and a printer enumerator behind the UAC prompt, to change one JSON file.
+/// <para>
+/// The configuration file lives in the data directory, which operators may write (the one real
+/// secret there, the enrolment credential, is protected as its own file). So the ordinary path
+/// is: write the file, restart the agent - both as the operator, because interactive users are
+/// granted start and stop on the service.
+/// </para>
+/// <para>
+/// Each step falls back to elevation on its own when Windows refuses it: a machine whose data
+/// directory was locked down stages the file and relaunches this executable elevated with
+/// <c>--apply</c>; a site that withheld service control approves the restart instead. The
+/// elevated half is kept to validate, copy and restart, and nothing else - a message loop and a
+/// PDF renderer behind a UAC prompt to change one JSON file would be a poor trade.
+/// </para>
 /// </remarks>
 [SupportedOSPlatform("windows")]
 public static class SettingsSaver
 {
-    public const string ServiceName = "PrintoAgent";
+    public const string ServiceName = AgentServiceController.ServiceName;
 
-    /// <summary>Writes the configuration, elevating only if the direct write is refused.</summary>
-    public static SaveResult Save(AgentConfiguration configuration, string configPath)
+    private static readonly TimeSpan RestartWait = TimeSpan.FromSeconds(45);
+
+    /// <summary>Writes the configuration and restarts the agent, elevating only where refused.</summary>
+    public static SaveResult Save(AgentConfiguration configuration, string configPath, IWin32Window? owner = null)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentException.ThrowIfNullOrWhiteSpace(configPath);
@@ -55,11 +63,12 @@ public static class SettingsSaver
         try
         {
             configuration.Save(configPath);
-            return new SaveResult(SaveOutcome.Written, RestartService());
+            TrayLog.Info($"settings saved to {configPath}");
+            return new SaveResult(SaveOutcome.Written, RestartForSave(owner));
         }
         catch (Exception error) when (error is UnauthorizedAccessException or IOException)
         {
-            // Expected on any properly installed machine; not an error worth showing.
+            TrayLog.Info($"settings could not be written directly ({error.Message}); asking for elevation");
         }
 
         var staged = Path.Combine(Path.GetTempPath(), $"printo-settings-{Guid.NewGuid():n}.json");
@@ -67,28 +76,26 @@ public static class SettingsSaver
 
         try
         {
-            var elevated = Process.Start(new ProcessStartInfo
+            var code = TrayActions.RunElevated("--apply", staged, "--config", configPath);
+            var state = AgentServiceController.Query();
+            return code switch
             {
-                FileName = Environment.ProcessPath ?? "Printo.Tray.exe",
-                UseShellExecute = true,
-                Verb = "runas",
-                ArgumentList = { "--apply", staged, "--config", configPath },
-            });
-
-            if (elevated is null)
-            {
-                return new SaveResult(SaveOutcome.Declined, false);
-            }
-
-            elevated.WaitForExit();
-            return elevated.ExitCode == 0
-                ? new SaveResult(SaveOutcome.Elevated, true)
-                : new SaveResult(SaveOutcome.Declined, false);
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            // 1223, ERROR_CANCELLED: the user dismissed the UAC prompt.
-            return new SaveResult(SaveOutcome.Declined, false);
+                null => new SaveResult(
+                    SaveOutcome.Declined,
+                    new ServiceActionResult(ServiceActionOutcome.AccessDenied, state, "administrator approval was declined")),
+                0 => new SaveResult(
+                    SaveOutcome.Elevated,
+                    new ServiceActionResult(
+                        state == AgentServiceState.NotInstalled ? ServiceActionOutcome.NotInstalled : ServiceActionOutcome.Done,
+                        state,
+                        "restarted")),
+                ApplyRestartFailed => new SaveResult(
+                    SaveOutcome.Elevated,
+                    new ServiceActionResult(ServiceActionOutcome.Failed, state, "the agent could not be restarted")),
+                _ => new SaveResult(
+                    SaveOutcome.Declined,
+                    new ServiceActionResult(ServiceActionOutcome.Failed, state, $"the elevated save failed (exit code {code})")),
+            };
         }
         finally
         {
@@ -105,11 +112,17 @@ public static class SettingsSaver
         }
     }
 
+    /// <summary>Exit code of <c>--apply</c> when the file was installed but the agent did not restart.</summary>
+    public const int ApplyRestartFailed = 4;
+
     /// <summary>
     /// The elevated half: validate a staged configuration, install it, restart the service.
     /// </summary>
+    /// <param name="stagedPath">The edited configuration, written by the unelevated window.</param>
+    /// <param name="configPath">Where it is installed.</param>
+    /// <param name="restart">Restarts the agent; the real service unless a test supplies another.</param>
     /// <returns>A process exit code.</returns>
-    public static int Apply(string stagedPath, string configPath)
+    public static int Apply(string stagedPath, string configPath, Func<ServiceActionResult>? restart = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stagedPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(configPath);
@@ -149,73 +162,30 @@ public static class SettingsSaver
             return 3;
         }
 
-        RestartService();
-        return 0;
+        var restarted = (restart ?? RestartService)();
+        return restarted.Outcome is ServiceActionOutcome.Done or ServiceActionOutcome.NotInstalled ? 0 : ApplyRestartFailed;
     }
 
     /// <summary>
     /// Restarts the agent so the new configuration is in force immediately.
     /// </summary>
     /// <remarks>
-    /// Through <c>net.exe</c>, which waits for each transition, rather than <c>sc.exe</c>,
-    /// which does not: a start issued while the stop is still in flight fails, and the operator
-    /// is left with the settings saved and the agent down.
-    ///
-    /// Silent when the service is not installed. That is the ordinary state on a development
-    /// bench running the agent with <c>--console</c>, and a warning there would train people to
-    /// ignore it.
+    /// Against the service control manager, waiting for each transition, so the result is the
+    /// state the service is actually in. Not installed is an ordinary answer - a development
+    /// bench running the agent with <c>--console</c> - and is reported as such.
     /// </remarks>
-    /// <returns>True when the agent is running on the new configuration.</returns>
-    public static bool RestartService()
+    public static ServiceActionResult RestartService() => AgentServiceController.Restart(RestartWait);
+
+    private static ServiceActionResult RestartForSave(IWin32Window? owner)
     {
-        if (!ServiceExists())
+        var direct = RestartService();
+        if (direct.Outcome != ServiceActionOutcome.AccessDenied)
         {
-            return false;
+            TrayLog.Info($"restart after save: {direct.Outcome}, {direct.Detail}");
+            return direct;
         }
 
-        // The stop result is ignored: the service may legitimately be stopped already, and a
-        // failed stop must not prevent the start that follows it. The start is not ignored -
-        // it is the whole question.
-        Run("net.exe", ["stop", ServiceName]);
-        return Run("net.exe", ["start", ServiceName]) == 0;
-    }
-
-    private static bool ServiceExists()
-    {
-        // 1060, ERROR_SERVICE_DOES_NOT_EXIST.
-        return Run("sc.exe", ["query", ServiceName]) is 0;
-    }
-
-    private static int Run(string fileName, string[] arguments)
-    {
-        var info = new ProcessStartInfo
-        {
-            FileName = fileName,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-
-        foreach (var argument in arguments)
-        {
-            info.ArgumentList.Add(argument);
-        }
-
-        try
-        {
-            using var process = Process.Start(info);
-            if (process is null)
-            {
-                return -1;
-            }
-
-            process.WaitForExit(TimeSpan.FromSeconds(60));
-            return process.HasExited ? process.ExitCode : -1;
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            return -1;
-        }
+        // The file is written; only the restart needs an administrator here.
+        return TrayActions.ControlService(owner, "restart");
     }
 }

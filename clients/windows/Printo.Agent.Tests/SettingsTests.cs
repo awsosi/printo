@@ -48,7 +48,7 @@ public sealed class SettingsTests : IDisposable
         var closed = false;
         UiThread.Run(() =>
         {
-            using var form = new SettingsForm(config);
+            using var form = new MainWindow(config, startWithServiceChecks: false);
             form.FormClosed += (_, _) => closed = true;
             form.Show();
 
@@ -92,13 +92,35 @@ public sealed class SettingsTests : IDisposable
             Printers = [new PrinterMapping { QueueName = "HP-M60x", Role = "A4" }],
         }.Save(staged);
 
-        Assert.Equal(0, SettingsSaver.Apply(staged, target));
+        Assert.Equal(0, SettingsSaver.Apply(staged, target, Restarted));
 
         var installed = AgentConfiguration.Load(target);
         Assert.Equal("https://printo.example.internal/api/", installed.ServerUrl);
         Assert.Equal(DecisionMode.Local, installed.DecisionMode);
         Assert.Equal("HP-M60x", Assert.Single(installed.Printers).QueueName);
     }
+
+    [Fact]
+    public void ApplySaysSoWhenTheAgentCouldNotBeRestarted()
+    {
+        var staged = Path.Combine(directory, "staged.json");
+        var target = Path.Combine(directory, "agent.json");
+        new AgentConfiguration().Save(staged);
+
+        // The file is installed either way; the exit code is how the unelevated window learns
+        // the difference between "saved and running on it" and "saved, restart it yourself".
+        var code = SettingsSaver.Apply(
+            staged,
+            target,
+            () => new ServiceActionResult(ServiceActionOutcome.Failed, AgentServiceState.Stopped, "it would not start"));
+
+        Assert.Equal(SettingsSaver.ApplyRestartFailed, code);
+        Assert.True(File.Exists(target));
+    }
+
+    /// <summary>A restart that succeeds without touching the machine's real service.</summary>
+    private static ServiceActionResult Restarted() =>
+        new(ServiceActionOutcome.Done, AgentServiceState.Running, "restarted");
 
     [Fact]
     public void ApplyRefusesAStagedConfigurationTheServiceCouldNotRead()
@@ -109,7 +131,7 @@ public sealed class SettingsTests : IDisposable
         new AgentConfiguration { ServerUrl = "https://kept.example/" }.Save(target);
         File.WriteAllText(staged, "{ not json at all");
 
-        Assert.NotEqual(0, SettingsSaver.Apply(staged, target));
+        Assert.NotEqual(0, SettingsSaver.Apply(staged, target, Restarted));
 
         // The working configuration is still there. Anything else would mean a settings window
         // that can brick the agent from a half-written temporary file.
@@ -120,7 +142,7 @@ public sealed class SettingsTests : IDisposable
     public void ApplyRefusesAStagedFileThatIsNotThere()
     {
         var target = Path.Combine(directory, "agent.json");
-        Assert.NotEqual(0, SettingsSaver.Apply(Path.Combine(directory, "missing.json"), target));
+        Assert.NotEqual(0, SettingsSaver.Apply(Path.Combine(directory, "missing.json"), target, Restarted));
         Assert.False(File.Exists(target));
     }
 

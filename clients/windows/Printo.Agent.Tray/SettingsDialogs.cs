@@ -20,13 +20,15 @@ internal abstract class EditorDialog : Form
 
     protected EditorDialog(string title, int width)
     {
+        // Before any control exists, so the pixel sizes below scale to the monitor's DPI.
+        AutoScaleDimensions = new SizeF(96F, 96F);
+        AutoScaleMode = AutoScaleMode.Dpi;
         Text = title;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterParent;
         MinimizeBox = false;
         MaximizeBox = false;
         ShowInTaskbar = false;
-        AutoScaleMode = AutoScaleMode.Dpi;
         Font = SystemFonts.MessageBoxFont!;
         Padding = new Padding(12);
 
@@ -73,19 +75,37 @@ internal abstract class EditorDialog : Form
     }
 
     /// <summary>Adds a labelled row and returns the control, for fluent construction.</summary>
+    /// <remarks>
+    /// Text and choice fields take the width of the column; numbers and check boxes keep their
+    /// own size at the left. Stretched across the dialog, a number field read as a slider.
+    /// </remarks>
     protected T Row<T>(string label, T control)
         where T : Control
     {
-        control.Dock = DockStyle.Fill;
-        control.Margin = new Padding(3, 3, 3, 6);
+        if (control is NumericUpDown number)
+        {
+            number.Width = 90;
+            number.TextAlign = HorizontalAlignment.Right;
+            control.Anchor = AnchorStyles.Left;
+        }
+        else if (control is CheckBox)
+        {
+            control.Anchor = AnchorStyles.Left;
+        }
+        else
+        {
+            control.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        }
+
+        control.Margin = new Padding(3, 4, 3, 4);
 
         grid.Controls.Add(
             new Label
             {
                 Text = label,
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Margin = new Padding(3, 6, 3, 6),
+                AutoSize = true,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(3, 4, 3, 4),
             },
             0,
             grid.RowCount);
@@ -127,6 +147,7 @@ internal sealed class PrinterMappingDialog : EditorDialog
     private readonly CheckBox rawZpl;
     private readonly NumericUpDown darkness;
     private readonly NumericUpDown speed;
+    private readonly ComboBox pageOrder;
 
     public PrinterMappingDialog(PrinterMapping? existing, IReadOnlyList<string> installedQueues)
         : base(existing is null ? "Add printer" : "Edit printer", 440)
@@ -140,8 +161,20 @@ internal sealed class PrinterMappingDialog : EditorDialog
             + "alias a rule can name directly.");
 
         media = Row("Media", new TextBox());
-        Note("Blank uses the default for the role (thermal: 100x150mm). Otherwise a size such "
-            + "as 100x150mm, 100x200mm or A4.");
+        Note($"Blank uses the machine's thermal stock for a thermal printer (by default "
+            + $"{MediaSizes.Format(MediaSizes.DefaultThermal)}) and A4 otherwise. Or a size such as "
+            + "100x150mm, 100x210mm or A4.");
+
+        pageOrder = Row("Page order", new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList });
+        pageOrder.Items.AddRange(
+        [
+            "Automatic (A4: first page first; thermal: last label first)",
+            "First page first",
+            "Last page first",
+        ]);
+        Note("Which page is printed first, so the stack reads in document order once picked up. "
+            + "A laser stacks face down: first page first. A label strip torn off after the job "
+            + "reads from the torn end: last label first. Change it if this printer stacks the other way.");
 
         offsetX = Row("Offset X (mm)", Spinner(-50, 50, 1));
         offsetY = Row("Offset Y (mm)", Spinner(-50, 50, 1));
@@ -167,11 +200,13 @@ internal sealed class PrinterMappingDialog : EditorDialog
             rawZpl.Checked = existing.RawZpl;
             darkness.Value = existing.Darkness ?? -31;
             speed.Value = existing.Speed ?? 0;
+            pageOrder.SelectedIndex = (int)existing.PageOrder;
         }
         else
         {
             role.Text = "A4";
             darkness.Value = -31;
+            pageOrder.SelectedIndex = 0;
         }
 
         AutoSize = true;
@@ -189,6 +224,7 @@ internal sealed class PrinterMappingDialog : EditorDialog
         RawZpl = rawZpl.Checked,
         Darkness = darkness.Value == -31 ? null : (int)darkness.Value,
         Speed = speed.Value == 0 ? null : (int)speed.Value,
+        PageOrder = (PageOrder)Math.Max(0, pageOrder.SelectedIndex),
     };
 
     protected override bool Validate(out string message)
@@ -209,7 +245,7 @@ internal sealed class PrinterMappingDialog : EditorDialog
         {
             // Caught here rather than at print time: an unparsable media size would otherwise
             // fall back to the default and print a label at A4, which looks like a routing bug.
-            message = $"'{media.Text}' is not a media size. Use 100x150mm, 100x200mm or a name such as A4.";
+            message = $"'{media.Text}' is not a media size. Use 100x150mm, 100x210mm or a name such as A4.";
             return false;
         }
 
@@ -246,6 +282,7 @@ internal sealed class HotFolderDialog : EditorDialog
             ColumnCount = 2,
             AutoSize = true,
             Margin = Padding.Empty,
+            Dock = DockStyle.Fill,
         };
         chooser.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         chooser.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -375,10 +412,21 @@ internal static class InstalledQueues
     }
 
     /// <summary>A one-line description of a mapping, for the list view.</summary>
-    public static string DescribeMedia(PrinterMapping mapping) =>
+    /// <param name="mapping">The printer.</param>
+    /// <param name="thermalDefault">The machine's thermal stock, for a thermal printer that names none.</param>
+    public static string DescribeMedia(PrinterMapping mapping, MediaSize? thermalDefault = null) =>
         mapping.Media ?? (string.Equals(mapping.Role, "THERMAL", StringComparison.OrdinalIgnoreCase)
-            ? $"{MediaSizes.Format(MediaSizes.DefaultThermal)} (default)"
+            ? $"{MediaSizes.Format(thermalDefault ?? MediaSizes.DefaultThermal)} (default)"
             : $"{MediaSizes.Format(MediaSizes.DefaultDocument)} (default)");
+
+    /// <summary>The page order a printer will actually use, in words.</summary>
+    public static string DescribePageOrder(PrinterMapping mapping)
+    {
+        var thermal = string.Equals(mapping.Role, "THERMAL", StringComparison.OrdinalIgnoreCase);
+        var order = PageOrders.Resolve(mapping.PageOrder, thermal, fleetDefault: null);
+        var words = order == PageOrder.LastPageFirst ? "last first" : "first first";
+        return mapping.PageOrder == PageOrder.Auto ? $"{words} (auto)" : words;
+    }
 
     public static string DescribeOffset(PrinterMapping mapping) =>
         mapping.OffsetXMm == 0 && mapping.OffsetYMm == 0
