@@ -23,12 +23,16 @@ namespace Printo.Agent.Service;
 [SupportedOSPlatform("windows10.0.19041.0")]
 public sealed class AgentService(
     ILogger<AgentService> logger,
+    ILoggerFactory loggers,
     AgentConfiguration configuration,
     IReadOnlyList<EffectiveSetting> settings,
     AgentSettingsState state,
     RollingFileLog fileLog,
     AgentHostInfo host) : BackgroundService
 {
+    /// <summary>The log category jobs' audit trails are written under.</summary>
+    public const string JobCategory = "Printo.Agent.Jobs";
+
     /// <summary>How often the spool is garbage collected, beyond once at startup.</summary>
     private static readonly TimeSpan CollectionInterval = TimeSpan.FromHours(1);
 
@@ -94,7 +98,8 @@ public sealed class AgentService(
         // Every job's audit trail goes to the log file as it is written: the one place a support
         // call can read what happened to a document, in order, beside everything else the agent
         // did at the time.
-        spool.EventRecorded = entry => logger.Log(
+        var jobLog = loggers.CreateLogger(JobCategory);
+        spool.EventRecorded = entry => jobLog.Log(
             entry.Level switch
             {
                 "error" => LogLevel.Error,
@@ -242,8 +247,9 @@ public sealed class AgentService(
         await using var virtualPrinter = await StartVirtualPrinterAsync(spool, Wake, stoppingToken);
 
         // The tray's way in: realtime status, and the actions that need this process's rights.
-        using var control = new ServiceControlServer(command => HandleControl(
-            command, spool, janitor, sync, virtualPrinter, ocr, Wake));
+        using var control = new ServiceControlServer(
+            command => HandleControl(command, spool, janitor, sync, virtualPrinter, ocr, Wake),
+            host.ControlPipeName);
         control.Start();
 
         logger.LogInformation(

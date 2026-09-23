@@ -29,6 +29,7 @@
     <ProjectReference Include="..\Printo.Agent.Ipp\Printo.Agent.Ipp.csproj" />
     <ProjectReference Include="..\Printo.Agent.Tray\Printo.Agent.Tray.csproj" />
     <ProjectReference Include="..\Printo.Agent.Setup\Printo.Agent.Setup.csproj" />
+    <ProjectReference Include="..\Printo.Agent.Service\Printo.Agent.Service.csproj" />
   </ItemGroup>
 
 </Project>

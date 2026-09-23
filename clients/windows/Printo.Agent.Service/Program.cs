@@ -131,6 +131,12 @@ internal static class Program
         builder.Logging.AddFilter<Microsoft.Extensions.Logging.Debug.DebugLoggerProvider>(null, LogLevel.Information);
         builder.Logging.AddFilter<Microsoft.Extensions.Logging.EventSource.EventSourceLoggerProvider>(null, LogLevel.Information);
 
+        // The event log keeps what it always had - Information and up - and takes each job's
+        // audit trail only when something went wrong. Thirty benches writing two lines per
+        // document would bury the lines a domain administrator opens the event log to find.
+        builder.Logging.AddFilter<Microsoft.Extensions.Logging.EventLog.EventLogLoggerProvider>(null, LogLevel.Information);
+        builder.Logging.AddFilter<Microsoft.Extensions.Logging.EventLog.EventLogLoggerProvider>(AgentService.JobCategory, LogLevel.Warning);
+
         if (!console)
         {
             builder.Services.AddWindowsService(options => options.ServiceName = "PrintoAgent");
@@ -193,4 +199,8 @@ internal static class Program
 /// <param name="RunningAsService">
 /// False under <c>--console</c>, where there is no service to set permissions on.
 /// </param>
-public sealed record AgentHostInfo(bool RunningAsService);
+/// <param name="ControlPipeName">
+/// The pipe the tray reaches the service on. Only a test hosting a second agent beside a real
+/// one has a reason to change it.
+/// </param>
+public sealed record AgentHostInfo(bool RunningAsService, string ControlPipeName = AgentIpc.ServicePipeName);
