@@ -429,7 +429,7 @@ Not verified here: an elevated install/upgrade of 0.1.15, the tray launch paths 
 SYSTEM or an elevated token, the virtual printer on the machine that failed, page order on
 real printers.
 
-Suite: **346 C#, 171 routing-engine, 73 worker, 62 API (Postgres), 26 web; lint and typecheck
+Suite: **347 C#, 171 routing-engine, 73 worker, 62 API (Postgres), 26 web; lint and typecheck
 clean.**
 
 ### 2026-09-17 — the whole corpus as printed, and what the seven captures could not show
