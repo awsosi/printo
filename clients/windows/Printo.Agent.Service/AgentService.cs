@@ -24,12 +24,58 @@ namespace Printo.Agent.Service;
 public sealed class AgentService(
     ILogger<AgentService> logger,
     AgentConfiguration configuration,
-    IReadOnlyList<EffectiveSetting> settings) : BackgroundService
+    IReadOnlyList<EffectiveSetting> settings,
+    AgentSettingsState state,
+    RollingFileLog fileLog,
+    AgentHostInfo host) : BackgroundService
 {
+    /// <summary>How often the spool is garbage collected, beyond once at startup.</summary>
+    private static readonly TimeSpan CollectionInterval = TimeSpan.FromHours(1);
+
+    private readonly DateTimeOffset startedAt = DateTimeOffset.UtcNow;
+
+    /// <summary>Signalled to make the queue maintainer check now rather than at its next interval.</summary>
+    private readonly SemaphoreSlim queueCheckNow = new(0, 1);
+
+    private QueueResult? lastQueueResult;
+
+    private DateTimeOffset? lastQueueCheck;
+
+    private CollectionResult? lastCollection;
+
+    private DateTimeOffset? lastCollectionAt;
+
+    public override void Dispose()
+    {
+        queueCheckNow.Dispose();
+        base.Dispose();
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         Directory.CreateDirectory(configuration.DataDirectory);
         Directory.CreateDirectory(configuration.SpoolDirectory);
+
+        if (host.RunningAsService)
+        {
+            // Re-applied at every start, like the data directory's ACL, so a machine installed by
+            // the MSI - or one whose service permissions somebody reset - converges without a
+            // reinstall. Never fatal: without it the tray's buttons need an administrator, which
+            // is how things were before, not a reason to stop printing.
+            var usersMayControl = PolicyConfiguration.UsersCanControlService();
+            if (AgentServiceController.ApplyPermissions(usersMayControl) is { } refused)
+            {
+                logger.LogWarning(
+                    "The service permissions could not be set ({Problem}); starting and stopping the agent from the tray will need an administrator",
+                    refused);
+            }
+            else
+            {
+                logger.LogDebug(
+                    "Service permissions applied: interactive users {May} start and stop the agent",
+                    usersMayControl ? "may" : "may not");
+            }
+        }
 
         // Applied here rather than by the installer, and re-applied on every start. The MSI used
         // to do it through a custom action that named the accounts in English, which fails on a
@@ -45,6 +91,23 @@ public sealed class AgentService(
 
         using var spool = new JobSpool(configuration.DatabasePath);
 
+        // Every job's audit trail goes to the log file as it is written: the one place a support
+        // call can read what happened to a document, in order, beside everything else the agent
+        // did at the time.
+        spool.EventRecorded = entry => logger.Log(
+            entry.Level switch
+            {
+                "error" => LogLevel.Error,
+                "warning" => LogLevel.Warning,
+                _ => entry.Code is "accepted" or "completed" or "cleared" or "expired" or "waybill-skipped"
+                    ? LogLevel.Information
+                    : LogLevel.Debug,
+            },
+            "Job {JobId} {Code}: {Detail}",
+            entry.JobId,
+            entry.Code,
+            entry.Detail ?? string.Empty);
+
         // Anything a previous instance was holding when it died is released before the first
         // pass, so a crash costs a restart rather than a stuck queue.
         var recovered = spool.RecoverStaleClaims();
@@ -52,6 +115,14 @@ public sealed class AgentService(
         {
             logger.LogWarning("Recovered {Count} job(s) stranded by a previous instance", recovered);
         }
+
+        var janitor = new SpoolJanitor(
+            spool,
+            configuration.SpoolDirectory,
+            () => state.Current.Retention,
+            (code, detail) => logger.LogInformation("Spool {Code}: {Detail}", code, detail));
+
+        Collect(janitor);
 
         var ocr = TryCreateRecogniser();
 
@@ -83,6 +154,9 @@ public sealed class AgentService(
                 setting.IsManaged ? " [managed by Group Policy]" : string.Empty);
         }
 
+        LogEffective(state.Current);
+        state.Changed += LogEffective;
+
         var sync = new FleetSync(
             configuration,
             Path.Combine(configuration.DataDirectory, "identity.json"),
@@ -92,6 +166,11 @@ public sealed class AgentService(
             // A multi-use token in a GPO is how a fleet enrols unattended: each machine reads
             // it once, exchanges it for its own credential, and never needs it again.
             EnrolmentToken = PolicyConfiguration.EnrolmentToken(),
+
+            // The fleet policy the server sends on each heartbeat, kept on disk so a restart
+            // during an outage still runs on it, and applied the moment it changes.
+            PolicyCachePath = Path.Combine(configuration.DataDirectory, "fleet-policy.json"),
+            PolicyChanged = state.Update,
         };
 
         using var client = sync.HasServer
@@ -118,6 +197,10 @@ public sealed class AgentService(
             // next service start; templates change far less often than rules, and re-reading
             // them per job would decode every PNG on every page.
             Templates = sync.CurrentBundle.Templates,
+
+            // Thermal stock and page order, read per job so a fleet policy that changes
+            // mid-shift applies to the next one.
+            Settings = () => state.Current,
         };
 
         var prompter = new TrayPrompter(WindowsSessions.InteractiveSessions);
@@ -158,6 +241,11 @@ public sealed class AgentService(
 
         await using var virtualPrinter = await StartVirtualPrinterAsync(spool, Wake, stoppingToken);
 
+        // The tray's way in: realtime status, and the actions that need this process's rights.
+        using var control = new ServiceControlServer(command => HandleControl(
+            command, spool, janitor, sync, virtualPrinter, ocr, Wake));
+        control.Start();
+
         logger.LogInformation(
             "Printo agent started: virtual printer {Printer}, {Folders} watched folder(s), " +
             "{Printers} printer(s), mode {Mode}, server {Server}",
@@ -170,9 +258,16 @@ public sealed class AgentService(
             sync.HasServer ? configuration.ServerUrl : "none (standalone)");
 
         var nextSync = DateTimeOffset.MinValue;
+        var nextCollection = DateTimeOffset.UtcNow + CollectionInterval;
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            if (DateTimeOffset.UtcNow >= nextCollection)
+            {
+                Collect(janitor);
+                nextCollection = DateTimeOffset.UtcNow + CollectionInterval;
+            }
+
             if (sync.HasServer && DateTimeOffset.UtcNow >= nextSync)
             {
                 // On its own cadence, and never fatal: a job must not wait on a heartbeat, and
@@ -368,39 +463,64 @@ public sealed class AgentService(
     /// On its own task because <c>Add-Printer</c> stages a driver package the first time it runs
     /// and can take the better part of a minute. Inline, that would hold up every job in the
     /// spool behind a printer that does not exist yet.
+    ///
+    /// A failure is retried sooner than the routine check - after one, two and five minutes -
+    /// because the usual causes are a spooler still starting after boot or a driver being staged,
+    /// and those resolve on their own. Each failure is logged with what the checks found, so the
+    /// event log names the cause rather than only the symptom.
     /// </remarks>
     private void MaintainQueue(VirtualPrinterServer server, string printerName, CancellationToken stoppingToken)
     {
         _ = Task.Run(
             async () =>
             {
+                TimeSpan[] backoff = [TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(5)];
+                var failures = 0;
+
                 while (!stoppingToken.IsCancellationRequested)
                 {
                     try
                     {
                         var result = VirtualPrinterQueue.Ensure(printerName, server.EndpointUrl);
+                        lastQueueResult = result;
+                        lastQueueCheck = DateTimeOffset.UtcNow;
+
                         if (!result.Succeeded)
                         {
+                            failures++;
                             logger.LogError(
-                                "The {Printer} queue could not be created: {Detail}. Applications will not " +
+                                "The {Printer} queue could not be created: {Detail}. Checks: {Findings}. Applications will not " +
                                 "see it until this is resolved; watched folders are unaffected",
                                 printerName,
-                                result.Detail);
+                                result.Detail,
+                                result.Findings.Count == 0 ? "none ran" : string.Join("; ", result.Findings));
                         }
-                        else if (result.Code != "present")
+                        else
                         {
-                            logger.LogInformation(
-                                "Queue {Printer} {Code} ({Detail})", printerName, result.Code, result.Detail);
+                            failures = 0;
+                            if (result.Code != "present")
+                            {
+                                logger.LogInformation(
+                                    "Queue {Printer} {Code} ({Detail}){Findings}",
+                                    printerName,
+                                    result.Code,
+                                    result.Detail,
+                                    result.Findings.Count == 0 ? string.Empty : "; " + string.Join("; ", result.Findings));
+                            }
                         }
                     }
                     catch (Exception error) when (error is not OperationCanceledException)
                     {
+                        failures++;
+                        lastQueueResult = new QueueResult { Succeeded = false, Code = "failed", Detail = error.Message };
+                        lastQueueCheck = DateTimeOffset.UtcNow;
                         logger.LogError(error, "The {Printer} queue check failed", printerName);
                     }
 
+                    var wait = failures == 0 ? QueueCheckInterval : backoff[Math.Min(failures, backoff.Length) - 1];
                     try
                     {
-                        await Task.Delay(QueueCheckInterval, stoppingToken);
+                        await queueCheckNow.WaitAsync(wait, stoppingToken);
                     }
                     catch (OperationCanceledException)
                     {
@@ -409,6 +529,170 @@ public sealed class AgentService(
                 }
             },
             stoppingToken);
+    }
+
+    /// <summary>Asks the queue maintainer to check now.</summary>
+    private void CheckQueueNow()
+    {
+        try
+        {
+            if (queueCheckNow.CurrentCount == 0)
+            {
+                queueCheckNow.Release();
+            }
+        }
+        catch (SemaphoreFullException)
+        {
+            // Already asked.
+        }
+    }
+
+    /// <summary>Runs the garbage collector, never letting it take the loop down.</summary>
+    private void Collect(SpoolJanitor janitor)
+    {
+        try
+        {
+            lastCollection = janitor.Collect();
+            lastCollectionAt = DateTimeOffset.UtcNow;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException or InvalidOperationException)
+        {
+            logger.LogError(error, "Spool garbage collection failed; it runs again within the hour");
+        }
+    }
+
+    private void LogEffective(EffectiveSettings current)
+    {
+        logger.LogInformation(
+            "Effective: waybills {Waybills} (from {WaybillSource}), thermal media {Media} (from {MediaSource}), " +
+            "log files {Logging} (from {LoggingSource}), spool {Retention} (from {RetentionSource})",
+            current.WaybillHandling is { } handling ? WaybillHandlings.ToWire(handling) : "as the rule bundle says",
+            current.WaybillHandlingSource,
+            MediaSizes.Format(current.ThermalMedia),
+            current.ThermalMediaSource,
+            current.Logging,
+            current.LoggingSource,
+            current.Retention,
+            current.RetentionSource);
+    }
+
+    /// <summary>Answers the tray.</summary>
+    private ServiceReply HandleControl(
+        ServiceCommand command,
+        JobSpool spool,
+        SpoolJanitor janitor,
+        FleetSync sync,
+        VirtualPrinterServer? virtualPrinter,
+        WindowsOcrEngine? ocr,
+        Action wake)
+    {
+        switch (command.Kind)
+        {
+            case ServiceCommandKind.Status:
+                return new ServiceReply { Ok = true, Status = Snapshot(spool, janitor, sync, virtualPrinter, ocr) };
+
+            case ServiceCommandKind.ClearQueue:
+            {
+                var reason = string.IsNullOrWhiteSpace(command.Reason) ? "cleared from the tray" : command.Reason;
+                logger.LogWarning("Clearing every unfinished job: {Reason}", reason);
+
+                var result = janitor.ClearQueue(reason);
+
+                // Documents printed while the agent was down are waiting in the Windows queue,
+                // not the spool, and would arrive the moment it came back.
+                string? windows = null;
+                if (configuration.VirtualPrinter.Enabled)
+                {
+                    var purge = VirtualPrinterQueue.Purge(configuration.VirtualPrinter.PrinterName);
+                    windows = purge.Succeeded ? purge.Detail : purge.ToString();
+                }
+
+                result = result with { WindowsQueue = windows };
+                logger.LogWarning("Cleared: {Result}", result);
+                wake();
+                return new ServiceReply { Ok = true, Message = result.ToString() };
+            }
+
+            case ServiceCommandKind.RepairVirtualPrinter:
+            {
+                if (!configuration.VirtualPrinter.Enabled || virtualPrinter is null)
+                {
+                    return ServiceReply.Failure("the virtual printer is not running on this machine, so there is no queue to repair");
+                }
+
+                var findings = VirtualPrinterQueue.Diagnose(configuration.VirtualPrinter.PrinterName, virtualPrinter.EndpointUrl);
+                CheckQueueNow();
+                return new ServiceReply
+                {
+                    Ok = true,
+                    Message = "The queue is being checked and repaired now.\n\n" + string.Join("\n", findings),
+                };
+            }
+
+            case ServiceCommandKind.CollectGarbage:
+                Collect(janitor);
+                return new ServiceReply { Ok = true, Message = lastCollection?.ToString() ?? "nothing to do" };
+
+            default:
+                return ServiceReply.Failure($"unsupported command {command.Kind}");
+        }
+    }
+
+    private AgentStatusSnapshot Snapshot(
+        JobSpool spool,
+        SpoolJanitor janitor,
+        FleetSync sync,
+        VirtualPrinterServer? virtualPrinter,
+        WindowsOcrEngine? ocr)
+    {
+        var current = state.Current;
+        var jobs = spool.List();
+        int Count(params JobState[] wanted) => jobs.Count(job => wanted.Contains(job.State));
+
+        return new AgentStatusSnapshot
+        {
+            AgentVersion = typeof(AgentService).Assembly.GetName().Version?.ToString(3) ?? "?",
+            StartedAt = startedAt,
+            At = DateTimeOffset.UtcNow,
+            DecisionMode = configuration.DecisionMode.ToString(),
+            ServerUrl = sync.HasServer ? configuration.ServerUrl : null,
+            ServerOutcome = sync.HasServer ? sync.LastOutcome : null,
+            ServerContactAt = sync.LastContact,
+            BundleVersion = sync.CurrentBundle.Version,
+            VirtualPrinterEnabled = configuration.VirtualPrinter.Enabled,
+            VirtualPrinterName = configuration.VirtualPrinter.PrinterName,
+            VirtualPrinterEndpoint = virtualPrinter?.EndpointUrl,
+            VirtualPrinterListening = virtualPrinter is not null,
+            QueueState = !configuration.VirtualPrinter.ManageQueue
+                ? "unmanaged"
+                : lastQueueResult?.Code ?? (virtualPrinter is null ? null : "checking"),
+            QueueDetail = lastQueueResult is { Succeeded: false } failed
+                ? failed.Detail + (failed.Findings.Count == 0 ? string.Empty : "\n" + string.Join("\n", failed.Findings))
+                : lastQueueResult?.Detail,
+            QueueCheckedAt = lastQueueCheck,
+            OcrAvailable = ocr is not null,
+            OcrLanguage = ocr?.Language,
+            WaybillHandling = (current.WaybillHandling is { } handling ? WaybillHandlings.ToWire(handling) : "route (rule bundle)")
+                + $" - {current.WaybillHandlingSource}",
+            ThermalMedia = $"{MediaSizes.Format(current.ThermalMedia)} - {current.ThermalMediaSource}",
+            Logging = $"{current.Logging} - {current.LoggingSource}",
+            Retention = $"{current.Retention} - {current.RetentionSource}",
+            LogDirectory = fileLog.CurrentPath is { } path ? Path.GetDirectoryName(path) : configuration.LogDirectory,
+            Pending = Count(JobState.Pending),
+            Printing = Count(JobState.Claimed),
+            AwaitingUser = Count(JobState.AwaitingUser),
+            Retrying = Count(JobState.Retrying),
+            Failed = Count(JobState.Poison),
+            SpoolBytes = janitor.HeldBytes(),
+            LastCollection = lastCollection?.ToString(),
+            LastCollectionAt = lastCollectionAt,
+            RecentJobs = jobs
+                .OrderByDescending(job => job.UpdatedAt)
+                .ThenByDescending(job => job.Id)
+                .Take(25)
+                .Select(JobSummary.From)
+                .ToList(),
+        };
     }
 
     /// <summary>Label stock the queue offers, taken from this machine's thermal printers.</summary>
@@ -440,7 +724,7 @@ public sealed class AgentService(
     /// </remarks>
     private IRoutingDecider BuildDecider(FleetSync sync, HttpServerClient? client, ILogger log)
     {
-        var local = new LocalDecider(() => sync.CurrentBundle);
+        var local = new LocalDecider(() => sync.CurrentBundle, () => state.Current.WaybillHandling);
 
         if (configuration.DecisionMode == DecisionMode.Local || client is null)
         {
@@ -457,6 +741,7 @@ public sealed class AgentService(
         var server = new ServerDecider(client, (code, detail) => log.LogWarning("Decide {Code}: {Detail}", code, detail))
         {
             Bundle = () => sync.CurrentBundle,
+            WaybillHandling = () => state.Current.WaybillHandling,
         };
 
         return configuration.DecisionMode == DecisionMode.Server
@@ -494,6 +779,7 @@ public sealed class AgentService(
             Darkness = printer.Darkness,
             Speed = printer.Speed,
             ThermalMode = printer.RawZpl ? ThermalMode.ZplRaster : ThermalMode.DriverRaster,
+            PageOrder = printer.PageOrder,
         }).ToList();
 
         return profiles;

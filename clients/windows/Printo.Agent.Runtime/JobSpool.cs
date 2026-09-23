@@ -63,6 +63,12 @@ public sealed class JobSpool : IDisposable
     public Func<DateTimeOffset> Clock { get; set; } = () => DateTimeOffset.UtcNow;
 
     /// <summary>
+    /// Called with every audit line as it is recorded, so the service's log file carries the
+    /// whole life of every job without each step having to log it twice.
+    /// </summary>
+    public Action<SpoolEvent>? EventRecorded { get; set; }
+
+    /// <summary>
     /// Accepts a job, or returns the existing one when <paramref name="jobKey"/> was already
     /// seen.
     /// </summary>
@@ -160,7 +166,7 @@ public sealed class JobSpool : IDisposable
                       WHERE (state = $pending
                              OR (state = $retrying AND (next_attempt_at IS NULL OR next_attempt_at <= $now))
                              OR (state = $claimed AND claimed_at <= $leaseExpiry))
-                      ORDER BY created_at
+                      ORDER BY created_at, id
                       LIMIT 1)
                 RETURNING id;
                 """;
@@ -227,6 +233,15 @@ public sealed class JobSpool : IDisposable
 
             var job = FindById(jobId, transaction)
                 ?? throw new InvalidOperationException($"job {jobId} not found");
+
+            if (job.State == JobState.Cancelled)
+            {
+                // Cleared while it was being worked on. The failure is recorded and nothing else:
+                // scheduling a retry would bring back a job an operator has just thrown away.
+                AppendEvent(jobId, "info", "ignored-after-cancel", error, transaction);
+                transaction.Commit();
+                return job;
+            }
 
             var now = Clock();
             var poisoned = job.Attempts >= maxAttempts;
@@ -407,6 +422,196 @@ public sealed class JobSpool : IDisposable
         }
     }
 
+    /// <summary>
+    /// Cancels every job that has not finished - queued, retrying, waiting for a person, failed,
+    /// and the one being printed - so the agent starts again from an empty queue.
+    /// </summary>
+    /// <remarks>
+    /// The reset button an operator reaches for when a bench has got into a state nobody can
+    /// explain. Cancelled, not deleted: the history still says what was thrown away and why, and
+    /// the garbage collector removes the rows in its own time. A job the service is printing
+    /// right now is cancelled too, and stays cancelled when that print finishes, so what is
+    /// already on its way to the printer completes and nothing comes back.
+    /// </remarks>
+    /// <returns>The jobs that were cancelled, as they were before the change.</returns>
+    public IReadOnlyList<SpoolJob> ClearQueue(string reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+
+        lock (gate)
+        {
+            var open = List(
+                JobState.Pending,
+                JobState.Claimed,
+                JobState.Retrying,
+                JobState.AwaitingUser,
+                JobState.Poison);
+
+            var now = Format(Clock());
+            using var transaction = connection.BeginTransaction();
+            var cleared = new List<SpoolJob>();
+
+            foreach (var job in open)
+            {
+                using var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText =
+                    "UPDATE jobs SET state = $cancelled, claim_owner = NULL, claimed_at = NULL, " +
+                    "next_attempt_at = NULL, updated_at = $now WHERE id = $id AND state = $state;";
+                command.Parameters.AddWithValue("$cancelled", JobState.Cancelled.ToString());
+                command.Parameters.AddWithValue("$now", now);
+                command.Parameters.AddWithValue("$id", job.Id);
+                command.Parameters.AddWithValue("$state", job.State.ToString());
+
+                if (command.ExecuteNonQuery() == 1)
+                {
+                    AppendEvent(job.Id, "warning", "cleared", reason, transaction);
+                    cleared.Add(job);
+                }
+            }
+
+            transaction.Commit();
+            return cleared;
+        }
+    }
+
+    /// <summary>
+    /// Gives up on jobs that have waited longer than anyone will still want them.
+    /// </summary>
+    /// <remarks>
+    /// Failed, retrying and parked jobs only. A pending job is never expired: it has not been
+    /// looked at yet, and the reason is a stopped service, not an unwanted document.
+    /// </remarks>
+    /// <returns>How many jobs were given up on.</returns>
+    public int ExpireUnprinted(DateTimeOffset createdBefore, string reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+
+        lock (gate)
+        {
+            using var transaction = connection.BeginTransaction();
+            var expired = new List<long>();
+
+            using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText =
+                    "UPDATE jobs SET state = $cancelled, claim_owner = NULL, claimed_at = NULL, " +
+                    "next_attempt_at = NULL, updated_at = $now " +
+                    "WHERE state IN ($retrying, $awaiting, $poison) AND created_at < $cutoff RETURNING id;";
+                command.Parameters.AddWithValue("$cancelled", JobState.Cancelled.ToString());
+                command.Parameters.AddWithValue("$retrying", JobState.Retrying.ToString());
+                command.Parameters.AddWithValue("$awaiting", JobState.AwaitingUser.ToString());
+                command.Parameters.AddWithValue("$poison", JobState.Poison.ToString());
+                command.Parameters.AddWithValue("$now", Format(Clock()));
+                command.Parameters.AddWithValue("$cutoff", Format(createdBefore));
+
+                using var reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    expired.Add(reader.GetInt64(0));
+                }
+            }
+
+            foreach (var id in expired)
+            {
+                AppendEvent(id, "warning", "expired", reason, transaction);
+            }
+
+            transaction.Commit();
+            return expired.Count;
+        }
+    }
+
+    /// <summary>Records that the spool's copy of each job's document is gone.</summary>
+    public void MarkPayloadRemoved(IEnumerable<long> jobIds)
+    {
+        ArgumentNullException.ThrowIfNull(jobIds);
+
+        lock (gate)
+        {
+            var now = Format(Clock());
+            using var transaction = connection.BeginTransaction();
+            foreach (var id in jobIds)
+            {
+                using var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText =
+                    "UPDATE jobs SET payload_removed_at = $now WHERE id = $id AND payload_removed_at IS NULL;";
+                command.Parameters.AddWithValue("$now", now);
+                command.Parameters.AddWithValue("$id", id);
+                command.ExecuteNonQuery();
+            }
+
+            transaction.Commit();
+        }
+    }
+
+    /// <summary>
+    /// Deletes finished jobs last touched before <paramref name="updatedBefore"/>, with their
+    /// audit trails.
+    /// </summary>
+    /// <remarks>
+    /// Only once their document is gone: a row is the only thing that knows where its payload
+    /// lives, and deleting it first would leave a file nothing would ever clean up.
+    /// </remarks>
+    /// <returns>How many jobs were deleted.</returns>
+    public int DeleteHistory(DateTimeOffset updatedBefore)
+    {
+        lock (gate)
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                "DELETE FROM jobs WHERE state IN ($completed, $cancelled) AND updated_at < $cutoff " +
+                "AND payload_removed_at IS NOT NULL;";
+            command.Parameters.AddWithValue("$completed", JobState.Completed.ToString());
+            command.Parameters.AddWithValue("$cancelled", JobState.Cancelled.ToString());
+            command.Parameters.AddWithValue("$cutoff", Format(updatedBefore));
+            return command.ExecuteNonQuery();
+        }
+    }
+
+    /// <summary>
+    /// Hands freed space back to the file system when enough of the file is empty to matter.
+    /// </summary>
+    /// <remarks>
+    /// Deleting rows leaves free pages inside the database; the file only shrinks when it is
+    /// rebuilt. Rebuilding needs the file to itself, so it is attempted and quietly skipped when
+    /// the tray has it open for reading - the next collection tries again.
+    /// </remarks>
+    /// <returns>True when the file was rebuilt.</returns>
+    public bool Compact(double minimumFreeFraction = 0.25)
+    {
+        lock (gate)
+        {
+            long Scalar(string sql)
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = sql;
+                return Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+            }
+
+            try
+            {
+                Execute("PRAGMA wal_checkpoint(TRUNCATE);");
+
+                var pages = Scalar("PRAGMA page_count;");
+                var free = Scalar("PRAGMA freelist_count;");
+                if (pages == 0 || (double)free / pages < minimumFreeFraction)
+                {
+                    return false;
+                }
+
+                Execute("VACUUM;");
+                return true;
+            }
+            catch (SqliteException)
+            {
+                return false;
+            }
+        }
+    }
+
     /// <summary>Records that a file has been seen, for hot-folder deduplication.</summary>
     /// <returns>True when this is the first time; false when it was already known.</returns>
     public bool RecordSeenFile(string sha256, string path, long size, DateTimeOffset modifiedAt)
@@ -493,12 +698,12 @@ public sealed class JobSpool : IDisposable
             using var command = connection.CreateCommand();
             if (states.Length == 0)
             {
-                command.CommandText = "SELECT * FROM jobs ORDER BY created_at;";
+                command.CommandText = "SELECT * FROM jobs ORDER BY created_at, id;";
             }
             else
             {
                 var names = states.Select((_, index) => $"$s{index}").ToArray();
-                command.CommandText = $"SELECT * FROM jobs WHERE state IN ({string.Join(",", names)}) ORDER BY created_at;";
+                command.CommandText = $"SELECT * FROM jobs WHERE state IN ({string.Join(",", names)}) ORDER BY created_at, id;";
                 for (var index = 0; index < states.Length; index++)
                 {
                     command.Parameters.AddWithValue(names[index], states[index].ToString());
@@ -574,19 +779,30 @@ public sealed class JobSpool : IDisposable
         lock (gate)
         {
             using var transaction = connection.BeginTransaction();
+            int changed;
             using (var command = connection.CreateCommand())
             {
                 command.Transaction = transaction;
+
+                // A cancelled job stays cancelled. The service may be half way through printing
+                // one when an operator clears the queue; its completion arriving afterwards must
+                // not bring the job back, or the next "clear" finds it again.
                 command.CommandText = clearClaim
-                    ? "UPDATE jobs SET state = $state, claim_owner = NULL, claimed_at = NULL, updated_at = $now WHERE id = $id;"
-                    : "UPDATE jobs SET state = $state, updated_at = $now WHERE id = $id;";
+                    ? "UPDATE jobs SET state = $state, claim_owner = NULL, claimed_at = NULL, updated_at = $now WHERE id = $id AND state <> $cancelled;"
+                    : "UPDATE jobs SET state = $state, updated_at = $now WHERE id = $id AND state <> $cancelled;";
                 command.Parameters.AddWithValue("$state", state.ToString());
+                command.Parameters.AddWithValue("$cancelled", JobState.Cancelled.ToString());
                 command.Parameters.AddWithValue("$now", Format(Clock()));
                 command.Parameters.AddWithValue("$id", jobId);
-                command.ExecuteNonQuery();
+                changed = command.ExecuteNonQuery();
             }
 
-            AppendEvent(jobId, state == JobState.Poison ? "error" : "info", code, detail, transaction);
+            AppendEvent(
+                jobId,
+                state == JobState.Poison ? "error" : "info",
+                changed == 0 && state != JobState.Cancelled ? $"ignored-after-cancel:{code}" : code,
+                detail,
+                transaction);
             transaction.Commit();
         }
     }
@@ -603,6 +819,18 @@ public sealed class JobSpool : IDisposable
         command.Parameters.AddWithValue("$code", code);
         command.Parameters.AddWithValue("$detail", (object?)detail ?? DBNull.Value);
         command.ExecuteNonQuery();
+
+        if (EventRecorded is { } recorded)
+        {
+            try
+            {
+                recorded(new SpoolEvent { JobId = jobId, At = Clock(), Level = level, Code = code, Detail = detail });
+            }
+            catch (Exception error) when (error is IOException or InvalidOperationException)
+            {
+                // A log that cannot be written must not fail the transition it describes.
+            }
+        }
     }
 
     private SpoolJob? FindByKey(string jobKey, SqliteTransaction? transaction)
@@ -653,6 +881,7 @@ public sealed class JobSpool : IDisposable
             Error = Nullable("error"),
             UserName = Nullable("user_name"),
             Copies = reader.GetInt32(reader.GetOrdinal("copies")),
+            PayloadRemovedAt = Nullable("payload_removed_at") is { } removed ? Parse(removed) : null,
         };
     }
 
@@ -686,6 +915,10 @@ public sealed class JobSpool : IDisposable
         // here rather than by recreating the table, because the file may hold work that has
         // not printed yet and an upgrade must not lose a queued job.
         AddColumnIfMissing("jobs", "copies", "INTEGER NOT NULL DEFAULT 1");
+
+        // Spools from before garbage collection record nothing about their documents' removal.
+        // Null on every existing row is exactly right: none of them has been removed.
+        AddColumnIfMissing("jobs", "payload_removed_at", "TEXT");
 
         Execute("CREATE INDEX IF NOT EXISTS jobs_state_created ON jobs (state, created_at);");
         Execute("CREATE INDEX IF NOT EXISTS jobs_sha ON jobs (doc_sha256);");

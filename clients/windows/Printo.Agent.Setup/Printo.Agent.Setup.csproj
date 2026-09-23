@@ -64,6 +64,14 @@
     <ApplicationIcon>$(PrintoIcon)</ApplicationIcon>
   </PropertyGroup>
 
+  <!--
+    Who may start and stop the service: one file, compiled into both the agent (which re-applies
+    it at every start) and the installer (which applies it at install), so the two cannot drift.
+  -->
+  <ItemGroup>
+    <Compile Include="..\Shared\ServiceDacl.cs" Link="Shared\ServiceDacl.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- The argument parsing and the parity with the MSI are tested; the rest needs a machine. -->
     <InternalsVisibleTo Include="Printo.Agent.Tests" />

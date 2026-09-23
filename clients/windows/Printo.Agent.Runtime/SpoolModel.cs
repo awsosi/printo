@@ -98,6 +98,12 @@ public sealed class SpoolJob
     /// ask for at the moment the page is sent.
     /// </remarks>
     public int Copies { get; init; } = 1;
+
+    /// <summary>When the spool's copy of the document was removed, once the job was done with it.</summary>
+    public DateTimeOffset? PayloadRemovedAt { get; init; }
+
+    /// <summary>True for the states a job never leaves.</summary>
+    public bool IsFinished => State is JobState.Completed or JobState.Cancelled;
 }
 
 /// <summary>An audit line against a job.</summary>

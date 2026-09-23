@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Runtime.Versioning;
 using Microsoft.Win32;
+using Printo.Agent.Core.Routing;
 
 namespace Printo.Agent.Runtime;
 
@@ -153,6 +154,25 @@ public static class PolicyConfiguration
             ReadString(root, "VirtualPrinterManageQueue"),
             sources);
 
+        var thermalMedia = ResolveOptional(
+            "ThermalMedia",
+            fromFile.ThermalMedia,
+            fileExists,
+            ReadString(root, "ThermalMedia"),
+            value => MediaSizes.Parse(value) is null ? null : value,
+            sources);
+
+        var waybillHandling = ResolveOptional(
+            "WaybillHandling",
+            fromFile.WaybillHandling,
+            fileExists,
+            ReadString(root, "WaybillHandling"),
+            WaybillHandlings.Parse,
+            sources);
+
+        var logging = ResolveLogging(root, fromFile.Logging, fileExists, sources);
+        var retention = ResolveRetention(root, fromFile.Retention, fileExists, sources);
+
         var configuration = new AgentConfiguration
         {
             DataDirectory = dataDirectory,
@@ -168,6 +188,13 @@ public static class PolicyConfiguration
             HotFolders = fromFile.HotFolders,
             PollInterval = fromFile.PollInterval,
             DedupeRetention = fromFile.DedupeRetention,
+
+            // Fleet-wide operational choices, and so policy-manageable like the virtual printer.
+            // Null still means "inherit the server's fleet policy" - see EffectiveSettings.
+            ThermalMedia = thermalMedia,
+            WaybillHandling = waybillHandling,
+            Logging = logging,
+            Retention = retention,
 
             // The virtual printer *is* policy-managed, unlike the printer map: whether a site
             // captures print jobs at all, and under what name, is a fleet-wide decision, and an
@@ -191,6 +218,20 @@ public static class PolicyConfiguration
     /// </remarks>
     public static string? EnrolmentToken(RegistryKey? root = null) =>
         ReadString(root ?? Registry.LocalMachine, "EnrollmentToken") is { } found ? found.Value : null;
+
+    /// <summary>
+    /// Whether interactive users may start and stop the agent service - true unless a policy or
+    /// the installer says <c>UsersCanControlService = 0</c>.
+    /// </summary>
+    /// <remarks>
+    /// On by default because the tray's service buttons, and restarting after a settings change,
+    /// have to work for the operator at the desk, who is not an administrator. A site that wants
+    /// only administrators to stop the agent turns it off, and the agent restores the Windows
+    /// default permissions at its next start.
+    /// </remarks>
+    public static bool UsersCanControlService(RegistryKey? root = null) =>
+        ReadString(root ?? Registry.LocalMachine, "UsersCanControlService") is not { } found
+        || ParseBool(found.Value) != false;
 
     /// <summary>Reads a value from the policy key, then the install key.</summary>
     private static (string Value, ConfigurationLayer Layer)? ReadString(RegistryKey root, string name)
@@ -292,6 +333,145 @@ public static class PolicyConfiguration
         sources.Add(new EffectiveSetting(name, fromFile ? "true" : "false", layer));
         return fromFile;
     }
+
+    /// <summary>
+    /// Resolves a setting that may be left unset to inherit the server's fleet policy.
+    /// </summary>
+    /// <remarks>
+    /// A registry value that does not parse is ignored rather than taken as "unset", for the same
+    /// reason <see cref="ResolveBool"/> ignores one: a typo in a GPO must not quietly change what
+    /// a fleet does. The file's own value, or its absence, stands.
+    /// </remarks>
+    private static T? ResolveOptional<T>(
+        string name,
+        T? fromFile,
+        bool fileExists,
+        (string Value, ConfigurationLayer Layer)? fromRegistry,
+        Func<string, T?> parse,
+        List<EffectiveSetting> sources)
+    {
+        if (fromRegistry is { } registry && parse(registry.Value) is { } parsed)
+        {
+            sources.Add(new EffectiveSetting(name, Describe(parsed), registry.Layer));
+            return parsed;
+        }
+
+        sources.Add(new EffectiveSetting(
+            name,
+            fromFile is null ? "(inherited)" : Describe(fromFile),
+            fileExists && fromFile is not null ? ConfigurationLayer.File : ConfigurationLayer.Default));
+        return fromFile;
+    }
+
+    private static string Describe<T>(T value) => value switch
+    {
+        WaybillHandling handling => WaybillHandlings.ToWire(handling),
+        _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty,
+    };
+
+    /// <summary>
+    /// The log-file settings: each of the four registry values replaces its one field over the
+    /// file's settings, and the group counts as managed when policy sets any of them.
+    /// </summary>
+    private static LoggingSettings? ResolveLogging(
+        RegistryKey root, LoggingSettings? fromFile, bool fileExists, List<EffectiveSetting> sources)
+    {
+        var enabled = ReadString(root, "LogToFile");
+        var level = ReadString(root, "LogLevel");
+        var size = ReadString(root, "LogMaxFileSizeMb");
+        var files = ReadString(root, "LogMaxFiles");
+
+        var enabledValue = enabled is { } e ? ParseBool(e.Value) : null;
+        AgentLogLevel? levelValue =
+            level is { } l
+            && Enum.TryParse<AgentLogLevel>(l.Value, ignoreCase: true, out var parsedLevel)
+            && Enum.IsDefined(parsedLevel)
+                ? parsedLevel
+                : null;
+        var sizeValue = ParsePositive(size);
+        var filesValue = ParsePositive(files);
+
+        var layers = new List<ConfigurationLayer>();
+        if (enabledValue is not null) { layers.Add(enabled!.Value.Layer); }
+        if (levelValue is not null) { layers.Add(level!.Value.Layer); }
+        if (sizeValue is not null) { layers.Add(size!.Value.Layer); }
+        if (filesValue is not null) { layers.Add(files!.Value.Layer); }
+
+        if (layers.Count == 0)
+        {
+            sources.Add(new EffectiveSetting(
+                "Logging",
+                fromFile?.ToString() ?? "(inherited)",
+                fileExists && fromFile is not null ? ConfigurationLayer.File : ConfigurationLayer.Default));
+            return fromFile;
+        }
+
+        var baseline = fromFile ?? new LoggingSettings();
+        var resolved = new LoggingSettings
+        {
+            FileEnabled = enabledValue ?? baseline.FileEnabled,
+            Level = levelValue ?? baseline.Level,
+            MaxFileSizeMb = sizeValue ?? baseline.MaxFileSizeMb,
+            MaxFiles = filesValue ?? baseline.MaxFiles,
+        }.Normalised();
+
+        sources.Add(new EffectiveSetting("Logging", resolved.ToString(), layers.Max()));
+        return resolved;
+    }
+
+    /// <summary>The spool retention settings, resolved the same way as the log settings.</summary>
+    private static SpoolRetentionSettings? ResolveRetention(
+        RegistryKey root, SpoolRetentionSettings? fromFile, bool fileExists, List<EffectiveSetting> sources)
+    {
+        var printed = ReadString(root, "KeepPrintedHours");
+        var history = ReadString(root, "KeepHistoryDays");
+        var expire = ReadString(root, "ExpireUnprintedDays");
+        var cap = ReadString(root, "MaxSpoolMb");
+
+        double? printedValue =
+            printed is { } p
+            && double.TryParse(p.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var hours)
+            && hours >= 0
+                ? hours
+                : null;
+        var historyValue = ParsePositive(history);
+        var expireValue = ParsePositive(expire);
+        var capValue = ParsePositive(cap);
+
+        var layers = new List<ConfigurationLayer>();
+        if (printedValue is not null) { layers.Add(printed!.Value.Layer); }
+        if (historyValue is not null) { layers.Add(history!.Value.Layer); }
+        if (expireValue is not null) { layers.Add(expire!.Value.Layer); }
+        if (capValue is not null) { layers.Add(cap!.Value.Layer); }
+
+        if (layers.Count == 0)
+        {
+            sources.Add(new EffectiveSetting(
+                "Retention",
+                fromFile?.ToString() ?? "(inherited)",
+                fileExists && fromFile is not null ? ConfigurationLayer.File : ConfigurationLayer.Default));
+            return fromFile;
+        }
+
+        var baseline = fromFile ?? new SpoolRetentionSettings();
+        var resolved = new SpoolRetentionSettings
+        {
+            KeepPrintedHours = printedValue ?? baseline.KeepPrintedHours,
+            KeepHistoryDays = historyValue ?? baseline.KeepHistoryDays,
+            ExpireUnprintedDays = expireValue ?? baseline.ExpireUnprintedDays,
+            MaxSpoolMb = capValue ?? baseline.MaxSpoolMb,
+        }.Normalised();
+
+        sources.Add(new EffectiveSetting("Retention", resolved.ToString(), layers.Max()));
+        return resolved;
+    }
+
+    private static int? ParsePositive((string Value, ConfigurationLayer Layer)? value) =>
+        value is { } found
+        && int.TryParse(found.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+        && parsed > 0
+            ? parsed
+            : null;
 
     internal static bool? ParseBool(string value) => value.Trim().ToLowerInvariant() switch
     {

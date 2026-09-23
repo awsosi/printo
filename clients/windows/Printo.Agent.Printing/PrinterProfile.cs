@@ -95,6 +95,12 @@ public sealed class PrinterProfile
     public int Copies { get; init; } = 1;
 
     /// <summary>
+    /// Which page of a job goes first. <see cref="PageOrder.Auto"/> is resolved at print time
+    /// against the fleet's default for the role, so a policy change needs no restart.
+    /// </summary>
+    public PageOrder PageOrder { get; init; } = PageOrder.Auto;
+
+    /// <summary>
     /// Merges this profile's overrides into a rule's transform.
     /// </summary>
     /// <remarks>

@@ -29,7 +29,12 @@ public sealed class ServerRejectedException(HttpStatusCode status, string code, 
 public sealed record EnrolmentResult(string AgentId, string ApiKey, string MachineName);
 
 /// <summary>What the server said on a heartbeat.</summary>
-public sealed record HeartbeatResult(long? BundleVersion);
+/// <param name="BundleVersion">The bundle the fleet should be on.</param>
+/// <param name="Policy">
+/// The fleet policy for this agent, or <c>null</c> from a server that predates it - in which case
+/// whatever the agent last cached stays in force.
+/// </param>
+public sealed record HeartbeatResult(long? BundleVersion, FleetPolicy? Policy = null);
 
 /// <summary>A downloaded rule bundle.</summary>
 public sealed class ServerBundle
@@ -103,6 +108,9 @@ public sealed class PrinterReport
     public int? Speed { get; init; }
 
     public bool RawZpl { get; init; }
+
+    /// <summary><c>auto</c>, <c>firstPageFirst</c> or <c>lastPageFirst</c>, as the printer is set.</summary>
+    public string? PageOrder { get; init; }
 }
 
 /// <summary>One page's outcome, as reported to the server.</summary>
@@ -217,7 +225,10 @@ public interface IServerClient
         IReadOnlyList<PrinterReport> printers, CancellationToken cancellation = default);
 
     Task<ServerDecisionResponse> DecideAsync(
-        DocumentFeatures features, bool secondPass, CancellationToken cancellation = default);
+        DocumentFeatures features,
+        bool secondPass,
+        WaybillHandling? waybillHandling = null,
+        CancellationToken cancellation = default);
 
     /// <summary>Reports a job and returns the server's id for it, for follow-up events.</summary>
     Task<string> ReportJobAsync(JobReport report, CancellationToken cancellation = default);
@@ -333,7 +344,8 @@ public sealed class HttpServerClient : IServerClient, IDisposable
         return new HeartbeatResult(
             body.TryGetProperty("bundleVersion", out var version) && version.ValueKind == JsonValueKind.Number
                 ? version.GetInt64()
-                : null);
+                : null,
+            body.TryGetProperty("policy", out var policy) ? FleetPolicy.FromWire(policy) : null);
     }
 
     public async Task<ServerBundle?> FetchBundleAsync(long? since, CancellationToken cancellation = default)
@@ -377,14 +389,24 @@ public sealed class HttpServerClient : IServerClient, IDisposable
     }
 
     public async Task<ServerDecisionResponse> DecideAsync(
-        DocumentFeatures features, bool secondPass, CancellationToken cancellation = default)
+        DocumentFeatures features,
+        bool secondPass,
+        WaybillHandling? waybillHandling = null,
+        CancellationToken cancellation = default)
     {
         ArgumentNullException.ThrowIfNull(features);
+
+        // The handling travels with every request rather than being assumed from the agent's
+        // record on the server: a workstation overridden locally or by Group Policy has to be
+        // decided by its own policy, and only it knows what that is.
+        object request = waybillHandling is { } handling
+            ? new { features, secondPass, options = new { waybillHandling = WaybillHandlings.ToWire(handling) } }
+            : new { features, secondPass };
 
         using var response = await SendAsync(
             HttpMethod.Post,
             "agents/me/decide",
-            new { features, secondPass },
+            request,
             authenticated: true,
             cancellation).ConfigureAwait(false);
 

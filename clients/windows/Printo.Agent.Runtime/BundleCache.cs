@@ -39,9 +39,12 @@ public sealed class RuleBundle
     /// <summary>True when these are the profiles compiled into the agent, not a synced bundle.</summary>
     public bool IsBuiltin => Version is null;
 
-    /// <summary>Engine options carrying whatever the bundle overrode.</summary>
-    public EngineOptions ToEngineOptions() =>
-        CarrierSignatures is null ? new EngineOptions() : new EngineOptions { CarrierSignatures = CarrierSignatures };
+    /// <summary>Engine options carrying whatever the bundle overrode, and the host's waybill handling.</summary>
+    public EngineOptions ToEngineOptions(WaybillHandling? waybillHandling = null) => new()
+    {
+        CarrierSignatures = CarrierSignatures,
+        WaybillHandling = waybillHandling,
+    };
 
     /// <summary>The profiles the agent ships with, used until a bundle has been synced.</summary>
     public static RuleBundle Builtin { get; } = new() { Profiles = BuiltinProfiles.All };

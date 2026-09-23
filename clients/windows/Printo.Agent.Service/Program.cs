@@ -81,10 +81,38 @@ internal static class Program
             return await InstallVirtualPrinterAsync(configuration);
         }
 
+        if (args.Contains("--diagnose-virtual-printer", StringComparer.OrdinalIgnoreCase))
+        {
+            // Everything Add-Printer -IppURL depends on, checked without changing anything: the
+            // answer to "why is there no Printo printer on this machine", on that machine.
+            var endpoint = $"http://127.0.0.1:{configuration.VirtualPrinter.Port}/ipp/print";
+            Console.WriteLine($"{configuration.VirtualPrinter.PrinterName}: {VirtualPrinterQueue.Find(configuration.VirtualPrinter.PrinterName)}");
+            foreach (var finding in VirtualPrinterQueue.Diagnose(configuration.VirtualPrinter.PrinterName, endpoint))
+            {
+                Console.WriteLine($"  - {finding}");
+            }
+
+            return 0;
+        }
+
+        var console = args.Contains("--console", StringComparer.OrdinalIgnoreCase);
+
+        // The operational settings - thermal stock, waybills, log files, spool retention - over
+        // the fleet policy the server last sent, which is on disk so a start during an outage
+        // still has it. Built before the host so the log file is open for its first line.
+        var state = new AgentSettingsState(
+            configuration,
+            sources,
+            FleetPolicy.Load(Path.Combine(configuration.DataDirectory, "fleet-policy.json")));
+        var fileLog = new RollingFileLog(() => state.Current.Logging, () => configuration.LogDirectory, "agent");
+
         var builder = Host.CreateApplicationBuilder(args);
 
         builder.Services.AddSingleton(configuration);
         builder.Services.AddSingleton<IReadOnlyList<EffectiveSetting>>(sources);
+        builder.Services.AddSingleton(state);
+        builder.Services.AddSingleton(fileLog);
+        builder.Services.AddSingleton(new AgentHostInfo(RunningAsService: !console));
         builder.Services.AddHostedService<AgentService>();
 
         builder.Logging.AddEventLog(settings =>
@@ -94,7 +122,16 @@ internal static class Program
             settings.SourceName = "Printo Agent";
         });
 
-        if (!args.Contains("--console", StringComparer.OrdinalIgnoreCase))
+        // Local log files, when they are on. The host's floor comes down to Debug so the file can
+        // have it when asked for; the file provider applies the agent's own level per line, the
+        // event log keeps its own default, and the console stays at Information.
+        builder.Logging.AddProvider(new FileLoggerProvider(fileLog));
+        builder.Logging.SetMinimumLevel(LogLevel.Debug);
+        builder.Logging.AddFilter<Microsoft.Extensions.Logging.Console.ConsoleLoggerProvider>(null, LogLevel.Information);
+        builder.Logging.AddFilter<Microsoft.Extensions.Logging.Debug.DebugLoggerProvider>(null, LogLevel.Information);
+        builder.Logging.AddFilter<Microsoft.Extensions.Logging.EventSource.EventSourceLoggerProvider>(null, LogLevel.Information);
+
+        if (!console)
         {
             builder.Services.AddWindowsService(options => options.ServiceName = "PrintoAgent");
         }
@@ -142,7 +179,18 @@ internal static class Program
         }
 
         var result = VirtualPrinterQueue.Ensure(settings.PrinterName, server.EndpointUrl);
-        Console.WriteLine($"{settings.PrinterName}: {result}");
+        Console.WriteLine($"{settings.PrinterName}: {result.Code}: {result.Detail}");
+        foreach (var finding in result.Findings)
+        {
+            Console.WriteLine($"  - {finding}");
+        }
+
         return result.Succeeded ? 0 : 1;
     }
 }
+
+/// <summary>How this process was started, for the parts of the agent that behave differently.</summary>
+/// <param name="RunningAsService">
+/// False under <c>--console</c>, where there is no service to set permissions on.
+/// </param>
+public sealed record AgentHostInfo(bool RunningAsService);

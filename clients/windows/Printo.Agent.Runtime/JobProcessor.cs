@@ -176,6 +176,12 @@ public sealed class JobProcessor
     public IReadOnlyDictionary<string, BundleTemplate> Templates { get; init; } =
         new Dictionary<string, BundleTemplate>(StringComparer.Ordinal);
 
+    /// <summary>
+    /// This machine's effective operational settings - thermal stock and the fleet's page-order
+    /// defaults - read per job, so a fleet policy that changes mid-shift applies to the next job.
+    /// </summary>
+    public Func<EffectiveSettings> Settings { get; init; } = () => new EffectiveSettings();
+
     /// <summary>Processes a claimed job.</summary>
     /// <param name="job">The claimed job.</param>
     /// <param name="userSelectedThermalPages">
@@ -578,6 +584,15 @@ public sealed class JobProcessor
         var pages = decision.Pages.Select(page =>
         {
             var wantsThermal = thermalPages.Contains(page.PageNumber);
+
+            // A waybill copy the policy says not to print stays unprinted unless the person
+            // picked it for the label printer. "Everything else on A4" is the picker's default
+            // answer, not a decision to print pages an administrator excluded.
+            if (!wantsThermal && page.Route == RoutingProfileRules.RouteSkip)
+            {
+                return page;
+            }
+
             var route = wantsThermal ? RoutingProfileRules.RouteThermal : RoutingProfileRules.RouteA4;
             if (route == page.Route)
             {
@@ -622,10 +637,32 @@ public sealed class JobProcessor
     private JobProcessingResult Print(
         SpoolJob job, PdfDocument document, DocumentDecision decision, RoutingDecision resolved)
     {
-        // Grouped by route so each printer receives one document rather than one per page:
-        // a five-page invoice must not become five spooler jobs.
+        var settings = Settings();
+
+        // Waybill copies the policy excludes are recorded and left out. Not an error and not a
+        // question: an administrator decided these are never printed.
+        var skipped = decision.Pages
+            .Where(page => page.Route == RoutingProfileRules.RouteSkip)
+            .Select(page => page.PageNumber)
+            .OrderBy(number => number)
+            .ToList();
+
+        if (skipped.Count > 0)
+        {
+            spool.Log(
+                job.Id,
+                "info",
+                "waybill-skipped",
+                $"page(s) {string.Join(",", skipped)} not printed: waybill copies are excluded by policy");
+        }
+
+        // One document per printer, so a five-page invoice does not become five spooler jobs, and
+        // the printers are sent in the order their first page appears - the one the operator
+        // expects to see move first. Within each printer the pages are in document order until
+        // the printer's page order says otherwise.
         var byRoute = decision.Pages
-            .Where(page => !page.Hold)
+            .Where(page => !page.Hold && page.Route != RoutingProfileRules.RouteSkip)
+            .OrderBy(page => page.PageNumber)
             .GroupBy(page => page.Route, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -643,14 +680,29 @@ public sealed class JobProcessor
             var isThermal = profile.Role == PrinterRole.Thermal;
             var productDefault = isThermal ? MediaSizes.DefaultThermal : MediaSizes.DefaultDocument;
 
+            // The machine's thermal stock enters the chain at the layer it came from: set on this
+            // machine (or by Group Policy) it is the agent's policy, sent by the server it is the
+            // central one. Either way a printer's own media and a rule's still win.
+            var thermalStock = isThermal && settings.ThermalMediaSource != SettingSources.ProductDefault
+                ? MediaSizes.Format(settings.ThermalMedia)
+                : null;
+            var fromServer = settings.ThermalMediaSource == SettingSources.Server;
+
             // One device per route, opened at the media the precedence chain resolves to.
-            var firstTransform = profile.Apply(group.First().Transform);
             var media = Placements.ResolveMedia(new MediaResolutionInput
             {
                 RuleMedia = group.First().Transform?.Media,
                 AgentPrinterMedia = profile.Media,
+                AgentPolicyMedia = fromServer ? null : thermalStock,
+                CentralProfileMedia = fromServer ? thermalStock : null,
                 ProductDefault = productDefault,
             });
+
+            var order = PageOrders.Resolve(
+                profile.PageOrder,
+                isThermal,
+                isThermal ? settings.PageOrder.Thermal : settings.PageOrder.A4);
+            var sequence = PageOrders.Arrange(group, order);
 
             spool.Log(
                 job.Id,
@@ -658,7 +710,7 @@ public sealed class JobProcessor
                 "media-resolved",
                 string.Create(
                     CultureInfo.InvariantCulture,
-                    $"{group.Key} -> {profile.QueueName} at {MediaSizes.Format(media.Value)} (from {media.Layer})"));
+                    $"{group.Key} -> {profile.QueueName} at {MediaSizes.Format(media.Value)} (from {media.Layer}), {order}"));
 
             using var device = catalog.Open(profile, media.Value);
             var area = new PrintableArea
@@ -672,7 +724,7 @@ public sealed class JobProcessor
             device.StartDocument(job.FileName);
             try
             {
-                foreach (var page in group.OrderBy(entry => entry.PageNumber))
+                foreach (var page in sequence)
                 {
                     using var source = document.OpenPage(page.PageNumber - 1);
                     var transform = profile.Apply(page.Transform);
@@ -720,13 +772,16 @@ public sealed class JobProcessor
             {
                 return Fail(job, $"{profile.QueueName}: {error.Message}");
             }
-
-            _ = firstTransform;
         }
 
-        spool.Complete(
-            job.Id,
-            string.Join(", ", printed.Select(entry => $"{entry.Value} page(s) to {entry.Key}")));
+        var summary = string.Join(", ", printed.Select(entry => $"{entry.Value} page(s) to {entry.Key}"));
+        if (skipped.Count > 0)
+        {
+            summary = (summary.Length == 0 ? string.Empty : summary + "; ")
+                + $"{skipped.Count} waybill page(s) not printed";
+        }
+
+        spool.Complete(job.Id, summary.Length == 0 ? "nothing to print" : summary);
 
         return new JobProcessingResult
         {

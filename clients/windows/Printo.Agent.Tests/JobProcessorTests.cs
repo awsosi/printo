@@ -232,9 +232,91 @@ public sealed class JobProcessorTests : IDisposable
         Assert.Equal(1, thermal.DocumentsCompleted);
         Assert.Equal(1, a4.DocumentsCompleted);
 
-        Assert.Equal([2, 4], thermal.Pages.Select(page => page.PageNumber));
+        // Each stack reads in document order once picked up. The laser drops pages face down, so
+        // it is sent page 1 first; the thermal strip is torn off and held by its last label, so
+        // it is sent the last label first and the first label ends up at the torn end.
+        Assert.Equal([4, 2], thermal.Pages.Select(page => page.PageNumber));
         Assert.Equal([1, 3], a4.Pages.Select(page => page.PageNumber));
         Assert.Equal(JobState.Completed, spool.FindById(job.Id)!.State);
+    }
+
+    [Theory]
+    [InlineData(PageOrder.FirstPageFirst, PageOrder.FirstPageFirst, new[] { 2, 4 }, new[] { 1, 3 })]
+    [InlineData(PageOrder.LastPageFirst, PageOrder.LastPageFirst, new[] { 4, 2 }, new[] { 3, 1 })]
+    [InlineData(PageOrder.Auto, PageOrder.Auto, new[] { 4, 2 }, new[] { 1, 3 })]
+    public void SendsEachPrinterItsPagesInThatPrintersOrder(
+        PageOrder thermalOrder, PageOrder a4Order, int[] thermalPages, int[] a4Pages)
+    {
+        var pdf = TestPdf.Build(
+            TestPdf.A4Document(),
+            TestPdf.FedExStyleLabelOnA4Landscape(),
+            TestPdf.A4Document(),
+            TestPdf.FedExStyleLabelOnA4Landscape());
+
+        var catalog = new PrinterCatalog(
+            [
+                new PrinterProfile { QueueName = a4.Name, Role = PrinterRole.A4, PageOrder = a4Order },
+                new PrinterProfile { QueueName = thermal.Name, Role = PrinterRole.Thermal, PageOrder = thermalOrder },
+            ],
+            (profile, _) => profile.Role == PrinterRole.Thermal ? thermal : a4);
+
+        var result = new JobProcessor(spool, catalog).Process(Enqueue(pdf));
+
+        Assert.Equal(JobOutcome.Printed, result.Outcome);
+        Assert.Equal(thermalPages, thermal.Pages.Select(page => page.PageNumber));
+        Assert.Equal(a4Pages, a4.Pages.Select(page => page.PageNumber));
+    }
+
+    [Fact]
+    public void TakesTheFleetPageOrderWhenThePrinterHasNone()
+    {
+        var pdf = TestPdf.Build(
+            TestPdf.FedExStyleLabelOnA4Landscape(),
+            TestPdf.FedExStyleLabelOnA4Landscape());
+
+        var processor = new JobProcessor(spool, Catalog())
+        {
+            // A site whose thermal printers peel labels one at a time wants them in order.
+            Settings = () => new EffectiveSettings
+            {
+                PageOrder = new PageOrderDefaults { Thermal = PageOrder.FirstPageFirst },
+            },
+        };
+
+        processor.Process(Enqueue(pdf));
+
+        Assert.Equal([1, 2], thermal.Pages.Select(page => page.PageNumber));
+    }
+
+    [Fact]
+    public void UsesTheMachinesThermalStockWhenThePrinterNamesNone()
+    {
+        var pdf = TestPdf.Build(TestPdf.FedExStyleLabelOnA4Landscape());
+        var catalog = new PrinterCatalog(
+            [new PrinterProfile { QueueName = thermal.Name, Role = PrinterRole.Thermal }],
+            (_, _) => thermal);
+
+        var fromServer = new JobProcessor(spool, catalog)
+        {
+            Settings = () => new EffectiveSettings
+            {
+                ThermalMedia = new MediaSize { WidthMm = 100, HeightMm = 200 },
+                ThermalMediaSource = SettingSources.Server,
+            },
+        };
+
+        var result = fromServer.Process(Enqueue(pdf));
+        var page = Assert.Single(result.Printed);
+        Assert.Equal("100x200mm", page.Media);
+        Assert.Equal("CentralProfile", page.MediaSource);
+
+        // With nothing configured anywhere the product default applies: 100x210 mm.
+        var bare = new JobProcessor(spool, catalog).Process(Enqueue(TestPdf.Build(
+            TestPdf.FedExStyleLabelOnA4Landscape(), TestPdf.FedExStyleLabelOnA4Landscape())));
+        Assert.Equal(JobOutcome.Printed, bare.Outcome);
+        var label = bare.Printed.First();
+        Assert.Equal("100x210mm", label.Media);
+        Assert.Equal("ProductDefault", label.MediaSource);
     }
 
     [Fact]

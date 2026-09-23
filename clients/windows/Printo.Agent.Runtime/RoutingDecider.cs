@@ -140,9 +140,16 @@ public interface IRoutingDecider
 /// serviced: the engine's contract is that a second pass is always decidable, and looping until
 /// it stops asking would turn a mistaken rule into an infinite render loop on somebody's PC.
 /// </remarks>
-public sealed class LocalDecider(Func<RuleBundle> bundle) : IRoutingDecider
+public sealed class LocalDecider(Func<RuleBundle> bundle, Func<WaybillHandling?>? waybillHandling = null)
+    : IRoutingDecider
 {
     private readonly Func<RuleBundle> bundle = bundle ?? throw new ArgumentNullException(nameof(bundle));
+
+    /// <summary>
+    /// The waybill handling this machine has in force, read per document so a policy the server
+    /// changes takes effect on the next job. Null lets the bundle's profile decide.
+    /// </summary>
+    private readonly Func<WaybillHandling?> waybillHandling = waybillHandling ?? (() => null);
 
     public DecisionMode Mode => DecisionMode.Local;
 
@@ -164,7 +171,7 @@ public sealed class LocalDecider(Func<RuleBundle> bundle) : IRoutingDecider
             };
         }
 
-        var options = rules.ToEngineOptions();
+        var options = rules.ToEngineOptions(waybillHandling());
         var current = features;
 
         for (var round = 0; round <= FeatureRounds.Max; round++)
@@ -235,6 +242,12 @@ public sealed class ServerDecider(IServerClient client, Action<string, string>? 
     /// </remarks>
     public required Func<RuleBundle> Bundle { get; init; }
 
+    /// <summary>
+    /// The waybill handling to ask the server to apply - this machine's, so a document decided
+    /// centrally lands where it would have locally. Null lets the server's profile decide.
+    /// </summary>
+    public Func<WaybillHandling?> WaybillHandling { get; init; } = () => null;
+
     public RoutingDecision Decide(DocumentFeatures features, IOcrFiller ocr)
     {
         ArgumentNullException.ThrowIfNull(features);
@@ -245,7 +258,8 @@ public sealed class ServerDecider(IServerClient client, Action<string, string>? 
 
         try
         {
-            var response = client.DecideAsync(features, secondPass: false).GetAwaiter().GetResult();
+            var handling = WaybillHandling();
+            var response = client.DecideAsync(features, secondPass: false, handling).GetAwaiter().GetResult();
 
             if (response.Status == ServerDecisionStatus.NoProfile)
             {
@@ -283,7 +297,7 @@ public sealed class ServerDecider(IServerClient client, Action<string, string>? 
                 }
 
                 current = enriched;
-                second = client.DecideAsync(current, secondPass: round + 1 >= FeatureRounds.Max)
+                second = client.DecideAsync(current, secondPass: round + 1 >= FeatureRounds.Max, handling)
                     .GetAwaiter().GetResult();
                 if (second.Status != ServerDecisionStatus.NeedsOcr)
                 {

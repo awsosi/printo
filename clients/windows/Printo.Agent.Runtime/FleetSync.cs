@@ -16,6 +16,9 @@ public sealed class SyncResult
 
     public bool HeartbeatSent { get; init; }
 
+    /// <summary>True when the heartbeat brought a fleet policy different from the one held.</summary>
+    public bool PolicyUpdated { get; init; }
+
     /// <summary>Set when the server could not be reached. Never fatal.</summary>
     public string? Unreachable { get; init; }
 
@@ -54,6 +57,10 @@ public sealed class FleetSync
     private AgentIdentity identity;
 
     private RuleBundle bundle;
+
+    private FleetPolicy? policy;
+
+    private string? policyJson;
 
     public FleetSync(
         AgentConfiguration configuration,
@@ -106,6 +113,47 @@ public sealed class FleetSync
         }
     }
 
+    /// <summary>
+    /// Where the last fleet policy the server sent is kept, so a restart during an outage still
+    /// runs on it. Null keeps it in memory only.
+    /// </summary>
+    public string? PolicyCachePath
+    {
+        get => policyCachePath;
+        init
+        {
+            policyCachePath = value;
+            if (value is not null && FleetPolicy.Load(value) is { } cached)
+            {
+                policy = cached;
+                policyJson = JsonSerializer.Serialize(cached, FleetPolicy.Json);
+            }
+        }
+    }
+
+    private readonly string? policyCachePath;
+
+    /// <summary>Called, from the sync thread, when the server sends a policy that differs from the one held.</summary>
+    public Action<FleetPolicy>? PolicyChanged { get; init; }
+
+    /// <summary>The fleet policy in force: the last the server sent, or the cached copy, or none.</summary>
+    public FleetPolicy? CurrentPolicy
+    {
+        get
+        {
+            lock (gate)
+            {
+                return policy;
+            }
+        }
+    }
+
+    /// <summary>When the last sync pass reached the server, for the status window.</summary>
+    public DateTimeOffset? LastContact { get; private set; }
+
+    /// <summary>What the last sync pass said, for the status window.</summary>
+    public string? LastOutcome { get; private set; }
+
     /// <summary>The enrolment token to present, from the environment or a drop file.</summary>
     /// <remarks>
     /// Two sources because the two deployment routes differ: an MSI installed by GPO writes
@@ -146,6 +194,7 @@ public sealed class FleetSync
                 .GetAwaiter().GetResult();
 
             var updated = SyncBundle(client, heartbeat.BundleVersion);
+            var policyUpdated = heartbeat.Policy is { } received && AdoptPolicy(received);
 
             var reported = false;
             if (printers is { Count: > 0 } && (enrolled || updated))
@@ -157,18 +206,24 @@ public sealed class FleetSync
                 reported = true;
             }
 
-            return new SyncResult
+            var result = new SyncResult
             {
                 Enrolled = enrolled,
                 HeartbeatSent = true,
                 BundleUpdated = updated,
                 BundleVersion = CurrentBundle.Version,
                 PrintersReported = reported,
+                PolicyUpdated = policyUpdated,
             };
+
+            LastContact = DateTimeOffset.UtcNow;
+            LastOutcome = result.ToString();
+            return result;
         }
         catch (ServerUnavailableException error)
         {
             log?.Invoke("sync-unreachable", error.Message);
+            LastOutcome = $"server unreachable: {error.Message}";
             return new SyncResult { Unreachable = error.Message };
         }
         catch (ServerRejectedException error)
@@ -180,6 +235,45 @@ public sealed class FleetSync
         {
             (client as IDisposable)?.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Takes the server's policy when it differs from the one held, caching it and telling the host.
+    /// </summary>
+    /// <remarks>
+    /// Compared as serialized JSON rather than field by field, so a field added to the policy
+    /// later is covered without anyone remembering to add it here.
+    /// </remarks>
+    private bool AdoptPolicy(FleetPolicy received)
+    {
+        var json = JsonSerializer.Serialize(received, FleetPolicy.Json);
+        lock (gate)
+        {
+            if (string.Equals(json, policyJson, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            policy = received;
+            policyJson = json;
+        }
+
+        if (policyCachePath is not null)
+        {
+            try
+            {
+                received.Save(policyCachePath);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                // In force for this run regardless; only a restart during an outage would miss it.
+                log?.Invoke("policy-not-cached", error.Message);
+            }
+        }
+
+        log?.Invoke("policy-updated", $"fleet policy changed{(received.UpdatedAt is null ? string.Empty : $" at {received.UpdatedAt}")}");
+        PolicyChanged?.Invoke(received);
+        return true;
     }
 
     /// <summary>Enrols this machine, if a token is available.</summary>
@@ -343,5 +437,6 @@ public sealed class FleetSync
         Darkness = profile.Darkness,
         Speed = profile.Speed,
         RawZpl = profile.ThermalMode == ThermalMode.ZplRaster,
+        PageOrder = JsonNamingPolicy.CamelCase.ConvertName(profile.PageOrder.ToString()),
     };
 }

@@ -388,6 +388,132 @@ public sealed class FleetTests : IDisposable
     }
 
     [Fact]
+    public void ServerModeSendsThisMachinesWaybillHandlingWithEveryRequest()
+    {
+        var server = new ScriptedServer().OnJson(
+            "POST agents/me/decide",
+            new
+            {
+                status = "decided",
+                bundleVersion = 9L,
+                decision = new DocumentDecision
+                {
+                    Profile = "OneClickPrint",
+                    Pages = [new PageDecision { PageNumber = 1, Route = RoutingProfileRules.RouteSkip, Confidence = 1 }],
+                },
+            });
+
+        using var client = Client(server);
+        var decider = new ServerDecider(client)
+        {
+            Bundle = () => RuleBundle.Builtin,
+            WaybillHandling = () => WaybillHandling.Skip,
+        };
+
+        decider.Decide(LabelDocument(), NoOcr.Instance);
+
+        // The server decides by the policy this machine has in force - which may be a local or
+        // Group Policy override the server has never heard of - so it travels with the request.
+        using var body = JsonDocument.Parse(Assert.Single(server.Requests).Body);
+        Assert.Equal("skip", body.RootElement.GetProperty("options").GetProperty("waybillHandling").GetString());
+    }
+
+    [Fact]
+    public void ServerModeLeavesTheWaybillHandlingToTheServerWhenThisMachineHasNone()
+    {
+        var server = new ScriptedServer().OnJson(
+            "POST agents/me/decide",
+            new { status = "no-profile", bundleVersion = 9L });
+
+        using var client = Client(server);
+        new ServerDecider(client) { Bundle = () => RuleBundle.Builtin }.Decide(LabelDocument(), NoOcr.Instance);
+
+        using var body = JsonDocument.Parse(Assert.Single(server.Requests).Body);
+        Assert.False(body.RootElement.TryGetProperty("options", out _));
+    }
+
+    [Fact]
+    public void AdoptsTheFleetPolicyFromTheHeartbeatAndKeepsItAcrossRestarts()
+    {
+        var policy = new
+        {
+            waybillHandling = "skip",
+            thermalMedia = "100x200mm",
+            logging = new { fileEnabled = true, level = "debug", maxFileSizeMb = 5, maxFiles = 3 },
+            retention = new { keepPrintedHours = 6, keepHistoryDays = 7, expireUnprintedDays = 10, maxSpoolMb = 500 },
+            pageOrder = new { a4 = "firstPageFirst", thermal = "firstPageFirst" },
+            updatedAt = "2026-09-24T10:00:00Z",
+        };
+
+        var server = Enrolled()
+            .OnJson("POST agents/me/heartbeat", new { ok = true, bundleVersion = (long?)null, policy })
+            .On("GET agents/me/bundle", _ => new HttpResponseMessage(HttpStatusCode.NotFound));
+
+        var cache = Path.Combine(root, "fleet-policy.json");
+        var changes = new List<FleetPolicy>();
+        var withPolicy = new FleetSync(
+            new AgentConfiguration { DataDirectory = root, ServerUrl = "https://printo.test/" },
+            Path.Combine(root, "identity.json"),
+            new BundleCache(Path.Combine(root, "bundle.json")),
+            key => new HttpServerClient("https://printo.test/", key, server))
+        {
+            EnrolmentToken = "t",
+            PolicyCachePath = cache,
+            PolicyChanged = changes.Add,
+        };
+
+        var first = withPolicy.RunOnce();
+        Assert.True(first.PolicyUpdated);
+        var adopted = Assert.Single(changes);
+        Assert.Equal(WaybillHandling.Skip, adopted.WaybillHandling);
+        Assert.Equal("100x200mm", adopted.ThermalMedia);
+        Assert.Equal(AgentLogLevel.Debug, adopted.Logging!.Level);
+        Assert.Equal(500, adopted.Retention!.MaxSpoolMb);
+        Assert.Equal(PageOrder.FirstPageFirst, adopted.PageOrder!.Thermal);
+
+        // The same policy again is not a change: nothing is rewritten and nobody is told.
+        Assert.False(withPolicy.RunOnce().PolicyUpdated);
+        Assert.Single(changes);
+
+        // A restart during an outage still has it.
+        var restarted = new FleetSync(
+            new AgentConfiguration { DataDirectory = root, ServerUrl = "https://printo.test/" },
+            Path.Combine(root, "identity.json"),
+            new BundleCache(Path.Combine(root, "bundle.json")),
+            key => new HttpServerClient("https://printo.test/", key, new ScriptedServer { Offline = true }))
+        {
+            PolicyCachePath = cache,
+        };
+        Assert.Equal(WaybillHandling.Skip, restarted.CurrentPolicy!.WaybillHandling);
+    }
+
+    [Fact]
+    public void KeepsTheCachedPolicyWhenTheServerSendsNone()
+    {
+        var server = Enrolled()
+            .OnJson("POST agents/me/heartbeat", new { ok = true, bundleVersion = (long?)null })
+            .On("GET agents/me/bundle", _ => new HttpResponseMessage(HttpStatusCode.NotFound));
+
+        var cache = Path.Combine(root, "fleet-policy.json");
+        new FleetPolicy { WaybillHandling = WaybillHandling.A4 }.Save(cache);
+
+        var sync = new FleetSync(
+            new AgentConfiguration { DataDirectory = root, ServerUrl = "https://printo.test/" },
+            Path.Combine(root, "identity.json"),
+            new BundleCache(Path.Combine(root, "bundle.json")),
+            key => new HttpServerClient("https://printo.test/", key, server))
+        {
+            EnrolmentToken = "t",
+            PolicyCachePath = cache,
+        };
+
+        // A server from before the policy existed says nothing about it; that is not an
+        // instruction to forget the one the machine already has.
+        Assert.False(sync.RunOnce().PolicyUpdated);
+        Assert.Equal(WaybillHandling.A4, sync.CurrentPolicy!.WaybillHandling);
+    }
+
+    [Fact]
     public void ServerModeAnswersTheServersOcrRequestLocally()
     {
         var answered = false;

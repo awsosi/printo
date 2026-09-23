@@ -9,6 +9,14 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <!--
+    Who may start and stop the service: one file, compiled into both the agent (which re-applies
+    it at every start) and the installer (which applies it at install), so the two cannot drift.
+  -->
+  <ItemGroup>
+    <Compile Include="..\Shared\ServiceDacl.cs" Link="Shared\ServiceDacl.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Printo.Agent.Core\Printo.Agent.Core.csproj" />
     <ProjectReference Include="..\Printo.Agent.Render\Printo.Agent.Render.csproj" />

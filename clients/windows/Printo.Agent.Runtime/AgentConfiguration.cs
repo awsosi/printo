@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Printo.Agent.Core.Routing;
+using Printo.Agent.Printing;
 
 namespace Printo.Agent.Runtime;
 
@@ -37,6 +39,12 @@ public sealed class PrinterMapping
     public int? Speed { get; init; }
 
     public bool RawZpl { get; init; }
+
+    /// <summary>
+    /// Which page of a job this printer is sent first. <see cref="PageOrder.Auto"/> takes the
+    /// fleet's default for the printer's role; see <see cref="PageOrders"/>.
+    /// </summary>
+    public PageOrder PageOrder { get; init; } = PageOrder.Auto;
 }
 
 /// <summary>The virtual printer this machine presents to Windows.</summary>
@@ -114,6 +122,28 @@ public sealed class AgentConfiguration
 
     /// <summary>OCR language tag to prefer, e.g. <c>en-US</c>. Empty uses the user's own.</summary>
     public string OcrLanguage { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Stock loaded in thermal printers that do not name their own, e.g. <c>100x210mm</c>.
+    /// </summary>
+    /// <remarks>
+    /// Null inherits: the fleet policy from the server, then the product default. The same holds
+    /// for every nullable setting below - a value is only written here when somebody chose one
+    /// for this machine, so a fleet-wide change reaches every workstation nobody overrode.
+    /// </remarks>
+    public string? ThermalMedia { get; init; }
+
+    /// <summary>What happens to carrier waybill copies. Null inherits.</summary>
+    public WaybillHandling? WaybillHandling { get; init; }
+
+    /// <summary>Local log files. Null inherits.</summary>
+    public LoggingSettings? Logging { get; init; }
+
+    /// <summary>How long the spool keeps what it has finished with. Null inherits.</summary>
+    public SpoolRetentionSettings? Retention { get; init; }
+
+    /// <summary>Where log files are written, when they are on.</summary>
+    public string LogDirectory => Path.Combine(DataDirectory, "logs");
 
     public string SpoolDirectory => Path.Combine(DataDirectory, "documents");
 
