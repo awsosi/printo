@@ -109,3 +109,97 @@ describe('mixed-carrier end-to-end routing', () => {
     expect(pages.every((page) => page.status === 'SUCCESS')).toBe(true);
   });
 });
+
+describe('waybill copies under the fleet policy', () => {
+  it('records an excluded waybill copy as skipped and never sends it to a printer', async () => {
+    const dispatched: number[] = [];
+    let handlingSeen: string | undefined;
+
+    const classifier = {
+      name: 'stub',
+      classifyPage: async () => {
+        throw new Error('the pipeline must decide the document as a whole');
+      },
+      classifyDocument: async (input: { pages: Array<{ pageNumber: number }>; waybillHandling?: string }) => {
+        handlingSeen = input.waybillHandling;
+        return input.pages.map((page) => ({
+          pageNumber: page.pageNumber,
+          pageClass: page.pageNumber === 2 ? ('WAYBILL_EXCLUDED' as const) : ('DOCUMENT_A4' as const),
+          confidence: 0.9,
+          carrier: page.pageNumber === 2 ? 'DHL' : null,
+          isReturn: false,
+          barcodes: [],
+          evidence: [],
+          classifier: 'stub'
+        }));
+      }
+    };
+
+    const pdf = await PDFDocument.create();
+    pdf.addPage([595, 842]);
+    pdf.addPage([842, 595]);
+    pdf.addPage([595, 842]);
+
+    const store = new InMemoryWorkerStore({
+      sources: [
+        {
+          id: 'source-intake',
+          ownerUserId: null,
+          ownerGroupId: null,
+          path: '\\\\srv\\intake',
+          domainUsername: '',
+          secretRef: '',
+          printerDomainUsername: '',
+          printerSecretRef: '',
+          routingProfileId: null,
+          a4PrinterId: null,
+          thermalPrinterId: null,
+          includeFilenamePatterns: [],
+          excludeFilenamePatterns: [],
+          isActive: true
+        }
+      ],
+      printers: [
+        { id: 'p-a4', name: 'Office A4', type: 'A4', targetUri: 'cups://OfficeA4', domainUsername: '', secretRef: '', isActive: true }
+      ]
+    });
+    store.waybillHandling = 'skip';
+
+    const scanner = new StaticSmbScanner({
+      'source-intake': [
+        {
+          sourceId: 'source-intake',
+          path: '/intake/bundle.pdf',
+          content: Buffer.from(await pdf.save()),
+          modifiedAt: new Date('2026-09-24T10:00:00.000Z')
+        }
+      ]
+    });
+
+    const dispatcher = {
+      dispatch: async (request: { page: { pageNumber: number } }) => {
+        dispatched.push(request.page.pageNumber);
+      }
+    };
+
+    const pipeline = new WorkerPipeline(
+      store,
+      scanner,
+      new MockOcrProvider(),
+      dispatcher as never,
+      undefined,
+      classifier as never
+    );
+    const summary = await pipeline.runOnce();
+
+    // The worker reads the policy the agents are sent, and passes it to the engine.
+    expect(handlingSeen).toBe('skip');
+    expect(summary.failures).toBe(0);
+    expect(dispatched).toEqual([1, 3]);
+
+    const waybill = store.printJobPages.find((page) => page.pageNumber === 2);
+    expect(waybill?.status).toBe('SKIPPED');
+    expect(waybill?.errorMessage).toBe('WAYBILL_EXCLUDED_BY_POLICY');
+    expect(waybill?.pageClass).toBe('WAYBILL_EXCLUDED');
+  });
+});

@@ -2823,6 +2823,8 @@ export function createWebApp(options: CreateWebAppOptions = {}) {
     { method: 'get', path: '/admin/agents', upstreamPath: () => '/admin/agents' },
     { method: 'get', path: '/admin/agents/:agentId', upstreamPath: (req) => `/admin/agents/${req.params.agentId}` },
     { method: 'patch', path: '/admin/agents/:agentId', upstreamPath: (req) => `/admin/agents/${req.params.agentId}` },
+    { method: 'get', path: '/admin/fleet-policy', upstreamPath: () => '/admin/fleet-policy' },
+    { method: 'put', path: '/admin/fleet-policy', upstreamPath: () => '/admin/fleet-policy' },
     {
       method: 'post',
       path: '/admin/agents/enrollment-tokens',

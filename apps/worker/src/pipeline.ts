@@ -5,6 +5,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { matchPdfPagesBySnippet } from '@printo/shared';
+import type { WaybillHandling } from '@printo/routing-engine';
 import { extractSinglePagePdf } from './pdf-split.js';
 import { HeuristicPageClassifier } from './classify/heuristic-classifier.js';
 import type { PageClass, PageClassification, PageClassifier, PageClassifierInput } from './classify/types.js';
@@ -241,6 +242,11 @@ export interface WorkerConfigStore {
   getRoutingProfileById(id: string): Promise<WorkerRoutingProfile | null>;
   getActivePrinters(): Promise<WorkerPrinter[]>;
   getSystemSettings(): Promise<WorkerSystemSettings>;
+  /**
+   * The fleet policy's waybill handling, or undefined when it sets none. Optional so stores
+   * written before the policy existed keep working, routing waybills as they always did.
+   */
+  getWaybillHandling?(): Promise<WaybillHandling | undefined>;
   listVisualProfiles(ownerUserId: string | null, ownerGroupId: string | null): Promise<WorkerVisualProfile[]>;
   getUserPrinterAssignment(userId: string): Promise<WorkerUserPrinterAssignment | null>;
   getOcrGlobalConfig(): Promise<WorkerOcrGlobalConfig>;
@@ -689,6 +695,9 @@ export class WorkerPipeline {
       return;
     }
 
+    // Read per document, so a policy changed in the console applies from the next file.
+    const waybillHandling = await this.store.getWaybillHandling?.();
+
     const inputs = await this.classifierInputs({ pages: pending }, file);
 
     if (isDocumentClassifier(this.classifier)) {
@@ -698,7 +707,8 @@ export class WorkerPipeline {
       try {
         const classifications = await this.classifier.classifyDocument({
           fileName: file.path.split(/[\\/]/).pop() ?? file.path,
-          pages: inputs
+          pages: inputs,
+          ...(waybillHandling ? { waybillHandling } : {})
         });
 
         for (const classification of classifications) {
@@ -1002,6 +1012,25 @@ export class WorkerPipeline {
       await this.classifyPages(ocrResult, file);
 
       for (const page of ocrResult.pages) {
+        if (page.classification?.pageClass === 'WAYBILL_EXCLUDED') {
+          // A waybill copy the fleet policy says never to print. Recorded, not dispatched: the
+          // job's page list still says what happened to every page of the document.
+          await this.store.addPrintJobPage({
+            printJobId: job.id,
+            pageNumber: page.pageNumber,
+            routeType: 'A4',
+            printerId: null,
+            status: 'SKIPPED',
+            errorMessage: 'WAYBILL_EXCLUDED_BY_POLICY',
+            pageClass: page.classification.pageClass,
+            classificationConfidence: page.classification.confidence,
+            carrier: page.classification.carrier ?? null
+          });
+          workerMetrics.pagesRoutedTotal.inc({ route_type: 'SKIP', decided_by: 'CLASSIFICATION' });
+          summary.pageDispatchesSkipped += 1;
+          continue;
+        }
+
         const resolvedRoute = resolveRoute(page, routing);
         const effectiveRouteType = resolvedRoute.routeType;
         workerMetrics.pagesRoutedTotal.inc({ route_type: effectiveRouteType, decided_by: resolvedRoute.decidedBy });
@@ -1173,6 +1202,8 @@ export class InMemoryWorkerStore implements WorkerConfigStore {
   public systemSettings: WorkerSystemSettings;
   public readonly printJobs: PrintJobRecord[] = [];
   public readonly printJobPages: PrintJobPageRecord[] = [];
+  /** The fleet policy's waybill handling, as a test sets it. */
+  public waybillHandling: WaybillHandling | undefined;
 
   constructor(input: InMemoryWorkerStoreInput = {}) {
     this.sources = input.sources ?? [];
@@ -1266,6 +1297,10 @@ export class InMemoryWorkerStore implements WorkerConfigStore {
 
   async getActivePrinters(): Promise<WorkerPrinter[]> {
     return this.printers.filter((printer) => printer.isActive);
+  }
+
+  async getWaybillHandling(): Promise<WaybillHandling | undefined> {
+    return this.waybillHandling;
   }
 
   async getSystemSettings(): Promise<WorkerSystemSettings> {

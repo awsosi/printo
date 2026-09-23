@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { WAYBILL_HANDLINGS, type WaybillHandling } from '@printo/routing-engine';
 import type {
   PrintJobPageRecord,
   PrintJobRecord,
@@ -428,6 +429,27 @@ export class PostgresWorkerStore implements WorkerConfigStore {
     );
 
     return result.rows.map(mapPrinter);
+  }
+
+  /**
+   * The waybill handling from the fleet policy - the setting the Windows agents are sent.
+   *
+   * A value that is not one the engine knows is treated as unset, which routes waybills as
+   * they always were; the API refuses such values, so only a hand edit of the row gets here.
+   */
+  async getWaybillHandling(): Promise<WaybillHandling | undefined> {
+    try {
+      const result = await this.db.query<{ handling: string | null }>(
+        `SELECT policy->>'waybillHandling' AS handling FROM fleet_policy WHERE id = TRUE`
+      );
+      const handling = result.rows[0]?.handling ?? null;
+      return handling && WAYBILL_HANDLINGS.includes(handling as WaybillHandling)
+        ? (handling as WaybillHandling)
+        : undefined;
+    } catch {
+      // A database migrated before the fleet policy existed: nothing is set.
+      return undefined;
+    }
   }
 
   async getSystemSettings(): Promise<WorkerSystemSettings> {

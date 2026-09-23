@@ -42,6 +42,22 @@ const FIXTURES: ConformanceSuite = JSON.parse(
   )
 );
 
+/** The waybill-policy fixtures, for the same reason: `/decide` must answer as the engine does. */
+const WAYBILL_FIXTURES: ConformanceSuite = JSON.parse(
+  readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../../../tests/conformance/waybill-policy.json'),
+    'utf8'
+  )
+);
+
+function waybillDocument(name: string): unknown {
+  const fixture = WAYBILL_FIXTURES.fixtures.find((entry) => entry.name === name);
+  if (!fixture) {
+    throw new Error(`conformance fixture '${name}' is gone; the waybill decision tests reference it`);
+  }
+  return fixture.document;
+}
+
 function fixtureDocument(name: string): unknown {
   const fixture = FIXTURES.fixtures.find((entry) => entry.name === name);
   if (!fixture) {
@@ -88,6 +104,7 @@ suite('agent API (postgres)', () => {
     await pool.query('DELETE FROM rule_bundles');
     await pool.query('DELETE FROM review_queue');
     await pool.query('DELETE FROM fallback_events');
+    await pool.query(`UPDATE fleet_policy SET policy = '{}'::jsonb`);
   });
 
   async function newToken(overrides: Record<string, unknown> = {}) {
@@ -247,6 +264,111 @@ suite('agent API (postgres)', () => {
     expect(decided.body.decision.pages[0].route).toBe('THERMAL');
     // No bundle published: the server decided on the same built-in profiles the agent ships.
     expect(decided.body.bundleVersion).toBeNull();
+  });
+
+  it('decides by the waybill handling the agent sends, and by the profile when it sends none', async () => {
+    const key = (await enroll(await newToken())).body.apiKey;
+    const sheet = waybillDocument("'skip' leaves a DHL courier sheet unprinted");
+
+    // An agent from before the policy sends no handling and must never see SKIP: it has no
+    // printer for it, and would fail a job it used to print.
+    const legacy = await request(app).post('/agents/me/decide').set('x-printo-agent-key', key).send({ features: sheet });
+    expect(legacy.status).toBe(200);
+    expect(legacy.body.decision.pages[0].route).toBe('A4');
+    expect(legacy.body.decision.pages[0].ruleId).toBe('dhl-waybill-sheet-text');
+
+    const skipped = await request(app)
+      .post('/agents/me/decide')
+      .set('x-printo-agent-key', key)
+      .send({ features: sheet, options: { waybillHandling: 'skip' } });
+    expect(skipped.status).toBe(200);
+    expect(skipped.body.decision.pages[0].route).toBe('SKIP');
+    expect(skipped.body.decision.pages[0].waybill).toBe(true);
+
+    const thermal = await request(app)
+      .post('/agents/me/decide')
+      .set('x-printo-agent-key', key)
+      .send({ features: sheet, options: { waybillHandling: 'thermal' } });
+    expect(thermal.body.decision.pages[0].route).toBe('THERMAL');
+
+    const nonsense = await request(app)
+      .post('/agents/me/decide')
+      .set('x-printo-agent-key', key)
+      .send({ features: sheet, options: { waybillHandling: 'shred' } });
+    expect(nonsense.status).toBe(400);
+    expect(nonsense.body.detail).toContain('options.waybillHandling');
+  });
+
+  it('hands every agent the fleet policy on its heartbeat, with its own overrides laid over it', async () => {
+    const enrolled = await enroll(await newToken());
+    const key = enrolled.body.apiKey;
+    const agentId = enrolled.body.agent.id;
+
+    // Nothing set: nothing sent but the timestamp, so each machine keeps its own defaults.
+    const bare = await request(app).post('/agents/me/heartbeat').set('x-printo-agent-key', key).send({});
+    expect(bare.status).toBe(200);
+    expect(Object.keys(bare.body.policy)).toEqual(['updatedAt']);
+
+    const saved = await request(app)
+      .put('/admin/fleet-policy')
+      .set('authorization', `Bearer ${adminToken}`)
+      .send({ policy: { waybillHandling: 'skip', thermalMedia: '100 x 200', logging: { fileEnabled: true } } });
+    expect(saved.status).toBe(200);
+    expect(saved.body.policy.thermalMedia).toBe('100x200mm');
+    expect(saved.body.effective.retention.maxSpoolMb).toBe(2048);
+    expect(saved.body.defaults.thermalMedia).toBe('100x210mm');
+
+    const fleet = await request(app).post('/agents/me/heartbeat').set('x-printo-agent-key', key).send({});
+    expect(fleet.body.policy.waybillHandling).toBe('skip');
+    expect(fleet.body.policy.thermalMedia).toBe('100x200mm');
+    // A group travels whole, completed from the product defaults: the agent takes it as one.
+    expect(fleet.body.policy.logging).toEqual({ fileEnabled: true, level: 'information', maxFileSizeMb: 10, maxFiles: 5 });
+    expect(fleet.body.policy.retention).toBeUndefined();
+
+    // One bench loads different stock and wants debug logs.
+    const override = await request(app)
+      .patch(`/admin/agents/${agentId}`)
+      .set('authorization', `Bearer ${adminToken}`)
+      .send({ policyOverrides: { thermalMedia: '100x150mm', logging: { level: 'debug' } } });
+    expect(override.status).toBe(200);
+
+    const own = await request(app).post('/agents/me/heartbeat').set('x-printo-agent-key', key).send({});
+    expect(own.body.policy.waybillHandling).toBe('skip');
+    expect(own.body.policy.thermalMedia).toBe('100x150mm');
+    expect(own.body.policy.logging).toEqual({ fileEnabled: true, level: 'debug', maxFileSizeMb: 10, maxFiles: 5 });
+
+    const detail = await request(app).get(`/admin/agents/${agentId}`).set('authorization', `Bearer ${adminToken}`);
+    expect(detail.body.effectivePolicy.thermalMedia).toBe('100x150mm');
+    expect(detail.body.agent.policyOverrides).toEqual({ thermalMedia: '100x150mm', logging: { level: 'debug' } });
+
+    // Back to the fleet.
+    await request(app)
+      .patch(`/admin/agents/${agentId}`)
+      .set('authorization', `Bearer ${adminToken}`)
+      .send({ policyOverrides: {} });
+    const reset = await request(app).post('/agents/me/heartbeat').set('x-printo-agent-key', key).send({});
+    expect(reset.body.policy.thermalMedia).toBe('100x200mm');
+  });
+
+  it('refuses a fleet policy an agent could not apply', async () => {
+    for (const policy of [
+      { waybillHandling: 'shred' },
+      { thermalMedia: 'large' },
+      { logging: { level: 'verbose' } },
+      { retention: { maxSpoolMb: 1 } },
+      { pageOrder: { thermal: 'sideways' } },
+      { colour: 'red' }
+    ]) {
+      const response = await request(app)
+        .put('/admin/fleet-policy')
+        .set('authorization', `Bearer ${adminToken}`)
+        .send({ policy });
+      expect(response.status, JSON.stringify(policy)).toBe(400);
+      expect(response.body.error).toBe('INVALID_POLICY');
+    }
+
+    const kept = await request(app).get('/admin/fleet-policy').set('authorization', `Bearer ${adminToken}`);
+    expect(kept.body.policy).toEqual({});
   });
 
   it('carries the two-phase OCR protocol across the network', async () => {

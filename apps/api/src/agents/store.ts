@@ -13,6 +13,7 @@ import type {
   AgentRecord,
   FallbackEventInput,
   FallbackEventRecord,
+  FleetPolicyRecord,
   FallbackSummaryRow,
   ReviewQueueRecord,
   RetentionPolicyRecord,
@@ -62,8 +63,16 @@ export interface AgentStore {
       decisionMode?: AgentDecisionMode;
       confidenceThreshold?: number;
       status?: AgentRecord['status'];
+      /** Replaces the agent's overrides; `{}` returns it to the fleet policy. */
+      policyOverrides?: JsonObject;
     }
   ): Promise<AgentRecord | null>;
+
+  /** The fleet policy: only the settings an administrator chose. */
+  getFleetPolicy(): Promise<FleetPolicyRecord>;
+
+  /** Replaces the fleet policy. The caller has validated it. */
+  setFleetPolicy(policy: JsonObject, updatedBy?: string | null): Promise<FleetPolicyRecord>;
 
   heartbeat(input: {
     agentId: string;
@@ -323,8 +332,8 @@ export class PostgresAgentStore implements AgentStore {
         await client.query(
           `INSERT INTO agent_printers
              (agent_id, queue_name, driver_name, port_name, role, alias, media, dpi,
-              offset_x_mm, offset_y_mm, zoom_percent, darkness, speed, raw_zpl, capabilities)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+              offset_x_mm, offset_y_mm, zoom_percent, darkness, speed, raw_zpl, capabilities, page_order)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
           [
             agentId,
             printer.queueName,
@@ -340,7 +349,8 @@ export class PostgresAgentStore implements AgentStore {
             printer.darkness ?? null,
             printer.speed ?? null,
             printer.rawZpl ?? false,
-            JSON.stringify(printer.capabilities ?? {})
+            JSON.stringify(printer.capabilities ?? {}),
+            printer.pageOrder ?? null
           ]
         );
       }
@@ -397,15 +407,17 @@ export class PostgresAgentStore implements AgentStore {
       decisionMode?: AgentDecisionMode;
       confidenceThreshold?: number;
       status?: AgentRecord['status'];
+      policyOverrides?: JsonObject;
     }
   ): Promise<AgentRecord | null> {
     // COALESCE rather than a built statement: an omitted field must keep its stored value,
-    // and a partial update that silently reset the other two would be a trap.
+    // and a partial update that silently reset the others would be a trap.
     const result = await this.pool.query(
       `UPDATE agents
           SET decision_mode = COALESCE($2, decision_mode),
               confidence_threshold = COALESCE($3, confidence_threshold),
               status = COALESCE($4, status),
+              policy_overrides = COALESCE($5::jsonb, policy_overrides),
               updated_at = NOW()
         WHERE id = $1
       RETURNING *`,
@@ -413,11 +425,33 @@ export class PostgresAgentStore implements AgentStore {
         agentId,
         changes.decisionMode ?? null,
         changes.confidenceThreshold ?? null,
-        changes.status ?? null
+        changes.status ?? null,
+        changes.policyOverrides === undefined ? null : JSON.stringify(changes.policyOverrides)
       ]
     );
 
     return result.rowCount ? mapAgent(result.rows[0]) : null;
+  }
+
+  async getFleetPolicy(): Promise<FleetPolicyRecord> {
+    const result = await this.pool.query('SELECT policy, updated_at, updated_by FROM fleet_policy WHERE id = TRUE');
+    if (!result.rowCount) {
+      // The migration inserts the row; this covers a database somebody emptied by hand.
+      return { policy: {}, updatedAt: new Date(0).toISOString(), updatedBy: null };
+    }
+    return mapFleetPolicy(result.rows[0]);
+  }
+
+  async setFleetPolicy(policy: JsonObject, updatedBy: string | null = null): Promise<FleetPolicyRecord> {
+    const result = await this.pool.query(
+      `INSERT INTO fleet_policy (id, policy, updated_at, updated_by)
+       VALUES (TRUE, $1::jsonb, NOW(), $2)
+       ON CONFLICT (id) DO UPDATE
+          SET policy = EXCLUDED.policy, updated_at = NOW(), updated_by = EXCLUDED.updated_by
+       RETURNING policy, updated_at, updated_by`,
+      [JSON.stringify(policy), updatedBy]
+    );
+    return mapFleetPolicy(result.rows[0]);
   }
 
   async listRuleSets(): Promise<RoutingRuleSetRecord[]> {
@@ -943,7 +977,16 @@ function mapAgent(row: Record<string, unknown>): AgentRecord {
     bundleVersion: row.bundle_version === null ? null : Number(row.bundle_version),
     status: row.status as AgentRecord['status'],
     enrolledAt: toIso(row.enrolled_at as Date)!,
-    lastSeenAt: toIso((row.last_seen_at as Date) ?? null)
+    lastSeenAt: toIso((row.last_seen_at as Date) ?? null),
+    policyOverrides: (row.policy_overrides as JsonObject) ?? {}
+  };
+}
+
+function mapFleetPolicy(row: Record<string, unknown>): FleetPolicyRecord {
+  return {
+    policy: (row.policy as JsonObject) ?? {},
+    updatedAt: toIso(row.updated_at as Date)!,
+    updatedBy: (row.updated_by as string) ?? null
   };
 }
 
@@ -964,6 +1007,7 @@ function mapPrinter(row: Record<string, unknown>): AgentPrinterRecord {
     darkness: row.darkness === null ? null : Number(row.darkness),
     speed: row.speed === null ? null : Number(row.speed),
     rawZpl: Boolean(row.raw_zpl),
+    pageOrder: (row.page_order as string) ?? null,
     capabilities: (row.capabilities as JsonObject) ?? {},
     reportedAt: toIso(row.reported_at as Date)!
   };

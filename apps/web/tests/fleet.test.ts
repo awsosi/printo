@@ -28,6 +28,15 @@ describe('fleet admin', () => {
     expect(res.text).toContain('id="fleetJobList"');
     expect(res.text).toContain('id="fleetJobDetail"');
 
+    // The fleet policy, with every setting able to say "not set" - inheriting is a choice too.
+    expect(res.text).toContain('id="fleetPolicyWaybills"');
+    expect(res.text).toContain('<option value="skip">Do not print them</option>');
+    expect(res.text).toContain('id="fleetPolicyMedia"');
+    expect(res.text).toContain('id="fleetPolicyLogLevel"');
+    expect(res.text).toContain('id="fleetPolicyMaxSpool"');
+    expect(res.text).toContain('data-agent-policy=');
+    expect(res.text).toContain('function collectFleetPolicy()');
+
     // And it is actually driven, not decorative.
     expect(res.text).toContain('function loadFleet()');
     expect(res.text).toContain('bindFleet();');
@@ -59,6 +68,8 @@ describe('fleet admin', () => {
       ['get', '/admin/agent-jobs/job-1'],
       ['post', '/admin/bundles', { payload: { schemaVersion: 1, profiles: [] } }],
       ['patch', '/admin/agents/agent-1', { status: 'DISABLED' }],
+      ['get', '/admin/fleet-policy'],
+      ['put', '/admin/fleet-policy', { policy: { waybillHandling: 'skip' } }],
       ['post', '/admin/agents/enrollment-tokens', { validForHours: 1 }],
       ['post', '/admin/review-queue/item-1/resolve', { status: 'RESOLVED' }],
       ['post', '/admin/review-queue/item-1/propose-rule', {}]

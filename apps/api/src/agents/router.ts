@@ -6,6 +6,7 @@ import {
   matchProfile,
   parseBundlePayload,
   parseDocumentFeatures,
+  parseWaybillHandling,
   proposeRuleFromFallback,
   WireFormatError,
   type DocumentDecision,
@@ -15,6 +16,16 @@ import {
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import type { JsonObject } from '../types.js';
 import type { AgentStore } from './store.js';
+import {
+  effectivePolicy,
+  mergePolicies,
+  PAGE_ORDERS,
+  parseFleetPolicy,
+  PolicyError,
+  PRODUCT_DEFAULTS,
+  toAgentPolicy,
+  type FleetPolicyInput
+} from './policy.js';
 import type {
   AgentJobPageInput,
   AgentPrinterRecord,
@@ -87,6 +98,37 @@ export function createAgentRouter(store: AgentStore): Router {
     return { payload: parseBundlePayload(bundle.payload), version: bundle.version };
   }
 
+  /**
+   * The policy one agent runs on: the fleet's, with this agent's overrides laid over it.
+   *
+   * Stored values were validated on the way in; they are parsed again here all the same,
+   * because a policy the agents cannot read is one they silently ignore - and the one row a
+   * hand edit can break is the one every workstation reads.
+   */
+  async function agentPolicy(overrides: JsonObject): Promise<{ policy: FleetPolicyInput; updatedAt: string }> {
+    const fleet = await store.getFleetPolicy();
+    let base: FleetPolicyInput = {};
+    let own: FleetPolicyInput = {};
+    try {
+      base = parseFleetPolicy(fleet.policy);
+    } catch {
+      base = {};
+    }
+    try {
+      own = parseFleetPolicy(overrides);
+    } catch {
+      own = {};
+    }
+    return { policy: mergePolicies(base, own), updatedAt: fleet.updatedAt };
+  }
+
+  function policyError(res: Response, error: unknown) {
+    if (error instanceof PolicyError) {
+      return res.status(400).json({ error: 'INVALID_POLICY', detail: error.message });
+    }
+    throw error;
+  }
+
   /** Resolves the calling agent from its API key. */
   async function requireAgent(req: Request, res: Response, next: NextFunction) {
     const header = req.header('x-printo-agent-key');
@@ -153,11 +195,15 @@ export function createAgentRouter(store: AgentStore): Router {
     });
 
     const bundle = await store.latestBundle();
+    const { policy, updatedAt } = await agentPolicy(req.agent!.policyOverrides);
     return res.json({
       ok: true,
       // Told on every heartbeat rather than polled separately: the agent then needs no timer
       // of its own to notice a republished rule set.
-      bundleVersion: bundle?.version ?? null
+      bundleVersion: bundle?.version ?? null,
+      // The same for the fleet policy, which the agent applies without restarting. Only the
+      // settings that are set travel; the agent keeps its own defaults for the rest.
+      policy: toAgentPolicy(policy, updatedAt)
     });
   });
 
@@ -192,8 +238,15 @@ export function createAgentRouter(store: AgentStore): Router {
    */
   router.post('/agents/me/decide', requireAgent, async (req, res) => {
     let features;
+    let waybillHandling;
     try {
       features = parseDocumentFeatures(req.body?.features);
+
+      // The agent sends the handling it has in force - its own, its Group Policy's or the
+      // fleet's - so a document decided here lands where it would have locally. An agent that
+      // sends none gets the profile's, which is what agents from before the policy expect: they
+      // cannot print a page routed SKIP.
+      waybillHandling = parseWaybillHandling(req.body?.options?.waybillHandling, 'options.waybillHandling');
     } catch (error) {
       if (error instanceof WireFormatError) {
         return res.status(400).json({ error: 'INVALID_FEATURES', detail: error.message });
@@ -218,9 +271,10 @@ export function createAgentRouter(store: AgentStore): Router {
       return res.json({ status: 'no-profile', bundleVersion: rules.version });
     }
 
-    const options: EngineOptions = rules.payload.carrierSignatures
-      ? { carrierSignatures: rules.payload.carrierSignatures }
-      : {};
+    const options: EngineOptions = {
+      ...(rules.payload.carrierSignatures ? { carrierSignatures: rules.payload.carrierSignatures } : {}),
+      ...(waybillHandling ? { waybillHandling } : {})
+    };
 
     // The agent sets this on its final round. The engine is lazy by design and a page can
     // legitimately take a few turns - OCR to settle whether a 4x6in region is a return label,
@@ -281,6 +335,7 @@ export function createAgentRouter(store: AgentStore): Router {
       darkness: entry.darkness === undefined || entry.darkness === null ? null : Number(entry.darkness),
       speed: entry.speed === undefined || entry.speed === null ? null : Number(entry.speed),
       rawZpl: Boolean(entry.rawZpl),
+      pageOrder: PAGE_ORDERS.includes(entry.pageOrder as (typeof PAGE_ORDERS)[number]) ? String(entry.pageOrder) : null,
       capabilities: isJsonObject(entry.capabilities) ? entry.capabilities : {}
       }));
 
@@ -444,10 +499,13 @@ export function createAgentRouter(store: AgentStore): Router {
       return res.status(404).json({ error: 'AGENT_NOT_FOUND' });
     }
 
+    const { policy } = await agentPolicy(agent.policyOverrides);
     return res.json({
       agent,
       printers: await store.listPrinters(agent.id),
-      jobs: await store.listJobs({ agentId: agent.id, limit: 50 })
+      jobs: await store.listJobs({ agentId: agent.id, limit: 50 }),
+      // What this machine is sent: the fleet with its overrides, product defaults filled in.
+      effectivePolicy: effectivePolicy(policy)
     });
   });
 
@@ -470,13 +528,64 @@ export function createAgentRouter(store: AgentStore): Router {
       }
     }
 
+    // Replaced, not merged: the console sends the machine's whole set of differences, and
+    // `{}` or null returns it to the fleet.
+    let policyOverrides: JsonObject | undefined;
+    if (req.body?.policyOverrides !== undefined) {
+      try {
+        policyOverrides = parseFleetPolicy(req.body.policyOverrides, 'policyOverrides') as unknown as JsonObject;
+      } catch (error) {
+        return policyError(res, error);
+      }
+    }
+
     const agent = await store.updateAgent(req.params.agentId, {
       decisionMode: mode,
       confidenceThreshold: threshold,
-      status
+      status,
+      policyOverrides
     });
 
     return agent ? res.json({ agent }) : res.status(404).json({ error: 'AGENT_NOT_FOUND' });
+  });
+
+  /**
+   * The fleet policy: the settings every agent is sent, and the worker applies itself.
+   *
+   * Returns what is set, what is in force once product defaults fill the gaps, and the
+   * defaults themselves - the console needs all three to show "inherited" against "chosen".
+   */
+  router.get('/admin/fleet-policy', ...admin, async (_req, res) => {
+    const fleet = await store.getFleetPolicy();
+    let policy: FleetPolicyInput;
+    try {
+      policy = parseFleetPolicy(fleet.policy);
+    } catch (error) {
+      return policyError(res, error);
+    }
+    return res.json({
+      policy,
+      effective: effectivePolicy(policy),
+      defaults: PRODUCT_DEFAULTS,
+      updatedAt: fleet.updatedAt
+    });
+  });
+
+  router.put('/admin/fleet-policy', ...admin, async (req, res) => {
+    let policy: FleetPolicyInput;
+    try {
+      policy = parseFleetPolicy(req.body?.policy);
+    } catch (error) {
+      return policyError(res, error);
+    }
+
+    const saved = await store.setFleetPolicy(policy as unknown as JsonObject, req.user?.id ?? null);
+    return res.json({
+      policy,
+      effective: effectivePolicy(policy),
+      defaults: PRODUCT_DEFAULTS,
+      updatedAt: saved.updatedAt
+    });
   });
 
   router.get('/admin/rule-sets', ...admin, async (_req, res) => {

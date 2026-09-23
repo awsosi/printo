@@ -28,8 +28,9 @@ import { FeatureSourceUnavailableError, type PageFeatureSource } from './page-fe
  */
 const MAX_FEATURE_ROUNDS = 2;
 
-/** Route names the engine produces for the two roles the worker knows about. */
+/** Route names the engine produces for the two roles the worker knows about, and "not printed". */
 const ROUTE_THERMAL = 'THERMAL';
+const ROUTE_SKIP = 'SKIP';
 
 export interface RoutingEngineClassifierOptions {
   features: PageFeatureSource;
@@ -110,8 +111,10 @@ export class RoutingEngineClassifier implements DocumentPageClassifier {
       return this.fallBack(input, `no routing profile matched ${input.fileName}`);
     }
 
+    const engineOptions = input.waybillHandling ? { waybillHandling: input.waybillHandling } : {};
+
     for (let round = 0; round <= MAX_FEATURE_ROUNDS; round += 1) {
-      const evaluation = evaluateDocument(profile, document);
+      const evaluation = evaluateDocument(profile, document, engineOptions);
       if (evaluation.status === 'decided') {
         return evaluation.document.pages
           .slice()
@@ -228,15 +231,18 @@ export class RoutingEngineClassifier implements DocumentPageClassifier {
   private toClassification(decision: PageDecision): PageClassification {
     const isReturn = (decision.ruleId ?? '').includes('return-label');
     const pageClass: PageClass =
-      decision.route.toUpperCase() === ROUTE_THERMAL
-        ? 'OUTGOING_LABEL_THERMAL'
-        : isReturn
-          ? 'RETURN_LABEL_A4'
-          : 'DOCUMENT_A4';
+      decision.route.toUpperCase() === ROUTE_SKIP
+        ? 'WAYBILL_EXCLUDED'
+        : decision.route.toUpperCase() === ROUTE_THERMAL
+          ? 'OUTGOING_LABEL_THERMAL'
+          : isReturn
+            ? 'RETURN_LABEL_A4'
+            : 'DOCUMENT_A4';
 
     const evidence = [
       decision.ruleId ? `rule:${decision.ruleId}` : 'rule:none',
       `route:${decision.route}`,
+      ...(decision.waybill ? ['waybill'] : []),
       ...(decision.trace.carrier.carrier ? [`carrier:${decision.trace.carrier.carrier.toLowerCase()}`] : []),
       ...(decision.trace.hasTextLayer ? ['text-layer'] : ['no-text-layer']),
       ...(decision.trace.ocrRectsUsed.length > 0 ? [`ocr:${decision.trace.ocrRectsUsed.length}`] : []),

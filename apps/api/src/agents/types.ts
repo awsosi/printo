@@ -25,6 +25,11 @@ export interface AgentRecord {
   status: AgentStatus;
   enrolledAt: string;
   lastSeenAt: string | null;
+  /**
+   * This machine's differences from the fleet policy, merged over it field by field. `{}` is
+   * "exactly the fleet". Validated by `parseFleetPolicy` before it is stored.
+   */
+  policyOverrides: JsonObject;
 }
 
 /** A printer as the agent reported it. */
@@ -44,8 +49,17 @@ export interface AgentPrinterRecord {
   darkness: number | null;
   speed: number | null;
   rawZpl: boolean;
+  /** `auto`, `firstPageFirst` or `lastPageFirst`, as the agent reported it; null from older agents. */
+  pageOrder: string | null;
   capabilities: JsonObject;
   reportedAt: string;
+}
+
+/** The fleet policy as stored: only the settings an administrator chose. */
+export interface FleetPolicyRecord {
+  policy: JsonObject;
+  updatedAt: string;
+  updatedBy: string | null;
 }
 
 /** A published, versioned rule set. */

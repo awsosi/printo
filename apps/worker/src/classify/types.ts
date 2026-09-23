@@ -1,3 +1,4 @@
+import type { WaybillHandling } from '@printo/routing-engine';
 import type { PdfTextItem } from '../pdf.js';
 
 /**
@@ -5,8 +6,9 @@ import type { PdfTextItem } from '../pdf.js';
  * - OUTGOING_LABEL_THERMAL: carrier shipping label meant for the parcel → thermal printer.
  * - RETURN_LABEL_A4: return label for the customer → stays on A4, scaled.
  * - DOCUMENT_A4: invoice / general info / anything else → A4.
+ * - WAYBILL_EXCLUDED: a carrier's waybill copy the fleet policy says not to print.
  */
-export type PageClass = 'OUTGOING_LABEL_THERMAL' | 'RETURN_LABEL_A4' | 'DOCUMENT_A4';
+export type PageClass = 'OUTGOING_LABEL_THERMAL' | 'RETURN_LABEL_A4' | 'DOCUMENT_A4' | 'WAYBILL_EXCLUDED';
 
 export type CarrierName = 'DHL' | 'UPS' | 'FEDEX' | 'DPD' | 'GLS' | 'INPOST' | 'POCZTA_POLSKA' | string;
 
@@ -55,6 +57,11 @@ export interface DocumentClassifierInput {
   /** File name as scanned. Routing profiles match on it. */
   fileName: string;
   pages: PageClassifierInput[];
+  /**
+   * The fleet policy's waybill handling, when it sets one - the same setting the Windows agents
+   * are sent, so a document routes alike whichever path it arrives by.
+   */
+  waybillHandling?: WaybillHandling;
 }
 
 /**

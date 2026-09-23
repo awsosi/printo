@@ -25,6 +25,8 @@ interface ExpectedPage {
   pageNumber: number;
   pageClass: string;
   route: string;
+  /** A carrier's waybill copy: the DHL courier sheet or the FedEx AWB copy. */
+  waybill: boolean;
 }
 
 /**
@@ -169,6 +171,57 @@ suite('the worker routing-engine classifier', () => {
       }
 
       expect(classified).toBe(expected.pages.length);
+      expect(mismatches.slice(0, 10).join('\n')).toBe('');
+    });
+  }
+
+  /**
+   * The fleet policy's waybill handling, applied by the worker exactly as the agent applies it:
+   * every waybill copy moved or left out, and nothing else touched.
+   */
+  for (const handling of ['a4', 'thermal', 'skip'] as const) {
+    it(`moves every waybill copy and nothing else under waybill handling '${handling}'`, async () => {
+      const mismatches: string[] = [];
+
+      for (const document of documents) {
+        const classifier = new RoutingEngineClassifier({
+          features: new RecordedFeatures(pages, document.fileName, true),
+          fallback: new HeuristicPageClassifier(),
+          onEvent: () => {
+            // A fallback shows up as a mismatch below.
+          }
+        });
+
+        const results = await classifier.classifyDocument({
+          fileName: document.fileName,
+          pages: inputsFor(document, true),
+          waybillHandling: handling
+        });
+
+        for (const result of results) {
+          const truth = expectedByPage.get(`${document.fileName}#${result.pageNumber}`);
+          if (!truth) {
+            continue;
+          }
+
+          const wanted = truth.waybill
+            ? { a4: 'A4', thermal: 'OUTGOING_LABEL_THERMAL', skip: 'WAYBILL_EXCLUDED' }[handling]
+            : truth.route === 'THERMAL'
+              ? 'OUTGOING_LABEL_THERMAL'
+              : 'A4';
+          const actual =
+            result.pageClass === 'OUTGOING_LABEL_THERMAL' || result.pageClass === 'WAYBILL_EXCLUDED'
+              ? result.pageClass
+              : 'A4';
+
+          if (wanted !== actual) {
+            mismatches.push(
+              `${document.fileName} p${result.pageNumber} [${truth.pageClass}${truth.waybill ? ', waybill' : ''}] expected ${wanted}, got ${result.pageClass}`
+            );
+          }
+        }
+      }
+
       expect(mismatches.slice(0, 10).join('\n')).toBe('');
     });
   }

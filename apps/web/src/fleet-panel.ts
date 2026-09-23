@@ -9,7 +9,8 @@
  * Four questions this tab has to answer, in the order an administrator asks them:
  *
  *   1. *Which machines do I have, and are they alive?*  - the agent list.
- *   2. *Which rules are they running?*                  - the bundle publisher.
+ *   2. *Which rules are they running?*                  - the bundle publisher, and the
+ *      fleet policy: where waybill copies print, thermal stock, logs and spool clean-up.
  *   3. *What did they have to ask a person about?*      - fallback analytics.
  *   4. *What should I fix first?*                       - the review queue.
  */
@@ -69,6 +70,91 @@ export function fleetPanelHtml(): string {
                 <div id="fleetBundleStatus" class="status muted"></div>
               </section>
             </div>
+
+            <section class="card stack" id="fleetPolicyCard">
+              <div class="section-title">
+                <div class="stack">
+                  <h2>Fleet policy</h2>
+                  <p class="muted">Sent to every agent on its next heartbeat and applied without a restart; the worker applies the waybill setting too. "Not set" leaves each machine on the product default. A machine's own setting, or Group Policy, still wins on that machine; per-agent overrides are on each agent above.</p>
+                </div>
+                <span class="pill" id="fleetPolicyUpdated">never changed</span>
+              </div>
+              <div class="grid2">
+                <label>Waybill copies (DHL courier sheet, FedEx AWB copy)
+                  <select id="fleetPolicyWaybills">
+                    <option value="">Not set - route normally</option>
+                    <option value="route">Route normally (DHL sheet on A4, FedEx AWB copy with the labels)</option>
+                    <option value="a4">Always A4</option>
+                    <option value="thermal">Always thermal</option>
+                    <option value="skip">Do not print them</option>
+                  </select>
+                </label>
+                <label>Thermal media
+                  <input id="fleetPolicyMedia" type="text" placeholder="100x210mm (product default)" />
+                </label>
+              </div>
+              <div class="grid2">
+                <label>A4 page order
+                  <select id="fleetPolicyOrderA4">
+                    <option value="">Not set - first page first</option>
+                    <option value="firstPageFirst">First page first</option>
+                    <option value="lastPageFirst">Last page first</option>
+                  </select>
+                </label>
+                <label>Thermal page order
+                  <select id="fleetPolicyOrderThermal">
+                    <option value="">Not set - last label first (a torn-off strip reads in order)</option>
+                    <option value="firstPageFirst">First label first</option>
+                    <option value="lastPageFirst">Last label first</option>
+                  </select>
+                </label>
+              </div>
+              <div class="grid2">
+                <label>Log files on the workstations
+                  <select id="fleetPolicyLogEnabled">
+                    <option value="">Not set - off</option>
+                    <option value="true">On</option>
+                    <option value="false">Off</option>
+                  </select>
+                </label>
+                <label>Log level
+                  <select id="fleetPolicyLogLevel">
+                    <option value="">Not set - information</option>
+                    <option value="debug">Debug</option>
+                    <option value="information">Information</option>
+                    <option value="warning">Warning</option>
+                    <option value="error">Error</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                </label>
+              </div>
+              <div class="grid2">
+                <label>Start a new log file at (MB)
+                  <input id="fleetPolicyLogSize" type="number" min="1" max="1024" placeholder="10" />
+                </label>
+                <label>Log files to keep
+                  <input id="fleetPolicyLogFiles" type="number" min="1" max="100" placeholder="5" />
+                </label>
+              </div>
+              <div class="grid2">
+                <label>Keep printed documents (hours)
+                  <input id="fleetPolicyKeepPrinted" type="number" min="0" max="8760" placeholder="24" />
+                </label>
+                <label>Keep job history (days)
+                  <input id="fleetPolicyKeepHistory" type="number" min="1" max="3650" placeholder="14" />
+                </label>
+              </div>
+              <div class="grid2">
+                <label>Give up on unprinted jobs (days)
+                  <input id="fleetPolicyExpire" type="number" min="1" max="3650" placeholder="30" />
+                </label>
+                <label>Spool size limit per machine (MB)
+                  <input id="fleetPolicyMaxSpool" type="number" min="50" max="1048576" placeholder="2048" />
+                </label>
+              </div>
+              <button id="fleetPolicySave" type="button">Save the fleet policy</button>
+              <div id="fleetPolicyStatus" class="status muted"></div>
+            </section>
 
             <div class="grid2">
               <section class="card stack">
@@ -167,6 +253,7 @@ export function fleetPanelScript(): string {
   return `
         const fleet = {
           agents: [],
+          policy: null,
           bundle: null,
           summary: [],
           fallbacks: [],
@@ -229,6 +316,9 @@ export function fleetPanelScript(): string {
                 '<label>Confidence threshold<input type="number" min="0" max="1" step="0.05" value="' +
                   escapeHtml(String(agent.confidenceThreshold)) + '" data-agent-threshold="' + escapeHtml(agent.id) + '" /></label>' +
               '</div>' +
+              '<label>Policy overrides for this machine (JSON; {} follows the fleet)' +
+                '<textarea rows="3" spellcheck="false" data-agent-policy="' + escapeHtml(agent.id) + '">' +
+                  escapeHtml(JSON.stringify(agent.policyOverrides || {})) + '</textarea></label>' +
               '<div class="grid2">' +
                 '<button type="button" data-agent-save="' + escapeHtml(agent.id) + '">Save</button>' +
                 '<button type="button" class="secondary" data-agent-status="' + escapeHtml(agent.id) + '">' +
@@ -236,6 +326,76 @@ export function fleetPanelScript(): string {
               '</div>' +
             '</div>';
           }).join('');
+        }
+
+        /** Fills the policy form from what is set; unset fields stay blank and say "not set". */
+        function renderFleetPolicy() {
+          const data = fleet.policy;
+          if (!data) {
+            return;
+          }
+          const policy = data.policy || {};
+          const logging = policy.logging || {};
+          const retention = policy.retention || {};
+          const order = policy.pageOrder || {};
+          function set(id, value) {
+            const input = byId(id);
+            if (input) {
+              input.value = value === undefined || value === null ? '' : String(value);
+            }
+          }
+          set('fleetPolicyWaybills', policy.waybillHandling);
+          set('fleetPolicyMedia', policy.thermalMedia);
+          set('fleetPolicyOrderA4', order.a4 === 'auto' ? '' : order.a4);
+          set('fleetPolicyOrderThermal', order.thermal === 'auto' ? '' : order.thermal);
+          set('fleetPolicyLogEnabled', logging.fileEnabled);
+          set('fleetPolicyLogLevel', logging.level);
+          set('fleetPolicyLogSize', logging.maxFileSizeMb);
+          set('fleetPolicyLogFiles', logging.maxFiles);
+          set('fleetPolicyKeepPrinted', retention.keepPrintedHours);
+          set('fleetPolicyKeepHistory', retention.keepHistoryDays);
+          set('fleetPolicyExpire', retention.expireUnprintedDays);
+          set('fleetPolicyMaxSpool', retention.maxSpoolMb);
+          byId('fleetPolicyUpdated').textContent = 'changed ' + fleetAgo(data.updatedAt);
+        }
+
+        /** Reads the form back, leaving out every field that is blank - "not set" is not a value. */
+        function collectFleetPolicy() {
+          function text(id) {
+            const input = byId(id);
+            return input && input.value.trim() !== '' ? input.value.trim() : undefined;
+          }
+          function number(id) {
+            const value = text(id);
+            return value === undefined ? undefined : Number(value);
+          }
+          function group(entries) {
+            const result = {};
+            Object.keys(entries).forEach(function (key) {
+              if (entries[key] !== undefined) {
+                result[key] = entries[key];
+              }
+            });
+            return Object.keys(result).length ? result : undefined;
+          }
+          const enabled = text('fleetPolicyLogEnabled');
+          return group({
+            waybillHandling: text('fleetPolicyWaybills'),
+            thermalMedia: text('fleetPolicyMedia'),
+            pageOrder: group({ a4: text('fleetPolicyOrderA4'), thermal: text('fleetPolicyOrderThermal') }),
+            logging: group({
+              fileEnabled: enabled === undefined ? undefined : enabled === 'true',
+              level: text('fleetPolicyLogLevel'),
+              maxFileSizeMb: number('fleetPolicyLogSize'),
+              maxFiles: number('fleetPolicyLogFiles')
+            }),
+            retention: group({
+              keepPrintedHours: number('fleetPolicyKeepPrinted'),
+              keepHistoryDays: number('fleetPolicyKeepHistory'),
+              expireUnprintedDays: number('fleetPolicyExpire'),
+              maxSpoolMb: number('fleetPolicyMaxSpool')
+            })
+          }) || {};
         }
 
         function renderFleetBundle() {
@@ -552,6 +712,13 @@ export function fleetPanelScript(): string {
           }
 
           try {
+            fleet.policy = await request('/admin/fleet-policy', 'GET');
+            renderFleetPolicy();
+          } catch (error) {
+            fleetSetStatus('fleetPolicyStatus', 'Could not load the fleet policy: ' + error.message, 'danger');
+          }
+
+          try {
             // 404 is the ordinary "nothing published yet" answer, not a failure.
             const bundle = await request('/admin/bundles/latest', 'GET');
             fleet.bundle = bundle.bundle;
@@ -787,6 +954,19 @@ export function fleetPanelScript(): string {
             reload.addEventListener('click', function () { void loadFleet(); });
           }
 
+          const savePolicy = byId('fleetPolicySave');
+          if (savePolicy) {
+            savePolicy.addEventListener('click', async function () {
+              try {
+                fleet.policy = await request('/admin/fleet-policy', 'PUT', { policy: collectFleetPolicy() });
+                renderFleetPolicy();
+                fleetSetStatus('fleetPolicyStatus', 'Saved. Agents take it on their next heartbeat, within a minute.', 'ok');
+              } catch (error) {
+                fleetSetStatus('fleetPolicyStatus', 'Not saved: ' + error.message, 'danger');
+              }
+            });
+          }
+
           const agentList = byId('fleetAgentList');
           if (agentList) {
             agentList.addEventListener('click', async function (event) {
@@ -796,10 +976,19 @@ export function fleetPanelScript(): string {
               if (save) {
                 const mode = document.querySelector('[data-agent-mode="' + save + '"]');
                 const threshold = document.querySelector('[data-agent-threshold="' + save + '"]');
+                const overrides = document.querySelector('[data-agent-policy="' + save + '"]');
+                let policyOverrides;
+                try {
+                  policyOverrides = overrides && overrides.value.trim() ? JSON.parse(overrides.value) : {};
+                } catch (error) {
+                  fleetSetStatus('fleetTokenResult', 'The policy overrides are not valid JSON: ' + error.message, 'danger');
+                  return;
+                }
                 try {
                   await request('/admin/agents/' + encodeURIComponent(save), 'PATCH', {
                     decisionMode: mode ? mode.value : undefined,
-                    confidenceThreshold: threshold ? Number(threshold.value) : undefined
+                    confidenceThreshold: threshold ? Number(threshold.value) : undefined,
+                    policyOverrides: policyOverrides
                   });
                   await loadFleet();
                 } catch (error) {
