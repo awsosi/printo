@@ -8,6 +8,7 @@ import {
   parseBundlePayload,
   parseDocumentFeatures,
   parsePredicate,
+  parseWaybillHandling,
   WireFormatError
 } from '../src/wire.js';
 import { evaluateDocument, matchProfile } from '../src/engine.js';
@@ -101,6 +102,30 @@ describe('rule bundle validation', () => {
     rules.push({ ...rules[0] });
 
     expectRejected(payload, 'bundle.profiles[0].pageRules', 'duplicate rule id');
+  });
+
+  it('validates the waybill policy: its handling, its rules, and one id namespace with the page rules', () => {
+    const unknown = bundle() as { profiles: Array<Record<string, unknown>> };
+    (unknown.profiles[0].waybills as Record<string, unknown>).handling = 'shred';
+    expectRejected(unknown, 'bundle.profiles[0].waybills.handling', 'route, a4, thermal, skip');
+
+    const broken = bundle() as { profiles: Array<Record<string, unknown>> };
+    const rules = (broken.profiles[0].waybills as { rules: Array<Record<string, unknown>> }).rules;
+    rules[0].when = { colour: { is: 'red' } };
+    expectRejected(broken, 'bundle.profiles[0].waybills.rules[0].when.colour', 'unknown predicate');
+
+    const clash = bundle() as { profiles: Array<Record<string, unknown>> };
+    const clashing = (clash.profiles[0].waybills as { rules: Array<Record<string, unknown>> }).rules;
+    clashing[0].id = 'dhl-label-stock';
+    expectRejected(clash, 'bundle.profiles[0].pageRules', "duplicate rule id 'dhl-label-stock'");
+  });
+
+  it('reads the waybill handling an agent sends, and refuses one no engine knows', () => {
+    expect(parseWaybillHandling(undefined)).toBeUndefined();
+    expect(parseWaybillHandling(null)).toBeUndefined();
+    expect(parseWaybillHandling('skip')).toBe('skip');
+    expect(() => parseWaybillHandling('SKIP')).toThrow(WireFormatError);
+    expect(() => parseWaybillHandling(3)).toThrow(WireFormatError);
   });
 
   it('rejects an unknown fallback behaviour and an unknown named rectangle', () => {

@@ -64,7 +64,10 @@ public sealed class ConformanceTests
         var where = $"{file} :: {fixture.Name}" +
             (fixture.Rationale is null ? string.Empty : $" ({fixture.Rationale})");
         var profile = fixture.ResolveProfile();
-        var evaluation = RoutingEngine.EvaluateDocument(profile, fixture.Document);
+        var evaluation = RoutingEngine.EvaluateDocument(
+            profile,
+            fixture.Document,
+            new EngineOptions { WaybillHandling = fixture.EngineOptions?.WaybillHandling });
 
         if (fixture.ExpectNeedsBarcodes is { Count: > 0 })
         {
@@ -209,6 +212,13 @@ public sealed class ConformanceTests
             Assert.True(
                 wanted == page.Trace.Carrier.Carrier,
                 $"{at}: expected carrier {wanted ?? "none"}, got {page.Trace.Carrier.Carrier ?? "none"}");
+        }
+
+        if (expected.TryGetProperty("waybill", out var waybill))
+        {
+            Assert.True(
+                waybill.GetBoolean() == (page.Waybill == true),
+                $"{at}: expected waybill {waybill.GetBoolean()}, got {page.Waybill == true}");
         }
 
         if (expected.TryGetProperty("ocrRectsUsed", out var rects))

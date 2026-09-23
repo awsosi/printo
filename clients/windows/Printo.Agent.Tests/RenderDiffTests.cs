@@ -28,6 +28,13 @@ public sealed class RenderDiffTests
     /// </summary>
     private const int ChannelTolerance = 12;
 
+    /// <summary>
+    /// The 100x150 mm stock these cases were drawn for. Named here rather than taken from the
+    /// product default, which is 100x210 mm now: a reference image is a picture of one sheet size,
+    /// and a change of default is not a change in how a label lands on 100x150.
+    /// </summary>
+    private static readonly MediaSize Stock100X150 = new() { WidthMm = 100, HeightMm = 150 };
+
     /// <summary>Fraction of pixels allowed to exceed the tolerance before the test fails.</summary>
     private const double MaxDifferingFraction = 0.002;
 
@@ -61,7 +68,7 @@ public sealed class RenderDiffTests
             {
                 // The everyday case: a 4x6in label onto the product-default thermal stock.
                 using var page = document.OpenPage(1);
-                var media = MediaSizes.DefaultThermal;
+                var media = Stock100X150;
                 return PrintComposer.Compose(
                     page,
                     new TransformSpec { Source = RectSpec.Page, Rotate = RotateSpec.Auto, Fit = "contain" },
@@ -101,7 +108,7 @@ public sealed class RenderDiffTests
             {
                 // Calibration case: a site that needs the image pulled in and nudged.
                 using var page = document.OpenPage(1);
-                var media = MediaSizes.DefaultThermal;
+                var media = Stock100X150;
                 return PrintComposer.Compose(
                     page,
                     new TransformSpec
@@ -137,7 +144,7 @@ public sealed class RenderDiffTests
                 // An explicit millimetre crop, the shape a rule editor produces when someone
                 // drags a rectangle over a sample page.
                 using var page = document.OpenPage(0);
-                var media = MediaSizes.DefaultThermal;
+                var media = Stock100X150;
                 return PrintComposer.Compose(
                     page,
                     new TransformSpec
@@ -223,7 +230,7 @@ public sealed class RenderDiffTests
 
         using var document = PdfDocument.Load(File.ReadAllBytes(FixturePath));
         using var page = document.OpenPage(1);
-        var media = MediaSizes.DefaultThermal;
+        var media = Stock100X150;
 
         var contained = PrintComposer.Compose(
             page,
@@ -264,7 +271,7 @@ public sealed class RenderDiffTests
 
         using var document = PdfDocument.Load(File.ReadAllBytes(FixturePath));
         using var page = document.OpenPage(1);
-        var media = MediaSizes.DefaultThermal;
+        var media = Stock100X150;
 
         var composed = PrintComposer.Compose(
             page,

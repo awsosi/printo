@@ -151,6 +151,9 @@ public sealed class PageDecision
     /// <summary>True when the page must be confirmed before printing.</summary>
     public bool Hold { get; init; }
 
+    /// <summary>True when the waybill policy identified the page and decided its route.</summary>
+    public bool? Waybill { get; init; }
+
     public FallbackOutcome? Fallback { get; init; }
 
     public PageDecisionTrace Trace { get; init; } = new();

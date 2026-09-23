@@ -37,8 +37,12 @@ public static class MediaSizes
         @"^(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(mm)?$",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
-    /// <summary>Product default thermal stock.</summary>
-    public static MediaSize DefaultThermal { get; } = new() { WidthMm = 100, HeightMm = 150 };
+    /// <summary>
+    /// Product default thermal stock: 100x210 mm, the stock the benches load. The tall DHL label
+    /// fits it unreduced and a 4x6in label sits on it at full size. Mirrors
+    /// <c>DEFAULT_THERMAL_MEDIA</c>.
+    /// </summary>
+    public static MediaSize DefaultThermal { get; } = new() { WidthMm = 100, HeightMm = 210 };
 
     /// <summary>Product default document stock.</summary>
     public static MediaSize DefaultDocument { get; } = new() { WidthMm = 210, HeightMm = 297 };

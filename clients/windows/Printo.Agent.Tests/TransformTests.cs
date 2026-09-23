@@ -106,8 +106,9 @@ public sealed class TransformTests
         });
 
         Assert.Equal(SettingLayer.ProductDefault, resolved.Layer);
+        // 100x210 mm, the stock the benches load: the tall DHL label fits it unreduced.
         Assert.Equal(100, resolved.Value.WidthMm, 6);
-        Assert.Equal(150, resolved.Value.HeightMm, 6);
+        Assert.Equal(210, resolved.Value.HeightMm, 6);
     }
 
     [Fact]

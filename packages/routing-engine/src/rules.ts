@@ -234,6 +234,36 @@ export interface DocumentExpectations {
   thermalPagesPerDocument?: RangeMm;
 }
 
+/**
+ * What happens to a carrier's waybill copy - the DHL courier sheet ("WAYBILL DOC - Hand to
+ * Courier") and the FedEx AWB copy.
+ *
+ * - `route` leaves them to the page rules, which is what every site had before the policy
+ *   existed: the DHL sheet on A4, the FedEx AWB copy on thermal with the labels.
+ * - `a4` and `thermal` force every waybill copy to that printer.
+ * - `skip` prints none of them: the rest of the document prints and the waybill pages are
+ *   recorded as not printed.
+ */
+export type WaybillHandling = 'route' | 'a4' | 'thermal' | 'skip';
+
+export const WAYBILL_HANDLINGS: readonly WaybillHandling[] = ['route', 'a4', 'thermal', 'skip'];
+
+/**
+ * How a profile recognises waybill copies, and what it does with them.
+ *
+ * The rules here only identify; where the page goes is the handling's decision. They run ahead
+ * of the page rules, and only when the handling is something other than `route` - so the
+ * default costs nothing and routes exactly as it did before the policy existed. That matters
+ * because the FedEx AWB copy can only be told from a FedEx label by reading it: on the file
+ * path those labels are otherwise settled by geometry alone, and OCR of every one of them would
+ * be a price paid by sites that never asked for the distinction.
+ */
+export interface WaybillPolicy {
+  /** Defaults to `route`. An agent's own setting, when it has one, takes precedence. */
+  handling?: WaybillHandling;
+  rules: PageRule[];
+}
+
 export interface RoutingProfileRules {
   /** Human-facing profile name, e.g. `Marendo OneClickPrint`. */
   profile: string;
@@ -245,6 +275,7 @@ export interface RoutingProfileRules {
   pageRules: PageRule[];
   fallback: FallbackPolicy;
   expectations?: DocumentExpectations;
+  waybills?: WaybillPolicy;
 }
 
 export const DEFAULT_CONFIDENCE_THRESHOLD = 0.75;
@@ -252,3 +283,12 @@ export const DEFAULT_CONFIDENCE_THRESHOLD = 0.75;
 /** Roles every deployment has; anything else is a printer alias. */
 export const ROUTE_A4 = 'A4';
 export const ROUTE_THERMAL = 'THERMAL';
+
+/**
+ * The route of a page that is deliberately not printed - a waybill copy under `skip`.
+ *
+ * A route rather than a flag so that every consumer which does not know it fails loudly: an
+ * agent from before the policy resolves no printer for `SKIP` and fails the job, instead of
+ * printing a page an administrator said must never be printed.
+ */
+export const ROUTE_SKIP = 'SKIP';

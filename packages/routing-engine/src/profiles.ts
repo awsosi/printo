@@ -401,6 +401,87 @@ export const ONE_CLICK_PRINT_PROFILE: RoutingProfileRules = {
       }
     }
   ],
+  waybills: {
+    // Route normally unless a site says otherwise: the courier sheet stays on A4 through
+    // `dhl-waybill-sheet-*` above, and the FedEx AWB copy prints with the labels, which is what
+    // every bench did before this policy existed.
+    handling: 'route',
+    rules: [
+      {
+        // The same markers as `dhl-waybill-sheet-text`, which is right: that rule is how the
+        // page rules keep the courier sheet off the thermal printer, and this one is how the
+        // policy finds it. Text first, so the file path pays nothing for it.
+        id: 'waybill-dhl-text',
+        name: 'DHL courier waybill sheet (text layer)',
+        when: {
+          any: [
+            { text: { contains: 'Not to be attached to package' } },
+            { text: { matches: '\\*\\s*WAYBILL\\s*DOC\\s*\\*' } },
+            { text: { contains: 'Hand to Courier' } }
+          ]
+        },
+        then: {
+          confidence: 1,
+          transform: { source: 'inkBox', padMm: 1, rotate: 'auto', fit: 'contain' }
+        }
+      },
+      {
+        // The courier sheet once printing has taken its text layer away, or on the template
+        // variant whose chrome the anonymiser flattened into pixels. Keyed exactly as
+        // `dhl-waybill-sheet-ocr`, whose comment has the measurements.
+        id: 'waybill-dhl-ocr',
+        name: 'DHL courier waybill sheet (OCR)',
+        when: {
+          all: [
+            {
+              geometry: {
+                inkShortEdgeMm: { min: 85, max: 118 },
+                inkAspectNormalised: { min: 1.75, max: 2.2 }
+              }
+            },
+            {
+              ocr: {
+                rect: 'inkBox',
+                matches: 'WAYBILL\\s*DOC|Not\\s*to\\s*be\\s*attached|Hand\\s*to\\s*Courier'
+              }
+            }
+          ]
+        },
+        then: {
+          confidence: 0.9,
+          transform: { source: 'inkBox', padMm: 1, rotate: 'auto', fit: 'contain' }
+        }
+      },
+      {
+        // The FedEx AWB copy: the air waybill FedEx prints beside an international label, in
+        // the same 4x6in frame, at the same place on the same A4-landscape sheet. Geometry
+        // cannot tell the two apart (ink 149.3x101.8 mm against 150.1x100.3 mm), which is why
+        // the page rules have always sent it to thermal as a label.
+        //
+        // `CARRIAGE VALUE` and `PKG: YOUR PKG` are printed on the copy and on nothing else.
+        // Measured on OCR of every page, as files and as print-simulated copies: each marks
+        // exactly the 106 AWB copies in the corpus and no other page, of any class. `AWB` on
+        // its own was rejected - it also appears on all 330 return notes.
+        id: 'waybill-fedex-awb-ocr',
+        name: 'FedEx AWB copy (OCR)',
+        when: {
+          all: [
+            {
+              geometry: {
+                inkShortEdgeMm: { min: 88, max: 118 },
+                inkAspectNormalised: { min: 1.35, max: 1.7 }
+              }
+            },
+            { ocr: { rect: 'inkBox', matches: 'CARRIAGE\\s*VALUE|PKG\\s*:?\\s*YOUR\\s*PKG' } }
+          ]
+        },
+        then: {
+          confidence: 0.9,
+          transform: { source: 'inkBox', padMm: 1, rotate: 'auto', fit: 'contain' }
+        }
+      }
+    ]
+  },
   fallback: {
     route: 'A4',
     // Everything the rules did not claim is a document, and documents are the majority of

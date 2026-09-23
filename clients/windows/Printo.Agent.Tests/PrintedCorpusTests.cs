@@ -23,8 +23,12 @@ namespace Printo.Agent.Tests;
 /// </remarks>
 public sealed class PrintedCorpusTests
 {
-    [Fact]
-    public void RoutesEveryPrintedPageCorrectlyWithoutAskingAnybody()
+    [Theory]
+    [InlineData(WaybillHandling.Route)]
+    [InlineData(WaybillHandling.A4)]
+    [InlineData(WaybillHandling.Thermal)]
+    [InlineData(WaybillHandling.Skip)]
+    public void RoutesEveryPrintedPageCorrectlyWithoutAskingAnybody(WaybillHandling handling)
     {
         if (RepositoryPaths.PrintedCorpusFeatures is not { } featuresPath
             || RepositoryPaths.CorpusExpected is not { } expectedPath)
@@ -35,7 +39,12 @@ public sealed class PrintedCorpusTests
         var expected = JsonNode.Parse(File.ReadAllText(expectedPath))!["pages"]!.AsArray()
             .ToDictionary(
                 page => (page!["doc"]!.GetValue<string>(), page["pageNumber"]!.GetValue<int>()),
-                page => (Class: page!["pageClass"]!.GetValue<string>(), Route: page["route"]!.GetValue<string>()));
+                page => (
+                    Class: page!["pageClass"]!.GetValue<string>(),
+                    Route: ExpectedRoute(
+                        page["route"]!.GetValue<string>(),
+                        page["waybill"]?.GetValue<bool>() ?? false,
+                        handling)));
 
         var mismatches = new List<string>();
         var prompted = new List<string>();
@@ -43,7 +52,10 @@ public sealed class PrintedCorpusTests
 
         foreach (var document in Load(featuresPath))
         {
-            var evaluation = RoutingEngine.EvaluateDocument(BuiltinProfiles.OneClickPrint, document);
+            var evaluation = RoutingEngine.EvaluateDocument(
+                BuiltinProfiles.OneClickPrint,
+                document,
+                new EngineOptions { WaybillHandling = handling });
             Assert.False(
                 evaluation.NeedsFeatures,
                 $"{document.FileName}: the engine asked for something the printed corpus did not record");
@@ -81,6 +93,20 @@ public sealed class PrintedCorpusTests
             prompted.Count == 0,
             $"{prompted.Count} printed pages asked about:{Environment.NewLine}{string.Join(Environment.NewLine, prompted.Take(20))}");
     }
+
+    /// <summary>
+    /// Where a page belongs under a waybill handling: the reviewed ground truth, except that every
+    /// handling but Route moves the waybill copies - and nothing else.
+    /// </summary>
+    private static string ExpectedRoute(string route, bool waybill, WaybillHandling handling) =>
+        !waybill || handling == WaybillHandling.Route
+            ? route
+            : handling switch
+            {
+                WaybillHandling.A4 => RoutingProfileRules.RouteA4,
+                WaybillHandling.Thermal => RoutingProfileRules.RouteThermal,
+                _ => RoutingProfileRules.RouteSkip,
+            };
 
     private static List<DocumentFeatures> Load(string path)
     {

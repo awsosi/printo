@@ -8,7 +8,7 @@
  */
 
 import type { DocumentFeatures } from './features.js';
-import type { FallbackReason, RoutingProfileRules } from './rules.js';
+import type { FallbackReason, RoutingProfileRules, WaybillHandling } from './rules.js';
 
 /** Expected outcome for one page. Fields left out are not asserted. */
 export interface ExpectedPageOutcome {
@@ -22,6 +22,8 @@ export interface ExpectedPageOutcome {
   ocrRectsUsed?: string[];
   /** Carrier the resolver must report; `null` asserts "no carrier". */
   carrier?: string | null;
+  /** Whether the waybill policy claimed the page. `false` also matches an absent flag. */
+  waybill?: boolean;
 }
 
 export interface ExpectedDocumentOutcome {
@@ -35,6 +37,8 @@ export interface ConformanceFixture {
   rationale?: string;
   /** `builtin:<profile name>` or an inline rule set. */
   profile: string | RoutingProfileRules;
+  /** What the host passes the engine beside the profile. */
+  engineOptions?: { waybillHandling?: WaybillHandling };
   document: DocumentFeatures;
   /**
    * When set, the engine must stop and ask for exactly these OCR regions on the first pass.

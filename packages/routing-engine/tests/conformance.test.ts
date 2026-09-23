@@ -68,7 +68,7 @@ describe('conformance fixtures', () => {
       for (const fixture of suite.fixtures) {
         it(fixture.name, () => {
           const profile = resolveProfile(fixture.profile);
-          const evaluation = evaluateDocument(profile, fixture.document);
+          const evaluation = evaluateDocument(profile, fixture.document, fixture.engineOptions ?? {});
 
           if (fixture.expectNeedsBarcodes && fixture.expectNeedsBarcodes.length > 0) {
             expect(evaluation.status, fixture.rationale).toBe('needs-features');
@@ -179,6 +179,9 @@ describe('conformance fixtures', () => {
             }
             if ('carrier' in want) {
               expect(page.trace.carrier.carrier).toBe(want.carrier);
+            }
+            if ('waybill' in want) {
+              expect(page.waybill === true, `page ${want.pageNumber} waybill flag`).toBe(want.waybill);
             }
             if ('ocrRectsUsed' in want) {
               expect([...page.trace.ocrRectsUsed].sort()).toEqual([...(want.ocrRectsUsed ?? [])].sort());

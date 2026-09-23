@@ -24,6 +24,7 @@ import type {
   TemplateMatch,
   TextLine
 } from './features.js';
+import { WAYBILL_HANDLINGS } from './rules.js';
 import type {
   FallbackBehaviour,
   GeometryPredicate,
@@ -31,7 +32,8 @@ import type {
   Predicate,
   RectSpec,
   RoutingProfileRules,
-  TransformSpec
+  TransformSpec,
+  WaybillHandling
 } from './rules.js';
 
 /** Raised when something crossing the wire does not match the schema. Carries the JSON path. */
@@ -531,11 +533,32 @@ export function parseProfile(value: unknown, path: string): RoutingProfileRules 
     parsePageRule(rule, `${path}.pageRules[${index}]`)
   );
 
+  let waybills: RoutingProfileRules['waybills'];
+  if (value.waybills !== undefined && value.waybills !== null) {
+    const declared = value.waybills;
+    isObject(declared, `${path}.waybills`);
+    const handling = optionalString(declared.handling, `${path}.waybills.handling`);
+    if (handling !== undefined && !WAYBILL_HANDLINGS.includes(handling as WaybillHandling)) {
+      throw new WireFormatError(
+        `${path}.waybills.handling`,
+        `expected one of ${WAYBILL_HANDLINGS.join(', ')}`
+      );
+    }
+    isArray(declared.rules, `${path}.waybills.rules`);
+    waybills = {
+      handling: handling as WaybillHandling | undefined,
+      rules: declared.rules.map((rule, index) =>
+        parsePageRule(rule, `${path}.waybills.rules[${index}]`)
+      )
+    };
+  }
+
   const seen = new Set<string>();
-  for (const rule of pageRules) {
+  for (const rule of [...pageRules, ...(waybills?.rules ?? [])]) {
     if (seen.has(rule.id)) {
       // Rule ids are how a trace, a review-queue entry and a proposed fix refer to a rule.
-      // Two rules sharing one makes every one of those ambiguous.
+      // Two rules sharing one makes every one of those ambiguous - and a waybill rule shares
+      // the page rules' trace, so the two lists share one namespace.
       throw new WireFormatError(`${path}.pageRules`, `duplicate rule id '${rule.id}'`);
     }
     seen.add(rule.id);
@@ -581,7 +604,8 @@ export function parseProfile(value: unknown, path: string): RoutingProfileRules 
       onUnknown: onUnknown as FallbackBehaviour,
       byReason: Object.keys(byReason).length > 0 ? (byReason as RoutingProfileRules['fallback']['byReason']) : undefined
     },
-    expectations
+    expectations,
+    waybills
   };
 }
 
@@ -685,13 +709,19 @@ export function parseBundlePayload(value: unknown): RuleBundlePayload {
   // and the agent would ask for a template nobody can supply on every single page.
   const available = new Set((templates ?? []).map((template) => template.name));
   for (const [index, profile] of parsed.profiles.entries()) {
-    for (const [ruleIndex, rule] of profile.pageRules.entries()) {
-      for (const name of templateNames(rule.when)) {
-        if (!available.has(name)) {
-          throw new WireFormatError(
-            `bundle.profiles[${index}].pageRules[${ruleIndex}].when`,
-            `refers to template '${name}', which the bundle does not carry`
-          );
+    const lists: Array<[string, PageRule[]]> = [
+      ['pageRules', profile.pageRules],
+      ['waybills.rules', profile.waybills?.rules ?? []]
+    ];
+    for (const [list, rules] of lists) {
+      for (const [ruleIndex, rule] of rules.entries()) {
+        for (const name of templateNames(rule.when)) {
+          if (!available.has(name)) {
+            throw new WireFormatError(
+              `bundle.profiles[${index}].${list}[${ruleIndex}].when`,
+              `refers to template '${name}', which the bundle does not carry`
+            );
+          }
         }
       }
     }
@@ -869,4 +899,21 @@ export function parseDocumentFeatures(value: unknown): DocumentFeatures {
     pageCount,
     pages
   };
+}
+
+/**
+ * Reads a waybill handling from untrusted input, or `undefined` when none was given.
+ *
+ * An agent sends the handling it has in force with every decision it asks the server for, so
+ * the server decides by the same policy the workstation would have. A value neither engine
+ * knows is refused rather than ignored: ignoring it would print waybills a site said to skip.
+ */
+export function parseWaybillHandling(value: unknown, path = 'waybillHandling'): WaybillHandling | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== 'string' || !WAYBILL_HANDLINGS.includes(value as WaybillHandling)) {
+    throw new WireFormatError(path, `expected one of ${WAYBILL_HANDLINGS.join(', ')}`);
+  }
+  return value as WaybillHandling;
 }

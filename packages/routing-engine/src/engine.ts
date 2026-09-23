@@ -13,12 +13,15 @@ import { decodedBarcodes, padRect } from './features.js';
 import { evaluatePredicate, findFirstFailure, resolveRect, type EvaluationContext } from './predicates.js';
 import {
   DEFAULT_CONFIDENCE_THRESHOLD,
+  ROUTE_A4,
+  ROUTE_SKIP,
   ROUTE_THERMAL,
   type FallbackBehaviour,
   type FallbackReason,
   type PageRule,
   type RoutingProfileRules,
-  type TransformSpec
+  type TransformSpec,
+  type WaybillHandling
 } from './rules.js';
 import type {
   BarcodeRequest,
@@ -33,6 +36,31 @@ import type {
 export interface EngineOptions {
   /** Overrides the built-in carrier signatures; supplied by the rule bundle. */
   carrierSignatures?: CarrierSignatureSet[];
+  /**
+   * The waybill handling in force, overriding the profile's own. Set by whoever owns the
+   * decision on this machine - an agent's local or Group Policy setting, or the fleet policy -
+   * and left unset to take the profile's.
+   */
+  waybillHandling?: WaybillHandling;
+}
+
+/**
+ * The crop a waybill copy gets when the policy sends it to thermal and its rule names none.
+ * The same as every label rule's: the region is found by measurement, never by position.
+ */
+const WAYBILL_THERMAL_TRANSFORM: TransformSpec = {
+  source: 'inkBox',
+  padMm: 1,
+  rotate: 'auto',
+  fit: 'contain'
+};
+
+/** The handling in force for a profile, after the host's override. */
+export function effectiveWaybillHandling(
+  profile: RoutingProfileRules,
+  options: EngineOptions = {}
+): WaybillHandling {
+  return options.waybillHandling ?? profile.waybills?.handling ?? 'route';
 }
 
 /** Confidence assigned to a page that no rule claimed and that took the profile default. */
@@ -145,46 +173,27 @@ export function evaluatePage(
   };
 
   const ruleTraces: RuleTrace[] = [];
+
+  // Waybill copies first, and only when the policy takes them out of the page rules' hands.
+  // Under `route` these rules are never evaluated, so the default neither costs an OCR call
+  // nor changes a single decision.
+  const handling = effectiveWaybillHandling(profile, options);
+  let waybill: PageRule | null = null;
+  if (handling !== 'route' && profile.waybills && profile.waybills.rules.length > 0) {
+    const outcome = runRules(profile.waybills.rules, context, ruleTraces, true);
+    if (outcome.status === 'needs-features') {
+      return outcome;
+    }
+    waybill = outcome.winner;
+  }
+
   let winner: PageRule | null = null;
-
-  for (const rule of profile.pageRules) {
-    if (rule.enabled === false) {
-      ruleTraces.push({ ruleId: rule.id, ruleName: rule.name, matched: false, skipped: 'disabled' });
-      continue;
+  if (!waybill) {
+    const outcome = runRules(profile.pageRules, context, ruleTraces, false);
+    if (outcome.status === 'needs-features') {
+      return outcome;
     }
-
-    context.ruleId = rule.id;
-    const predicate = evaluatePredicate(rule.when, context);
-
-    if (
-      context.ocrRequests.length > 0 ||
-      context.templateRequests.length > 0 ||
-      context.barcodeRequests.length > 0
-    ) {
-      // All three kinds go back in one round rather than one request at a time: a rule that
-      // wants OCR *and* a template would otherwise cost two extra passes over the document.
-      return {
-        status: 'needs-features',
-        ocr: dedupeOcr(context.ocrRequests),
-        templates: dedupeTemplates(context.templateRequests),
-        barcodes: dedupeBarcodes(context.barcodeRequests)
-      };
-    }
-
-    ruleTraces.push({
-      ruleId: rule.id,
-      ruleName: rule.name,
-      matched: predicate.matched,
-      predicate,
-      firstFailure: findFirstFailure(predicate)
-    });
-
-    if (predicate.matched) {
-      winner = rule;
-      if (rule.then.stop !== false) {
-        break;
-      }
-    }
+    winner = outcome.winner;
   }
 
   const threshold = profile.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
@@ -214,6 +223,10 @@ export function evaluatePage(
     ocrRectsUsed: [...context.ocrRectsUsed],
     rules: ruleTraces
   };
+
+  if (waybill) {
+    return { status: 'decided', decision: waybillDecision(profile, waybill, handling, page, trace, threshold) };
+  }
 
   if (!winner) {
     const behaviour = behaviourFor(profile, 'NO_PROFILE_MATCH');
@@ -283,6 +296,128 @@ export function evaluatePage(
   }
 
   return { status: 'decided', decision };
+}
+
+/**
+ * Runs a list of rules in order, appending a trace for each.
+ *
+ * Returns the winner, or the feature requests of the first rule that needs a measurement the
+ * host has not supplied. `firstMatchWins` ignores `stop: false`, which only means something to
+ * page rules - a waybill rule identifies, and one identification is enough.
+ */
+function runRules(
+  rules: PageRule[],
+  context: EvaluationContext,
+  traces: RuleTrace[],
+  firstMatchWins: boolean
+):
+  | { status: 'decided'; winner: PageRule | null }
+  | {
+      status: 'needs-features';
+      ocr: OcrRequest[];
+      templates: TemplateRequest[];
+      barcodes: BarcodeRequest[];
+    } {
+  let winner: PageRule | null = null;
+
+  for (const rule of rules) {
+    if (rule.enabled === false) {
+      traces.push({ ruleId: rule.id, ruleName: rule.name, matched: false, skipped: 'disabled' });
+      continue;
+    }
+
+    context.ruleId = rule.id;
+    const predicate = evaluatePredicate(rule.when, context);
+
+    if (
+      context.ocrRequests.length > 0 ||
+      context.templateRequests.length > 0 ||
+      context.barcodeRequests.length > 0
+    ) {
+      // All three kinds go back in one round rather than one request at a time: a rule that
+      // wants OCR *and* a template would otherwise cost two extra passes over the document.
+      return {
+        status: 'needs-features',
+        ocr: dedupeOcr(context.ocrRequests),
+        templates: dedupeTemplates(context.templateRequests),
+        barcodes: dedupeBarcodes(context.barcodeRequests)
+      };
+    }
+
+    traces.push({
+      ruleId: rule.id,
+      ruleName: rule.name,
+      matched: predicate.matched,
+      predicate,
+      firstFailure: findFirstFailure(predicate)
+    });
+
+    if (predicate.matched) {
+      winner = rule;
+      if (firstMatchWins || rule.then.stop !== false) {
+        break;
+      }
+    }
+  }
+
+  return { status: 'decided', winner };
+}
+
+/**
+ * The decision for a page the waybill policy identified.
+ *
+ * The route is the handling's, never the rule's: the rule says what the page is, the policy
+ * says where that kind of page goes. A page sent to thermal is still checked for a printable
+ * crop, and one identified below the confidence threshold is still put to a person - the
+ * policy moves the page, it does not lower the bar for being sure what the page is.
+ */
+function waybillDecision(
+  profile: RoutingProfileRules,
+  rule: PageRule,
+  handling: WaybillHandling,
+  page: PageFeatures,
+  trace: PageDecision['trace'],
+  threshold: number
+): PageDecision {
+  const route = handling === 'thermal' ? ROUTE_THERMAL : handling === 'a4' ? ROUTE_A4 : ROUTE_SKIP;
+  const transform =
+    handling === 'thermal' ? (rule.then.transform ?? WAYBILL_THERMAL_TRANSFORM) : undefined;
+  const confidence = rule.then.confidence ?? 1;
+
+  const decision: PageDecision = {
+    pageNumber: page.pageNumber,
+    route,
+    transform,
+    copies: rule.then.copies ?? 1,
+    confidence,
+    ruleId: rule.id,
+    ruleName: rule.name,
+    hold: false,
+    waybill: true,
+    trace
+  };
+
+  if (transform) {
+    const problem = cropIsPlausible(resolveTransformSource(transform, page), page);
+    if (problem) {
+      const behaviour = behaviourFor(profile, 'CROP_IMPLAUSIBLE');
+      decision.hold = behaviour === 'hold';
+      decision.fallback = { reason: 'CROP_IMPLAUSIBLE', behaviour, message: problem };
+      return decision;
+    }
+  }
+
+  if (confidence < threshold) {
+    const behaviour = behaviourFor(profile, 'LOW_CONFIDENCE');
+    decision.hold = behaviour === 'hold';
+    decision.fallback = {
+      reason: 'LOW_CONFIDENCE',
+      behaviour,
+      message: `Waybill rule ${rule.id} matched at ${confidence.toFixed(2)}, below threshold ${threshold.toFixed(2)}`
+    };
+  }
+
+  return decision;
 }
 
 function dedupeOcr(requests: OcrRequest[]): OcrRequest[] {

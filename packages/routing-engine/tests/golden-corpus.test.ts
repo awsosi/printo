@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { ONE_CLICK_PRINT_PROFILE, resolveCarrier } from '../src/index.js';
+import {
+  ONE_CLICK_PRINT_PROFILE,
+  ROUTE_A4,
+  ROUTE_SKIP,
+  ROUTE_THERMAL,
+  resolveCarrier,
+  type EngineOptions,
+  type WaybillHandling
+} from '../src/index.js';
 import {
   corpusAvailable,
   decide,
@@ -60,7 +68,24 @@ function summarize(mismatches: Mismatch[]): string {
   return `${mismatches.length} mismatches\n${lines.join('\n')}\nexamples:\n${examples.join('\n')}`;
 }
 
-function runMode(stripText: boolean): Mismatch[] {
+/**
+ * Where a page belongs under a waybill handling.
+ *
+ * `route` is the ground truth as reviewed. Every other handling moves the waybill copies - the
+ * DHL courier sheets and the FedEx AWB copies - and nothing else, which is the whole of what
+ * the policy promises.
+ */
+function expectedRoute(want: ExpectedPage, handling: WaybillHandling): string {
+  if (handling === 'route' || !want.waybill) {
+    return want.route;
+  }
+  return handling === 'a4' ? ROUTE_A4 : handling === 'thermal' ? ROUTE_THERMAL : ROUTE_SKIP;
+}
+
+const OVERRIDES: WaybillHandling[] = ['a4', 'thermal', 'skip'];
+
+function runMode(stripText: boolean, handling: WaybillHandling = 'route'): Mismatch[] {
+  const options: EngineOptions = { waybillHandling: handling };
   const documents = loadCorpus();
   const expected = loadExpected();
   const expectedByPage = new Map<string, ExpectedPage>(
@@ -71,20 +96,24 @@ function runMode(stripText: boolean): Mismatch[] {
 
   for (const original of documents) {
     const document = stripText ? stripTextLayer(original) : original;
-    const decision = decide(ONE_CLICK_PRINT_PROFILE, document);
+    const decision = decide(ONE_CLICK_PRINT_PROFILE, document, options);
 
     for (const page of decision.pages) {
       const want = expectedByPage.get(key(document.fileName, page.pageNumber));
       if (!want) {
         throw new Error(`no ground truth for ${document.fileName} p${page.pageNumber}`);
       }
-      if (page.route !== want.route) {
+      const route = expectedRoute(want, handling);
+      // Under an override the flag must agree with the ground truth too: a page the policy
+      // claimed that is not a waybill copy is a misroute even when the route happens to match.
+      const flagged = handling !== 'route' && (page.waybill === true) !== want.waybill;
+      if (page.route !== route || flagged) {
         const failing = page.trace.rules.find((rule) => rule.ruleId === 'dhl-label-embedded');
         mismatches.push({
           doc: document.fileName,
           pageNumber: page.pageNumber,
-          expectedClass: want.pageClass,
-          expectedRoute: want.route,
+          expectedClass: want.pageClass + (flagged ? ` (waybill flag ${String(page.waybill === true)})` : ''),
+          expectedRoute: route,
           actualRoute: page.route,
           ruleId: page.ruleId,
           firstFailure: failing?.firstFailure
@@ -107,6 +136,19 @@ suite('golden corpus', () => {
   it('routes every page correctly with the text layer stripped', () => {
     const mismatches = runMode(true);
     expect(mismatches.length, summarize(mismatches)).toBe(0);
+  });
+
+  for (const handling of OVERRIDES) {
+    it(`moves every waybill copy and nothing else under waybill handling '${handling}'`, () => {
+      const mismatches = [...runMode(false, handling), ...runMode(true, handling)];
+      expect(mismatches.length, summarize(mismatches)).toBe(0);
+    });
+  }
+
+  it('finds the waybill copies the ground truth names', () => {
+    // Guards the premise of the test above: if the flags went missing it would pass vacuously.
+    const expected = loadExpected();
+    expect(expected.pages.filter((page) => page.waybill).length).toBe(251);
   });
 
   it('covers the whole corpus', () => {
@@ -163,48 +205,51 @@ suite('golden corpus', () => {
 const printedSuite = printedCorpusAvailable() ? describe : describe.skip;
 
 printedSuite('golden corpus, printed', () => {
-  it('routes every printed page correctly without asking anybody', () => {
-    const expected = loadExpected();
-    const expectedByPage = new Map<string, ExpectedPage>(
-      expected.pages.map((page) => [key(page.doc, page.pageNumber), page])
-    );
+  for (const handling of ['route', ...OVERRIDES] as WaybillHandling[]) {
+    it(`routes every printed page correctly without asking anybody (waybills: ${handling})`, () => {
+      const expected = loadExpected();
+      const expectedByPage = new Map<string, ExpectedPage>(
+        expected.pages.map((page) => [key(page.doc, page.pageNumber), page])
+      );
 
-    const mismatches: Mismatch[] = [];
-    const prompted: string[] = [];
-    let pages = 0;
+      const mismatches: Mismatch[] = [];
+      const prompted: string[] = [];
+      let pages = 0;
 
-    for (const document of loadCorpus(PRINTED_FEATURES_PATH)) {
-      const decision = decide(ONE_CLICK_PRINT_PROFILE, document);
-      if (decision.fallback) {
-        prompted.push(`${document.fileName}: ${decision.fallback.reason}`);
+      for (const document of loadCorpus(PRINTED_FEATURES_PATH)) {
+        const decision = decide(ONE_CLICK_PRINT_PROFILE, document, { waybillHandling: handling });
+        if (decision.fallback) {
+          prompted.push(`${document.fileName}: ${decision.fallback.reason}`);
+        }
+
+        for (const page of decision.pages) {
+          pages++;
+          const want = expectedByPage.get(key(document.fileName, page.pageNumber));
+          if (!want) {
+            throw new Error(`no ground truth for ${document.fileName} p${page.pageNumber}`);
+          }
+          if (page.fallback) {
+            prompted.push(`${document.fileName} p${page.pageNumber}: ${page.fallback.reason} via ${page.ruleId}`);
+          }
+          const route = expectedRoute(want, handling);
+          if (page.route !== route) {
+            mismatches.push({
+              doc: document.fileName,
+              pageNumber: page.pageNumber,
+              expectedClass: want.pageClass,
+              expectedRoute: route,
+              actualRoute: page.route,
+              ruleId: page.ruleId
+            });
+          }
+        }
       }
 
-      for (const page of decision.pages) {
-        pages++;
-        const want = expectedByPage.get(key(document.fileName, page.pageNumber));
-        if (!want) {
-          throw new Error(`no ground truth for ${document.fileName} p${page.pageNumber}`);
-        }
-        if (page.fallback) {
-          prompted.push(`${document.fileName} p${page.pageNumber}: ${page.fallback.reason} via ${page.ruleId}`);
-        }
-        if (page.route !== want.route) {
-          mismatches.push({
-            doc: document.fileName,
-            pageNumber: page.pageNumber,
-            expectedClass: want.pageClass,
-            expectedRoute: want.route,
-            actualRoute: page.route,
-            ruleId: page.ruleId
-          });
-        }
-      }
-    }
-
-    expect(pages).toBe(expected.pageCount);
-    expect(mismatches.length, summarize(mismatches)).toBe(0);
-    expect(prompted, prompted.slice(0, 10).join('\n')).toEqual([]);
-  });
+      expect(pages).toBe(expected.pageCount);
+      expect(mismatches.length, summarize(mismatches)).toBe(0);
+      expect(prompted, prompted.slice(0, 10).join('\n')).toEqual([]);
+    });
+  }
 });
 
 if (!available) {

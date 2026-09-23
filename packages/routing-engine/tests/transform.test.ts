@@ -68,7 +68,8 @@ describe('resolveMedia precedence', () => {
   it('falls back to the product default when nothing is configured', () => {
     const resolved = resolveMedia({ productDefault: DEFAULT_THERMAL_MEDIA });
     expect(resolved.layer).toBe('product-default');
-    expect(resolved.value).toEqual({ widthMm: 100, heightMm: 150 });
+    // 100x210 mm: the stock the benches load, which takes the tall DHL label unreduced.
+    expect(resolved.value).toEqual({ widthMm: 100, heightMm: 210 });
   });
 
   it('ignores an unparseable value and continues down the chain', () => {

@@ -455,12 +455,80 @@ public sealed class DocumentExpectations
     public RangeMm? ThermalPagesPerDocument { get; init; }
 }
 
+/// <summary>
+/// What happens to a carrier's waybill copy - the DHL courier sheet and the FedEx AWB copy.
+/// Mirrors <c>WaybillHandling</c> in <c>packages/routing-engine/src/rules.ts</c>.
+/// </summary>
+public enum WaybillHandling
+{
+    /// <summary>Leave them to the page rules: the courier sheet on A4, the AWB copy on thermal.</summary>
+    [JsonStringEnumMemberName("route")]
+    Route,
+
+    /// <summary>Every waybill copy to the A4 printer.</summary>
+    [JsonStringEnumMemberName("a4")]
+    A4,
+
+    /// <summary>Every waybill copy to the thermal printer, cropped as a label is.</summary>
+    [JsonStringEnumMemberName("thermal")]
+    Thermal,
+
+    /// <summary>Print none of them; the rest of the document prints.</summary>
+    [JsonStringEnumMemberName("skip")]
+    Skip,
+}
+
+/// <summary>Wire names for <see cref="WaybillHandling"/>, shared with the TypeScript engine.</summary>
+public static class WaybillHandlings
+{
+    public static string ToWire(WaybillHandling handling) => handling switch
+    {
+        WaybillHandling.A4 => "a4",
+        WaybillHandling.Thermal => "thermal",
+        WaybillHandling.Skip => "skip",
+        _ => "route",
+    };
+
+    /// <summary>Parses a wire name, ignoring case; <c>null</c> for anything unknown.</summary>
+    public static WaybillHandling? Parse(string? value) => value?.Trim().ToLowerInvariant() switch
+    {
+        "route" => WaybillHandling.Route,
+        "a4" => WaybillHandling.A4,
+        "thermal" => WaybillHandling.Thermal,
+        "skip" => WaybillHandling.Skip,
+        _ => null,
+    };
+}
+
+/// <summary>
+/// How a profile recognises waybill copies, and what it does with them.
+/// </summary>
+/// <remarks>
+/// The rules only identify; the handling decides the route. They run ahead of the page rules
+/// and only when the handling is not <see cref="WaybillHandling.Route"/>, so the default costs
+/// nothing and routes exactly as before the policy existed - which matters because the FedEx
+/// AWB copy can only be told from a FedEx label by reading it.
+/// </remarks>
+public sealed class WaybillPolicy
+{
+    public WaybillHandling? Handling { get; init; }
+
+    public IReadOnlyList<PageRule> Rules { get; init; } = [];
+}
+
 public sealed class RoutingProfileRules
 {
     /// <summary>Roles every deployment has; anything else is a printer alias.</summary>
     public const string RouteA4 = "A4";
 
     public const string RouteThermal = "THERMAL";
+
+    /// <summary>
+    /// The route of a page deliberately not printed - a waybill copy under
+    /// <see cref="WaybillHandling.Skip"/>. A route rather than a flag, so a consumer that does not
+    /// know it fails loudly instead of printing the page.
+    /// </summary>
+    public const string RouteSkip = "SKIP";
 
     public const double DefaultConfidenceThreshold = 0.75;
 
@@ -478,4 +546,6 @@ public sealed class RoutingProfileRules
     public FallbackPolicy Fallback { get; init; } = new();
 
     public DocumentExpectations? Expectations { get; init; }
+
+    public WaybillPolicy? Waybills { get; init; }
 }

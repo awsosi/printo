@@ -26,8 +26,14 @@ const NAMED_MEDIA: Record<string, MediaSize> = {
   legal: { widthMm: 215.9, heightMm: 355.6 }
 };
 
-/** Product default thermal stock (plan section 11.2). */
-export const DEFAULT_THERMAL_MEDIA: MediaSize = { widthMm: 100, heightMm: 150 };
+/**
+ * Product default thermal stock (plan section 11.2).
+ *
+ * 100x210 mm, the stock the benches actually load: the tall DHL label (99x196 mm ink) fits it
+ * without being reduced, and a 4x6in label sits on it at full size with room to spare. A site
+ * on other stock sets it centrally, per agent or per printer.
+ */
+export const DEFAULT_THERMAL_MEDIA: MediaSize = { widthMm: 100, heightMm: 210 };
 
 /** Product default document stock. */
 export const DEFAULT_DOCUMENT_MEDIA: MediaSize = NAMED_MEDIA.a4;

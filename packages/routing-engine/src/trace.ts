@@ -87,6 +87,8 @@ export interface PageDecision {
   ruleName: string | null;
   /** True when the page must be confirmed before printing. */
   hold: boolean;
+  /** True when the waybill policy identified the page and decided its route. */
+  waybill?: boolean;
   fallback?: {
     reason: FallbackReason;
     behaviour: 'prompt' | 'route' | 'hold';

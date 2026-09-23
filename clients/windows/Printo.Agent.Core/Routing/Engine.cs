@@ -7,6 +7,13 @@ public sealed class EngineOptions
 {
     /// <summary>Overrides the built-in carrier signatures; supplied by the rule bundle.</summary>
     public IReadOnlyList<CarrierSignatureSet>? CarrierSignatures { get; init; }
+
+    /// <summary>
+    /// The waybill handling in force, overriding the profile's own. Set by whoever owns the
+    /// decision on this machine - the agent's local or Group Policy setting, or the fleet policy
+    /// - and left null to take the profile's.
+    /// </summary>
+    public WaybillHandling? WaybillHandling { get; init; }
 }
 
 /// <summary>
@@ -22,6 +29,22 @@ public static class RoutingEngine
 {
     /// <summary>Confidence for a page no rule claimed, which took the profile default.</summary>
     private const double DefaultRouteConfidence = 0.6;
+
+    /// <summary>
+    /// The crop a waybill copy gets when the policy sends it to thermal and its rule names none:
+    /// the same as every label rule's, found by measurement rather than position.
+    /// </summary>
+    private static readonly TransformSpec WaybillThermalTransform = new()
+    {
+        Source = RectSpec.InkBox,
+        PadMm = 1,
+        Rotate = RotateSpec.Auto,
+        Fit = "contain",
+    };
+
+    /// <summary>The handling in force for a profile, after the host's override.</summary>
+    public static WaybillHandling EffectiveWaybillHandling(RoutingProfileRules profile, EngineOptions? options = null) =>
+        options?.WaybillHandling ?? profile.Waybills?.Handling ?? WaybillHandling.Route;
 
     /// <summary>
     /// Bounds a cropped label region must satisfy to be printable. A crop outside these is a
@@ -145,53 +168,28 @@ public static class RoutingEngine
         var context = new EvaluationContext { Page = page, Document = document, Carrier = carrier };
 
         var ruleTraces = new List<RuleTrace>();
-        PageRule? winner = null;
 
-        foreach (var rule in profile.PageRules)
+        // Waybill copies first, and only when the policy takes them out of the page rules' hands.
+        // Under Route these rules are never evaluated, so the default neither costs an OCR call
+        // nor changes a single decision.
+        var handling = EffectiveWaybillHandling(profile, options);
+        PageRule? waybill = null;
+        if (handling != WaybillHandling.Route && profile.Waybills is { Rules.Count: > 0 } policy)
         {
-            if (rule.Enabled == false)
+            var requests = RunRules(policy.Rules, context, ruleTraces, firstMatchWins: true, out waybill);
+            if (requests is not null)
             {
-                ruleTraces.Add(new RuleTrace
-                {
-                    RuleId = rule.Id,
-                    RuleName = rule.Name,
-                    Matched = false,
-                    Skipped = "disabled",
-                });
-                continue;
+                return requests;
             }
+        }
 
-            context.RuleId = rule.Id;
-            var predicate = PredicateEvaluator.Evaluate(rule.When, context);
-
-            if (context.OcrRequests.Count > 0
-                || context.TemplateRequests.Count > 0
-                || context.BarcodeRequests.Count > 0)
+        PageRule? winner = null;
+        if (waybill is null)
+        {
+            var requests = RunRules(profile.PageRules, context, ruleTraces, firstMatchWins: false, out winner);
+            if (requests is not null)
             {
-                // All three kinds go back in one round rather than one request at a time: a
-                // rule that wants OCR *and* a template would otherwise cost two extra passes.
-                return PageEvaluation.NeedsOcr(
-                    Dedupe(context.OcrRequests),
-                    DedupeTemplates(context.TemplateRequests),
-                    DedupeBarcodes(context.BarcodeRequests));
-            }
-
-            ruleTraces.Add(new RuleTrace
-            {
-                RuleId = rule.Id,
-                RuleName = rule.Name,
-                Matched = predicate.Matched,
-                Predicate = predicate,
-                FirstFailure = PredicateEvaluator.FindFirstFailure(predicate),
-            });
-
-            if (predicate.Matched)
-            {
-                winner = rule;
-                if (rule.Then.Stop != false)
-                {
-                    break;
-                }
+                return requests;
             }
         }
 
@@ -222,6 +220,11 @@ public static class RoutingEngine
             OcrRectsUsed = context.OcrRectsUsed.ToList(),
             Rules = ruleTraces,
         };
+
+        if (waybill is not null)
+        {
+            return PageEvaluation.Decided(WaybillDecision(profile, waybill, handling, page, trace, threshold));
+        }
 
         if (winner is null)
         {
@@ -328,6 +331,149 @@ public static class RoutingEngine
             Fallback = fallback,
             Trace = trace,
         });
+    }
+
+    /// <summary>
+    /// Runs a list of rules in order, appending a trace for each.
+    /// </summary>
+    /// <returns>
+    /// The feature requests of the first rule that needs a measurement the host has not supplied,
+    /// or <c>null</c> with <paramref name="winner"/> set. <paramref name="firstMatchWins"/> ignores
+    /// <c>stop: false</c>, which only means something to page rules - a waybill rule identifies,
+    /// and one identification is enough.
+    /// </returns>
+    private static PageEvaluation? RunRules(
+        IReadOnlyList<PageRule> rules,
+        EvaluationContext context,
+        List<RuleTrace> traces,
+        bool firstMatchWins,
+        out PageRule? winner)
+    {
+        winner = null;
+
+        foreach (var rule in rules)
+        {
+            if (rule.Enabled == false)
+            {
+                traces.Add(new RuleTrace
+                {
+                    RuleId = rule.Id,
+                    RuleName = rule.Name,
+                    Matched = false,
+                    Skipped = "disabled",
+                });
+                continue;
+            }
+
+            context.RuleId = rule.Id;
+            var predicate = PredicateEvaluator.Evaluate(rule.When, context);
+
+            if (context.OcrRequests.Count > 0
+                || context.TemplateRequests.Count > 0
+                || context.BarcodeRequests.Count > 0)
+            {
+                // All three kinds go back in one round rather than one request at a time: a
+                // rule that wants OCR *and* a template would otherwise cost two extra passes.
+                return PageEvaluation.NeedsOcr(
+                    Dedupe(context.OcrRequests),
+                    DedupeTemplates(context.TemplateRequests),
+                    DedupeBarcodes(context.BarcodeRequests));
+            }
+
+            traces.Add(new RuleTrace
+            {
+                RuleId = rule.Id,
+                RuleName = rule.Name,
+                Matched = predicate.Matched,
+                Predicate = predicate,
+                FirstFailure = PredicateEvaluator.FindFirstFailure(predicate),
+            });
+
+            if (predicate.Matched)
+            {
+                winner = rule;
+                if (firstMatchWins || rule.Then.Stop != false)
+                {
+                    break;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The decision for a page the waybill policy identified.
+    /// </summary>
+    /// <remarks>
+    /// The route is the handling's, never the rule's: the rule says what the page is, the policy
+    /// says where that kind of page goes. A page sent to thermal is still checked for a printable
+    /// crop, and one identified below the threshold is still put to a person - the policy moves
+    /// the page, it does not lower the bar for being sure what the page is.
+    /// </remarks>
+    private static PageDecision WaybillDecision(
+        RoutingProfileRules profile,
+        PageRule rule,
+        WaybillHandling handling,
+        PageFeatures page,
+        PageDecisionTrace trace,
+        double threshold)
+    {
+        var route = handling switch
+        {
+            WaybillHandling.Thermal => RoutingProfileRules.RouteThermal,
+            WaybillHandling.A4 => RoutingProfileRules.RouteA4,
+            _ => RoutingProfileRules.RouteSkip,
+        };
+
+        var transform = handling == WaybillHandling.Thermal
+            ? rule.Then.Transform ?? WaybillThermalTransform
+            : null;
+        var confidence = rule.Then.Confidence ?? 1;
+
+        FallbackOutcome? fallback = null;
+        var hold = false;
+
+        var problem = transform is null ? null : CropProblem(ResolveTransformSource(transform, page), page);
+        if (problem is not null)
+        {
+            var behaviour = profile.Fallback.For(FallbackReason.CropImplausible);
+            hold = behaviour == FallbackBehaviour.Hold;
+            fallback = new FallbackOutcome
+            {
+                Reason = FallbackReason.CropImplausible,
+                Behaviour = behaviour,
+                Message = problem,
+            };
+        }
+        else if (confidence < threshold)
+        {
+            var behaviour = profile.Fallback.For(FallbackReason.LowConfidence);
+            hold = behaviour == FallbackBehaviour.Hold;
+            fallback = new FallbackOutcome
+            {
+                Reason = FallbackReason.LowConfidence,
+                Behaviour = behaviour,
+                Message = string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Waybill rule {rule.Id} matched at {confidence:F2}, below threshold {threshold:F2}"),
+            };
+        }
+
+        return new PageDecision
+        {
+            PageNumber = page.PageNumber,
+            Route = route,
+            Transform = transform,
+            Copies = rule.Then.Copies ?? 1,
+            Confidence = confidence,
+            RuleId = rule.Id,
+            RuleName = rule.Name,
+            Hold = hold,
+            Waybill = true,
+            Fallback = fallback,
+            Trace = trace,
+        };
     }
 
     /// <summary>

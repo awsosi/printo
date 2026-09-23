@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   evaluateDocument,
+  type EngineOptions,
   type DocumentDecision,
   type DocumentFeatures,
   type PageFeatures,
@@ -30,6 +31,8 @@ export interface ExpectedPage {
   pageClass: string;
   route: string;
   evidence: string[];
+  /** A carrier's waybill copy: the DHL courier sheet or the FedEx AWB copy. */
+  waybill: boolean;
 }
 
 export interface ExpectedCorpus {
@@ -96,9 +99,10 @@ export function stripTextLayer(document: DocumentFeatures): DocumentFeatures {
  */
 export function decide(
   profile: RoutingProfileRules,
-  document: DocumentFeatures
+  document: DocumentFeatures,
+  options: EngineOptions = {}
 ): DocumentDecision {
-  const first = evaluateDocument(profile, document);
+  const first = evaluateDocument(profile, document, options);
   if (first.status === 'decided') {
     return first.document;
   }

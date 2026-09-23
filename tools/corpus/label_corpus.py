@@ -35,6 +35,11 @@ A4 = "A4"
 WAYBILL_MARKERS = re.compile(
     r"WAYBILL\s*DOC|Not\s*to\s*be\s*attached|Hand\s*to\s*Courier", re.I)
 
+# The FedEx AWB copy: printed in the label's 4x6in frame beside an international label, and
+# told from it only by what it says. These two markings are on every copy and on no other page,
+# measured on OCR of the whole corpus both as files and as print-simulated copies.
+FEDEX_AWB_MARKERS = re.compile(r"CARRIAGE\s*VALUE|PKG\s*:?\s*YOUR\s*PKG", re.I)
+
 DHL_PRODUCT = re.compile(r"EXPRESS\s*WORLDWIDE|ECONOMY\s*SELECT|MyDHL", re.I)
 INVOICE = re.compile(r"Sales\s+Invoice", re.I)
 RETURN_NOTE = re.compile(r"Return\s+Note", re.I)
@@ -135,6 +140,13 @@ def classify(record: dict) -> tuple[str, str, list[str]]:
     return "UNKNOWN", A4, evidence
 
 
+def is_waybill_copy(page_class: str, record: dict) -> bool:
+    """True for the carrier's own copy of the waybill: the DHL courier sheet, the FedEx AWB copy."""
+    if page_class == "DHL_WAYBILL_DOC":
+        return True
+    return page_class == "FEDEX_LABEL" and bool(FEDEX_AWB_MARKERS.search(page_text(record)))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("features")
@@ -150,18 +162,25 @@ def main() -> int:
     entries = []
     classes: collections.Counter[str] = collections.Counter()
     routes: collections.Counter[str] = collections.Counter()
+    waybills: collections.Counter[str] = collections.Counter()
     unknown = []
 
     for record in records:
         page_class, route, evidence = classify(record)
         classes[page_class] += 1
         routes[route] += 1
+        waybill = is_waybill_copy(page_class, record)
+        if waybill:
+            waybills[page_class] += 1
         entry = {
             "doc": record["doc"],
             "pageNumber": record["pageNumber"],
             "pageClass": page_class,
             "route": route,
             "evidence": evidence,
+            # Whether the waybill policy applies to the page. `route` above is what the page
+            # rules do with it, which is what every site gets until it sets a policy.
+            "waybill": waybill,
         }
         entries.append(entry)
         if page_class.startswith("UNKNOWN"):
@@ -185,6 +204,7 @@ def main() -> int:
         "pageCount": len(entries),
         "classCounts": dict(classes.most_common()),
         "routeCounts": dict(routes.most_common()),
+        "waybillCounts": dict(waybills.most_common()),
         "pages": entries,
     }
     with open(args.out, "w", encoding="utf-8") as handle:

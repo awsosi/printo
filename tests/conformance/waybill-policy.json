@@ -1,0 +1,601 @@
+{
+ "version": 1,
+ "fixtures": [
+  {
+   "name": "Under the default handling a FedEx AWB copy prints with the labels and nothing is read",
+   "rationale": "'route' must cost nothing and change nothing: the file-path fast path claims the copy by geometry, as it did before the policy existed.",
+   "profile": "builtin:OneClickPrint",
+   "document": {
+    "fileName": "OneClickPrint_TEST.pdf",
+    "pageCount": 1,
+    "pages": [
+     {
+      "pageNumber": 1,
+      "pageCount": 1,
+      "pageWidthMm": 297,
+      "pageHeightMm": 210,
+      "orientation": "landscape",
+      "rotation": 0,
+      "text": "ID:YNEV 1363223985670",
+      "inkBox": {
+       "xMm": 33.02,
+       "yMm": 18.8,
+       "widthMm": 101.84,
+       "heightMm": 149.36,
+       "aspect": 1.466,
+       "coverage": 0.0318
+      },
+      "barcodes": []
+     }
+    ]
+   },
+   "expect": {
+    "pages": [
+     {
+      "pageNumber": 1,
+      "route": "THERMAL",
+      "ruleId": "fedex-label-embedded",
+      "waybill": false,
+      "ocrRectsUsed": []
+     }
+    ]
+   }
+  },
+  {
+   "name": "Any other handling reads a 4x6in region before the page rules may claim it",
+   "rationale": "The AWB copy and the FedEx label share one frame; only OCR tells them apart, so the waybill stage must ask before the geometry fast path answers.",
+   "profile": "builtin:OneClickPrint",
+   "engineOptions": {
+    "waybillHandling": "skip"
+   },
+   "document": {
+    "fileName": "OneClickPrint_TEST.pdf",
+    "pageCount": 1,
+    "pages": [
+     {
+      "pageNumber": 1,
+      "pageCount": 1,
+      "pageWidthMm": 297,
+      "pageHeightMm": 210,
+      "orientation": "landscape",
+      "rotation": 0,
+      "text": "ID:YNEV 1363223985670",
+      "inkBox": {
+       "xMm": 33.02,
+       "yMm": 18.8,
+       "widthMm": 101.84,
+       "heightMm": 149.36,
+       "aspect": 1.466,
+       "coverage": 0.0318
+      },
+      "barcodes": []
+     }
+    ]
+   },
+   "expectNeedsOcr": [
+    {
+     "pageNumber": 1,
+     "key": "33.0,18.8,101.8,149.4",
+     "ruleId": "waybill-fedex-awb-ocr"
+    }
+   ]
+  },
+  {
+   "name": "'skip' leaves a FedEx AWB copy unprinted",
+   "profile": "builtin:OneClickPrint",
+   "engineOptions": {
+    "waybillHandling": "skip"
+   },
+   "document": {
+    "fileName": "OneClickPrint_TEST.pdf",
+    "pageCount": 1,
+    "pages": [
+     {
+      "pageNumber": 1,
+      "pageCount": 1,
+      "pageWidthMm": 297,
+      "pageHeightMm": 210,
+      "orientation": "landscape",
+      "rotation": 0,
+      "text": "ID:YNEV 1363223985670",
+      "inkBox": {
+       "xMm": 33.02,
+       "yMm": 18.8,
+       "widthMm": 101.84,
+       "heightMm": 149.36,
+       "aspect": 1.466,
+       "coverage": 0.0318
+      },
+      "barcodes": [],
+      "ocrRegions": [
+       {
+        "key": "33.0,18.8,101.8,149.4",
+        "rect": {
+         "xMm": 33.02,
+         "yMm": 18.8,
+         "widthMm": 101.84,
+         "heightMm": 149.36
+        },
+        "text": "ORIGIN ID:YNEV\n1363223985670\nSHIPDATE:20AUG26\nFedEx\nExpress\nAWB\nPKG:YOUR PKG\nTRK#\n9745 4286 7574\nForm\n0430\nCARRIAGE VALUE:\nSIGN:\nFor technology or previously exported from the United States",
+        "lines": []
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "pages": [
+     {
+      "pageNumber": 1,
+      "route": "SKIP",
+      "ruleId": "waybill-fedex-awb-ocr",
+      "waybill": true,
+      "confidence": 0.9,
+      "fallbackReason": null,
+      "hold": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "'a4' sends a FedEx AWB copy to the A4 printer",
+   "profile": "builtin:OneClickPrint",
+   "engineOptions": {
+    "waybillHandling": "a4"
+   },
+   "document": {
+    "fileName": "OneClickPrint_TEST.pdf",
+    "pageCount": 1,
+    "pages": [
+     {
+      "pageNumber": 1,
+      "pageCount": 1,
+      "pageWidthMm": 297,
+      "pageHeightMm": 210,
+      "orientation": "landscape",
+      "rotation": 0,
+      "text": "ID:YNEV 1363223985670",
+      "inkBox": {
+       "xMm": 33.02,
+       "yMm": 18.8,
+       "widthMm": 101.84,
+       "heightMm": 149.36,
+       "aspect": 1.466,
+       "coverage": 0.0318
+      },
+      "barcodes": [],
+      "ocrRegions": [
+       {
+        "key": "33.0,18.8,101.8,149.4",
+        "rect": {
+         "xMm": 33.02,
+         "yMm": 18.8,
+         "widthMm": 101.84,
+         "heightMm": 149.36
+        },
+        "text": "ORIGIN ID:YNEV\n1363223985670\nSHIPDATE:20AUG26\nFedEx\nExpress\nAWB\nPKG:YOUR PKG\nTRK#\n9745 4286 7574\nForm\n0430\nCARRIAGE VALUE:\nSIGN:\nFor technology or previously exported from the United States",
+        "lines": []
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "pages": [
+     {
+      "pageNumber": 1,
+      "route": "A4",
+      "ruleId": "waybill-fedex-awb-ocr",
+      "waybill": true
+     }
+    ]
+   }
+  },
+  {
+   "name": "'a4' leaves an outgoing FedEx label on thermal",
+   "rationale": "The policy moves waybill copies and nothing else: a label read and found not to be a copy goes on to the page rules.",
+   "profile": "builtin:OneClickPrint",
+   "engineOptions": {
+    "waybillHandling": "a4"
+   },
+   "document": {
+    "fileName": "OneClickPrint_TEST.pdf",
+    "pageCount": 1,
+    "pages": [
+     {
+      "pageNumber": 1,
+      "pageCount": 1,
+      "pageWidthMm": 297,
+      "pageHeightMm": 210,
+      "orientation": "landscape",
+      "rotation": 0,
+      "text": "ID:YNEV 1363223985670",
+      "inkBox": {
+       "xMm": 34.29,
+       "yMm": 19.3,
+       "widthMm": 100.58,
+       "heightMm": 149.86,
+       "aspect": 1.49,
+       "coverage": 0.0651
+      },
+      "barcodes": [],
+      "ocrRegions": [
+       {
+        "key": "34.3,19.3,100.6,149.9",
+        "rect": {
+         "xMm": 34.29,
+         "yMm": 19.3,
+         "widthMm": 100.58,
+         "heightMm": 149.86
+        },
+        "text": "ORIGIN ID:YNEV\n1363223985670\nSHIPDATE:20AUG26\nACTWGT:0.40 KG\nBILL SENDER\nTRK#\n9745 4286 7574\nFedEx\nExpress\nIP EOD",
+        "lines": []
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "pages": [
+     {
+      "pageNumber": 1,
+      "route": "THERMAL",
+      "ruleId": "fedex-label-embedded",
+      "waybill": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "'thermal' sends a DHL courier sheet to thermal from its text layer",
+   "profile": "builtin:OneClickPrint",
+   "engineOptions": {
+    "waybillHandling": "thermal"
+   },
+   "document": {
+    "fileName": "OneClickPrint_TEST.pdf",
+    "pageCount": 1,
+    "pages": [
+     {
+      "pageNumber": 1,
+      "pageCount": 1,
+      "pageWidthMm": 297,
+      "pageHeightMm": 210,
+      "orientation": "landscape",
+      "rotation": 0,
+      "text": "*WAYBILL DOC*\nNot to be attached to package - Hand to Courier\n2026-08-20 MyDHL API 1.0 / *GLS certified label*\nEXPRESS WORLDWIDE",
+      "inkBox": {
+       "xMm": 34,
+       "yMm": 15,
+       "widthMm": 92.2,
+       "heightMm": 183.6,
+       "aspect": 1.991,
+       "coverage": 0.0281
+      },
+      "barcodes": []
+     }
+    ]
+   },
+   "expect": {
+    "pages": [
+     {
+      "pageNumber": 1,
+      "route": "THERMAL",
+      "ruleId": "waybill-dhl-text",
+      "waybill": true,
+      "confidence": 1,
+      "fallbackReason": null,
+      "ocrRectsUsed": []
+     }
+    ]
+   }
+  },
+  {
+   "name": "'skip' leaves a DHL courier sheet unprinted",
+   "profile": "builtin:OneClickPrint",
+   "engineOptions": {
+    "waybillHandling": "skip"
+   },
+   "document": {
+    "fileName": "OneClickPrint_TEST.pdf",
+    "pageCount": 1,
+    "pages": [
+     {
+      "pageNumber": 1,
+      "pageCount": 1,
+      "pageWidthMm": 297,
+      "pageHeightMm": 210,
+      "orientation": "landscape",
+      "rotation": 0,
+      "text": "*WAYBILL DOC*\nNot to be attached to package - Hand to Courier\n2026-08-20 MyDHL API 1.0 / *GLS certified label*\nEXPRESS WORLDWIDE",
+      "inkBox": {
+       "xMm": 34,
+       "yMm": 15,
+       "widthMm": 92.2,
+       "heightMm": 183.6,
+       "aspect": 1.991,
+       "coverage": 0.0281
+      },
+      "barcodes": []
+     }
+    ]
+   },
+   "expect": {
+    "pages": [
+     {
+      "pageNumber": 1,
+      "route": "SKIP",
+      "ruleId": "waybill-dhl-text",
+      "waybill": true
+     }
+    ]
+   }
+  },
+  {
+   "name": "A printed FedEx AWB copy is recognised lying on an A4 page",
+   "rationale": "Printing turns the sheet and removes the text layer; the ink box's edges and the OCR survive.",
+   "profile": "builtin:OneClickPrint",
+   "engineOptions": {
+    "waybillHandling": "a4"
+   },
+   "document": {
+    "fileName": "OneClickPrint_TEST.pdf",
+    "pageCount": 1,
+    "pages": [
+     {
+      "pageNumber": 1,
+      "pageCount": 1,
+      "pageWidthMm": 210,
+      "pageHeightMm": 297,
+      "orientation": "portrait",
+      "rotation": 0,
+      "text": "",
+      "inkBox": {
+       "xMm": 18.8,
+       "yMm": 162.31,
+       "widthMm": 149.36,
+       "heightMm": 101.84,
+       "aspect": 0.682,
+       "coverage": 0.0332
+      },
+      "barcodes": [],
+      "ocrRegions": [
+       {
+        "key": "18.8,162.3,149.4,101.8",
+        "rect": {
+         "xMm": 18.8,
+         "yMm": 162.31,
+         "widthMm": 149.36,
+         "heightMm": 101.84
+        },
+        "text": "ORIGIN ID:YNEV\n1363223985670\nSHIPDATE:20AUG26\nFedEx\nExpress\nAWB\nPKG:YOUR PKG\nTRK#\n9745 4286 7574\nForm\n0430\nCARRIAGE VALUE:\nSIGN:\nFor technology or previously exported from the United States",
+        "lines": []
+       }
+      ]
+     }
+    ]
+   },
+   "expect": {
+    "pages": [
+     {
+      "pageNumber": 1,
+      "route": "A4",
+      "ruleId": "waybill-fedex-awb-ocr",
+      "waybill": true
+     }
+    ]
+   }
+  },
+  {
+   "name": "An invoice is not asked about by the waybill stage",
+   "rationale": "Only label-shaped regions are read; a policy must not make every A4 page cost an OCR call.",
+   "profile": "builtin:OneClickPrint",
+   "engineOptions": {
+    "waybillHandling": "skip"
+   },
+   "document": {
+    "fileName": "OneClickPrint_TEST.pdf",
+    "pageCount": 1,
+    "pages": [
+     {
+      "pageNumber": 1,
+      "pageCount": 1,
+      "pageWidthMm": 210,
+      "pageHeightMm": 297,
+      "orientation": "portrait",
+      "rotation": 0,
+      "text": "Sales Invoice 12345",
+      "inkBox": {
+       "xMm": 9.9,
+       "yMm": 16.0,
+       "widthMm": 190.2,
+       "heightMm": 234.2,
+       "aspect": 1.231,
+       "coverage": 0.08
+      },
+      "barcodes": []
+     }
+    ]
+   },
+   "expect": {
+    "pages": [
+     {
+      "pageNumber": 1,
+      "route": "A4",
+      "ruleId": null,
+      "waybill": false,
+      "ocrRectsUsed": []
+     }
+    ]
+   }
+  },
+  {
+   "name": "A profile's own handling applies when the host sets none",
+   "profile": {
+    "profile": "Inline waybill skip",
+    "match": {
+     "filenameMask": "*"
+    },
+    "confidenceThreshold": 0.75,
+    "pageRules": [
+     {
+      "id": "everything-thermal",
+      "name": "Everything to thermal",
+      "when": {
+       "geometry": {
+        "inkShortEdgeMm": {
+         "min": 1
+        }
+       }
+      },
+      "then": {
+       "route": "THERMAL",
+       "confidence": 1
+      }
+     }
+    ],
+    "waybills": {
+     "handling": "skip",
+     "rules": [
+      {
+       "id": "waybill-marker",
+       "name": "Marked waybill",
+       "when": {
+        "text": {
+         "contains": "WAYBILL"
+        }
+       },
+       "then": {
+        "confidence": 1
+       }
+      }
+     ]
+    },
+    "fallback": {
+     "route": "A4",
+     "onUnknown": "route"
+    }
+   },
+   "document": {
+    "fileName": "OneClickPrint_TEST.pdf",
+    "pageCount": 1,
+    "pages": [
+     {
+      "pageNumber": 1,
+      "pageCount": 1,
+      "pageWidthMm": 297,
+      "pageHeightMm": 210,
+      "orientation": "landscape",
+      "rotation": 0,
+      "text": "WAYBILL",
+      "inkBox": {
+       "xMm": 34,
+       "yMm": 15,
+       "widthMm": 92.2,
+       "heightMm": 183.6,
+       "aspect": 1.991,
+       "coverage": 0.0281
+      },
+      "barcodes": []
+     }
+    ]
+   },
+   "expect": {
+    "pages": [
+     {
+      "pageNumber": 1,
+      "route": "SKIP",
+      "ruleId": "waybill-marker",
+      "waybill": true
+     }
+    ]
+   }
+  },
+  {
+   "name": "The host's handling overrides the profile's",
+   "rationale": "An agent's own setting - local or by Group Policy - outranks the fleet default carried in the bundle.",
+   "profile": {
+    "profile": "Inline waybill skip",
+    "match": {
+     "filenameMask": "*"
+    },
+    "confidenceThreshold": 0.75,
+    "pageRules": [
+     {
+      "id": "everything-thermal",
+      "name": "Everything to thermal",
+      "when": {
+       "geometry": {
+        "inkShortEdgeMm": {
+         "min": 1
+        }
+       }
+      },
+      "then": {
+       "route": "THERMAL",
+       "confidence": 1
+      }
+     }
+    ],
+    "waybills": {
+     "handling": "skip",
+     "rules": [
+      {
+       "id": "waybill-marker",
+       "name": "Marked waybill",
+       "when": {
+        "text": {
+         "contains": "WAYBILL"
+        }
+       },
+       "then": {
+        "confidence": 1
+       }
+      }
+     ]
+    },
+    "fallback": {
+     "route": "A4",
+     "onUnknown": "route"
+    }
+   },
+   "engineOptions": {
+    "waybillHandling": "route"
+   },
+   "document": {
+    "fileName": "OneClickPrint_TEST.pdf",
+    "pageCount": 1,
+    "pages": [
+     {
+      "pageNumber": 1,
+      "pageCount": 1,
+      "pageWidthMm": 297,
+      "pageHeightMm": 210,
+      "orientation": "landscape",
+      "rotation": 0,
+      "text": "WAYBILL",
+      "inkBox": {
+       "xMm": 34,
+       "yMm": 15,
+       "widthMm": 92.2,
+       "heightMm": 183.6,
+       "aspect": 1.991,
+       "coverage": 0.0281
+      },
+      "barcodes": []
+     }
+    ]
+   },
+   "expect": {
+    "pages": [
+     {
+      "pageNumber": 1,
+      "route": "THERMAL",
+      "ruleId": "everything-thermal",
+      "waybill": false
+     }
+    ]
+   }
+  }
+ ]
+}

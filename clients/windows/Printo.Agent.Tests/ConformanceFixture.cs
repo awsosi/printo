@@ -33,6 +33,9 @@ internal sealed class ConformanceFixture
     /// <summary><c>builtin:&lt;profile name&gt;</c> or an inline rule set.</summary>
     public JsonElement Profile { get; init; }
 
+    /// <summary>What the host passes the engine beside the profile.</summary>
+    public ConformanceEngineOptions? EngineOptions { get; init; }
+
     public DocumentFeatures Document { get; init; } = new();
 
     /// <summary>
@@ -77,6 +80,11 @@ internal sealed class ConformanceFixture
 
         return RoutingJson.Deserialize<RoutingProfileRules>(Profile.GetRawText());
     }
+}
+
+internal sealed class ConformanceEngineOptions
+{
+    public WaybillHandling? WaybillHandling { get; init; }
 }
 
 internal sealed class ExpectedOcrRequest
