@@ -177,10 +177,10 @@ public static class ServiceControlProtocol
 /// does not have - is asked for here rather than attempted from the tray.
 /// </para>
 /// <para>
-/// Open to interactive users, on purpose: every command here is something the person at the
-/// desk is meant to be able to do from the tray, and the worst any of them does is cancel
-/// documents that person could equally cancel from the Windows print queue. Nothing here
-/// changes configuration or runs code of the caller's choosing.
+/// Open to interactive users, on purpose, and closed to the network: every command here is
+/// something the person at the desk is meant to be able to do from the tray, and the worst any
+/// of them does is cancel documents that person could equally cancel from the Windows print
+/// queue. Nothing here changes configuration or runs code of the caller's choosing.
 /// </para>
 /// </remarks>
 [SupportedOSPlatform("windows")]
@@ -241,10 +241,18 @@ public sealed class ServiceControlServer(Func<ServiceCommand, ServiceReply> hand
             new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
             PipeAccessRights.FullControl,
             AccessControlType.Allow));
+        // The person at the desk - console or remote desktop - and nobody reaching the pipe over
+        // the network: a named pipe is reachable over SMB unless something says otherwise, and a
+        // domain user on another machine has no business clearing this bench's queue or reading
+        // the names of the documents on it.
         security.AddAccessRule(new PipeAccessRule(
-            new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
+            new SecurityIdentifier(WellKnownSidType.InteractiveSid, null),
             PipeAccessRights.ReadWrite,
             AccessControlType.Allow));
+        security.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.NetworkSid, null),
+            PipeAccessRights.FullControl,
+            AccessControlType.Deny));
 
         // Whoever runs the listener, which is LocalSystem in production and the developer when
         // the service runs with --console or under test.
