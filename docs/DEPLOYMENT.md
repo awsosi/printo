@@ -234,9 +234,18 @@ install and says so, rather than being ignored.
 Exit codes: `0` done, `1` a step failed (the transcript says which), `2` the command line could
 not be read, `5` it needs an administrator and did not have one, `6` this machine cannot run it.
 
-Upgrades: run the higher version. It stops the service, replaces the files it installed, removes
-the ones the new version no longer ships, and starts the service again; the data directory and
-the machine's configuration are untouched. It refuses to go backwards.
+Upgrades: run the higher version. It stops the service, closes every running tray, replaces the
+files it installed, removes the ones the new version no longer ships, and starts the service and
+the trays again; the data directory - spool, fleet policy, logs, enrolment - and the machine's
+configuration are untouched, and the spool database gains any new columns in place. It refuses
+to go backwards.
+
+**The tray starts as soon as the install finishes**, for whoever is signed in at the console -
+never as the elevated installer. A double-clicked install starts it from the original,
+unelevated process (and opens the Printo window: on Printers when nothing is mapped yet, on
+Status after an upgrade); an install run as SYSTEM or from an elevated prompt starts it with the
+signed-in user's own token, falling back to a one-shot scheduled task. Unattended (`/quiet`)
+installs start the icon only. If nobody is signed in it starts at the next sign-in, as before.
 
 **Group Policy cannot deploy an EXE** through Software Installation — that accepts MSIs only.
 Push it with a machine startup script, or with whatever management agent the site already has:
@@ -254,14 +263,19 @@ repair path for a machine somebody has deleted a file from.
 
 ### 2.5 Configuration, and where each value comes from
 
-Four layers, weakest first:
+Five layers, weakest first:
 
 | Layer | Where | Set by |
 |---|---|---|
 | Default | compiled in | — |
-| File | `%ProgramData%\Printo\agent\agent.json` | an administrator on the machine |
-| Install | `HKLM\SOFTWARE\Printo\Agent` | the MSI's properties |
+| Fleet policy | the server, sent on every heartbeat, cached in `fleet-policy.json` | **Fleet → Fleet policy** in the console, and per-agent overrides |
+| File | `%ProgramData%\Printo\agent\agent.json` | the Printo window, or an administrator on the machine |
+| Install | `HKLM\SOFTWARE\Printo\Agent` | the installer's properties |
 | Policy | `HKLM\SOFTWARE\Policies\Printo\Agent` | Group Policy |
+
+The fleet policy only covers the operational settings in 2.5b, and only for a machine that has
+not chosen its own: the Printo window offers "Fleet setting (...)" for each of them, which is the
+default and is stored as "not set" in `agent.json`.
 
 Ask any machine what it resolved, and why:
 
@@ -286,6 +300,52 @@ box at all.
 has that thermal printer — and pushing them by GPO would mean one policy object per workstation,
 which is not a policy, it is a spreadsheet. They live in `agent.json`, or are set per agent from
 the fleet console.
+
+### 2.5b Waybills, thermal stock, page order, log files and clean-up
+
+Each can be set for the whole fleet in the console, overridden for one machine there (its JSON
+overrides, e.g. `{"thermalMedia":"100x150mm"}`), chosen on the machine in the Printo window, or
+locked by Group Policy. Fleet changes reach an agent on its next heartbeat and apply without a
+restart.
+
+| Setting | Product default | Policy value |
+|---|---|---|
+| Waybill copies - DHL courier sheet, FedEx AWB copy: route normally / always A4 / always thermal / do not print | route normally (DHL sheet on A4, AWB copy with the labels) | `WaybillHandling` = `route`, `a4`, `thermal`, `skip` |
+| Thermal media for printers that name none | `100x210mm` | `ThermalMedia` |
+| Page order per role (a printer's own setting wins) | A4 first page first; thermal last label first | — (fleet policy / per printer) |
+| Log files | off; Information; 10 MB x 5 files | `LogToFile`, `LogLevel`, `LogMaxFileSizeMb`, `LogMaxFiles` |
+| Keep printed documents | 24 hours | `KeepPrintedHours` |
+| Keep job history | 14 days | `KeepHistoryDays` |
+| Give up on unprinted jobs | 30 days | `ExpireUnprintedDays` |
+| Spool size limit | 2048 MB | `MaxSpoolMb` |
+| Signed-in users may start/stop the service | yes | `UsersCanControlService` |
+
+**Waybills.** The server-side worker applies the same fleet setting to what it routes. "Do not
+print" leaves those pages out of every job and records them as not printed; the rest prints. Any
+choice but "route normally" makes the agent OCR each FedEx 4x6in label, because the AWB copy is
+told from the label only by what it says (`CARRIAGE VALUE`, `PKG: YOUR PKG`).
+
+**Page order.** Each stack reads in document order once picked up: a laser stacks face down, so
+it gets page 1 first; a thermal strip torn off after the job is held by its last label, so it
+gets the last label first and the first label ends up at the torn end. A printer that stacks the
+other way is set per printer in the Printo window (Printers → Edit → Page order).
+
+**Log files** go to `%ProgramData%\Printo\agent\logs`: `agent.log` from the service - every
+job's audit trail at Debug - and `tray-<user>.log` from each tray. The tray menu's **Show log
+directory** opens it.
+
+**Clean-up** runs at service start and hourly. A document is removed only once every job using
+it has finished (documents are shared by content); unprinted work is never removed to make room.
+**Clear all jobs** - in the tray menu and on the window's Status page - cancels every job that
+has not printed, removes their documents and empties the Windows "Printo" queue; it is the reset
+button for a bench nobody can explain.
+
+**The Printo window.** Double-click the tray icon. The Status page is live (every two seconds):
+the service with Start / Stop / Restart, the virtual printer and why it is not ready (with
+Repair), the queue, the server, OCR, each effective setting and where it came from, and the last
+25 jobs. Settings are the other tabs; saving restarts the agent and says truthfully whether it
+did. Interactive users are granted start/stop on the service (nothing else) so this works for
+the operator; with `UsersCanControlService` = 0 the window asks for administrator approval.
 
 ### 2.5a The virtual printer
 
@@ -338,6 +398,23 @@ losing the job silently.
 **If the port is taken.** The agent logs the failure loudly, keeps running its watched folders,
 and finishes whatever is already in its spool. Set `VirtualPrinterPort` to something free; the
 queue is recreated against the new port at the next start.
+
+**If the Printo printer never appears.** Ask the machine:
+
+```powershell
+& "$env:ProgramFiles\Printo Agent\Printo.Agent.exe" --diagnose-virtual-printer
+```
+
+It checks, without changing anything, what `Add-Printer -IppURL` depends on: the Print Spooler
+(disabled by many post-PrintNightmare hardening baselines), the PrintManagement module, the IPP
+class driver, orphaned ports from an earlier queue, whether the endpoint answers, and the WinHTTP
+proxy (a machine-wide proxy with no bypass for 127.0.0.1 sends the spooler's requests to the
+proxy). The service repairs what it can when it creates the queue - starts a stopped spooler,
+installs the class driver from the driver store, removes orphaned ports, retries once - and when
+it cannot, the event log, the log file and the Status page say which of these it was, with the
+error's HRESULT. Before 0.1.15 that line read only `#< CLIXML`: PowerShell's header for errors
+serialised under `-EncodedCommand`, which hid the actual error. `Diagnose-Install.ps1` runs the
+same checks.
 
 ### 2.6 Unattended enrolment
 

@@ -18,7 +18,7 @@
 -->
 <policyDefinitions xmlns:xsd="http://www.w3.org/2001/XMLSchema"
                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                   revision="1.0"
+                   revision="1.1"
                    schemaVersion="1.0"
                    xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
 
@@ -30,6 +30,7 @@
   <supportedOn>
     <definitions>
       <definition name="SUPPORTED_PrintoAgent_1" displayName="$(string.SUPPORTED_PrintoAgent_1)" />
+      <definition name="SUPPORTED_PrintoAgent_2" displayName="$(string.SUPPORTED_PrintoAgent_2)" />
     </definitions>
   </supportedOn>
 
@@ -169,6 +170,160 @@
             valueName="VirtualPrinterManageQueue">
       <parentCategory ref="Agent" />
       <supportedOn ref="SUPPORTED_PrintoAgent_1" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+
+    <!-- 0.1.15: where waybill copies print, thermal stock, log files, spool clean-up, service control. -->
+
+    <policy name="WaybillHandling"
+            class="Machine"
+            displayName="$(string.WaybillHandling)"
+            explainText="$(string.WaybillHandling_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            presentation="$(presentation.WaybillHandling)">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_2" />
+      <elements>
+        <enum id="WaybillHandling_Enum" valueName="WaybillHandling" required="true">
+          <item displayName="$(string.WaybillHandling_Route)"><value><string>route</string></value></item>
+          <item displayName="$(string.WaybillHandling_A4)"><value><string>a4</string></value></item>
+          <item displayName="$(string.WaybillHandling_Thermal)"><value><string>thermal</string></value></item>
+          <item displayName="$(string.WaybillHandling_Skip)"><value><string>skip</string></value></item>
+        </enum>
+      </elements>
+    </policy>
+
+    <policy name="ThermalMedia"
+            class="Machine"
+            displayName="$(string.ThermalMedia)"
+            explainText="$(string.ThermalMedia_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            presentation="$(presentation.ThermalMedia)">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_2" />
+      <elements>
+        <text id="ThermalMedia_Text" valueName="ThermalMedia" required="true" maxLength="32" />
+      </elements>
+    </policy>
+
+    <policy name="LogToFile"
+            class="Machine"
+            displayName="$(string.LogToFile)"
+            explainText="$(string.LogToFile_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            valueName="LogToFile">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_2" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+
+    <policy name="LogLevel"
+            class="Machine"
+            displayName="$(string.LogLevel)"
+            explainText="$(string.LogLevel_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            presentation="$(presentation.LogLevel)">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_2" />
+      <elements>
+        <enum id="LogLevel_Enum" valueName="LogLevel" required="true">
+          <item displayName="$(string.LogLevel_Debug)"><value><string>Debug</string></value></item>
+          <item displayName="$(string.LogLevel_Information)"><value><string>Information</string></value></item>
+          <item displayName="$(string.LogLevel_Warning)"><value><string>Warning</string></value></item>
+          <item displayName="$(string.LogLevel_Error)"><value><string>Error</string></value></item>
+          <item displayName="$(string.LogLevel_Critical)"><value><string>Critical</string></value></item>
+        </enum>
+      </elements>
+    </policy>
+
+    <policy name="LogMaxFileSizeMb"
+            class="Machine"
+            displayName="$(string.LogMaxFileSizeMb)"
+            explainText="$(string.LogMaxFileSizeMb_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            presentation="$(presentation.LogMaxFileSizeMb)">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_2" />
+      <elements>
+        <decimal id="LogMaxFileSizeMb_Decimal" valueName="LogMaxFileSizeMb" minValue="1" maxValue="1024" required="true" />
+      </elements>
+    </policy>
+
+    <policy name="LogMaxFiles"
+            class="Machine"
+            displayName="$(string.LogMaxFiles)"
+            explainText="$(string.LogMaxFiles_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            presentation="$(presentation.LogMaxFiles)">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_2" />
+      <elements>
+        <decimal id="LogMaxFiles_Decimal" valueName="LogMaxFiles" minValue="1" maxValue="100" required="true" />
+      </elements>
+    </policy>
+
+    <policy name="KeepPrintedHours"
+            class="Machine"
+            displayName="$(string.KeepPrintedHours)"
+            explainText="$(string.KeepPrintedHours_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            presentation="$(presentation.KeepPrintedHours)">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_2" />
+      <elements>
+        <decimal id="KeepPrintedHours_Decimal" valueName="KeepPrintedHours" minValue="0" maxValue="8760" required="true" />
+      </elements>
+    </policy>
+
+    <policy name="KeepHistoryDays"
+            class="Machine"
+            displayName="$(string.KeepHistoryDays)"
+            explainText="$(string.KeepHistoryDays_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            presentation="$(presentation.KeepHistoryDays)">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_2" />
+      <elements>
+        <decimal id="KeepHistoryDays_Decimal" valueName="KeepHistoryDays" minValue="1" maxValue="3650" required="true" />
+      </elements>
+    </policy>
+
+    <policy name="ExpireUnprintedDays"
+            class="Machine"
+            displayName="$(string.ExpireUnprintedDays)"
+            explainText="$(string.ExpireUnprintedDays_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            presentation="$(presentation.ExpireUnprintedDays)">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_2" />
+      <elements>
+        <decimal id="ExpireUnprintedDays_Decimal" valueName="ExpireUnprintedDays" minValue="1" maxValue="3650" required="true" />
+      </elements>
+    </policy>
+
+    <policy name="MaxSpoolMb"
+            class="Machine"
+            displayName="$(string.MaxSpoolMb)"
+            explainText="$(string.MaxSpoolMb_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            presentation="$(presentation.MaxSpoolMb)">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_2" />
+      <elements>
+        <decimal id="MaxSpoolMb_Decimal" valueName="MaxSpoolMb" minValue="50" maxValue="1048576" required="true" />
+      </elements>
+    </policy>
+
+    <policy name="UsersCanControlService"
+            class="Machine"
+            displayName="$(string.UsersCanControlService)"
+            explainText="$(string.UsersCanControlService_Explain)"
+            key="SOFTWARE\Policies\Printo\Agent"
+            valueName="UsersCanControlService">
+      <parentCategory ref="Agent" />
+      <supportedOn ref="SUPPORTED_PrintoAgent_2" />
       <enabledValue><decimal value="1" /></enabledValue>
       <disabledValue><decimal value="0" /></disabledValue>
     </policy>

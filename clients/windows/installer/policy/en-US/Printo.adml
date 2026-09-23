@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema"
                            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                           revision="1.0"
+                           revision="1.1"
                            schemaVersion="1.0"
                            xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
 
@@ -96,6 +96,64 @@ run while the agent service is running - Windows reads the printer's capabilitie
 Some courier documents carry no text layer, so a rule has to read the page. If no recogniser is available the agent asks the operator rather than guessing, so this is about reducing prompts, not about correctness.
 
 If this policy is Not Configured, the agent uses the machine's own display language. The matching Windows OCR language pack must be installed for a language to be usable.</string>
+      <string id="SUPPORTED_PrintoAgent_2">Printo Agent 0.1.15 or later</string>
+      <string id="WaybillHandling">Waybill copies</string>
+      <string id="WaybillHandling_Explain">Where the carrier's own copy of the waybill prints: the DHL courier sheet ("WAYBILL DOC - Hand to Courier") and the FedEx AWB copy.
+
+Route normally: the routing rules decide - the DHL sheet on A4, the FedEx AWB copy on the thermal printer with the labels. This is what every agent did before this setting existed.
+
+Always A4 / Always thermal: every waybill copy goes to that printer; on thermal it is cropped like a label.
+
+Do not print: waybill copies are left out of every job; the rest of the document prints, and the agent's history records the pages as not printed.
+
+Any choice but Route normally makes the agent read each FedEx 4x6in label (OCR), because the AWB copy can only be told from the label by what it says.
+
+If this policy is Not Configured, the agent uses its own setting, or the fleet policy from the Printo server.</string>
+      <string id="WaybillHandling_Route">Route normally</string>
+      <string id="WaybillHandling_A4">Always print them on A4</string>
+      <string id="WaybillHandling_Thermal">Always print them on the thermal printer</string>
+      <string id="WaybillHandling_Skip">Do not print them</string>
+      <string id="ThermalMedia">Thermal media</string>
+      <string id="ThermalMedia_Explain">The label stock loaded in thermal printers that do not name their own, as width x height in millimetres - for example 100x210mm, the product default, or 100x150mm.
+
+A printer's own media, set in the agent's Printers settings, always wins over this.
+
+If this policy is Not Configured, the agent uses its own setting, the fleet policy from the Printo server, or 100x210mm.</string>
+      <string id="LogToFile">Write log files</string>
+      <string id="LogToFile_Explain">Whether the agent and its tray write log files in the agent's data directory (C:\ProgramData\Printo\agent\logs by default), in addition to the Windows event log.
+
+Files rotate by size and only the newest are kept (see the file size and file count policies), so they never take more than size x count.
+
+Enabled: log files are written. Disabled: they are not. Not Configured: the agent uses its own setting or the fleet policy; the product default is off.</string>
+      <string id="LogLevel">Log file level</string>
+      <string id="LogLevel_Explain">The least severe entry written to the log files: Debug writes everything, including each job's full audit trail; Critical writes only failures that stop the agent working.
+
+If this policy is Not Configured, the agent uses its own setting, the fleet policy, or Information.</string>
+      <string id="LogLevel_Debug">Debug</string>
+      <string id="LogLevel_Information">Information</string>
+      <string id="LogLevel_Warning">Warning</string>
+      <string id="LogLevel_Error">Error</string>
+      <string id="LogLevel_Critical">Critical</string>
+      <string id="LogMaxFileSizeMb">Log file size (MB)</string>
+      <string id="LogMaxFileSizeMb_Explain">A log file is closed and a new one started when it reaches this size. Not Configured: 10 MB unless the agent or fleet policy says otherwise.</string>
+      <string id="LogMaxFiles">Log files to keep</string>
+      <string id="LogMaxFiles_Explain">How many log files are kept, the current one included; older ones are deleted. Not Configured: 5 unless the agent or fleet policy says otherwise.</string>
+      <string id="KeepPrintedHours">Keep printed documents (hours)</string>
+      <string id="KeepPrintedHours_Explain">How long the agent keeps its copy of a document after printing it. 0 removes it as soon as the job is finished. Not Configured: 24 hours unless the agent or fleet policy says otherwise.
+
+Every document is copied into the spool before it is printed, so nothing is lost if the machine stops mid-job; this keeps that copy from accumulating.</string>
+      <string id="KeepHistoryDays">Keep job history (days)</string>
+      <string id="KeepHistoryDays_Explain">How long finished jobs stay in the agent's history and status window. Not Configured: 14 days unless the agent or fleet policy says otherwise.</string>
+      <string id="ExpireUnprintedDays">Give up on unprinted jobs (days)</string>
+      <string id="ExpireUnprintedDays_Explain">Jobs that failed, or are waiting for someone to answer the page picker, are cancelled and their documents removed after this many days. Jobs not yet looked at are never expired. Not Configured: 30 days unless the agent or fleet policy says otherwise.</string>
+      <string id="MaxSpoolMb">Spool size limit (MB)</string>
+      <string id="MaxSpoolMb_Explain">A ceiling on the documents the agent keeps. Past it, documents of finished jobs are removed oldest first; work that has not printed is never removed to make room. Not Configured: 2048 MB unless the agent or fleet policy says otherwise.</string>
+      <string id="UsersCanControlService">Let users start and stop the agent</string>
+      <string id="UsersCanControlService_Explain">Whether people signed in at the workstation may start, stop and restart the Printo Agent service - from the Printo window, the tray menu, or after saving settings.
+
+Enabled or Not Configured: interactive users may start and stop it (and nothing else: they cannot reconfigure the service). Disabled: only administrators may; the tray asks for administrator approval instead.
+
+The agent applies this each time it starts.</string>
     </stringTable>
 
     <presentationTable>
@@ -140,6 +198,45 @@ If this policy is Not Configured, the agent uses the machine's own display langu
         <decimalTextBox refId="VirtualPrinterPort_Decimal" defaultValue="39631">Loopback port</decimalTextBox>
       </presentation>
 
+
+      <presentation id="WaybillHandling">
+        <dropdownList refId="WaybillHandling_Enum" defaultItem="0">Waybill copies</dropdownList>
+      </presentation>
+
+      <presentation id="ThermalMedia">
+        <textBox refId="ThermalMedia_Text">
+          <label>Width x height</label>
+          <defaultValue>100x210mm</defaultValue>
+        </textBox>
+      </presentation>
+
+      <presentation id="LogLevel">
+        <dropdownList refId="LogLevel_Enum" defaultItem="1">Level</dropdownList>
+      </presentation>
+
+      <presentation id="LogMaxFileSizeMb">
+        <decimalTextBox refId="LogMaxFileSizeMb_Decimal" defaultValue="10">Megabytes</decimalTextBox>
+      </presentation>
+
+      <presentation id="LogMaxFiles">
+        <decimalTextBox refId="LogMaxFiles_Decimal" defaultValue="5">Files</decimalTextBox>
+      </presentation>
+
+      <presentation id="KeepPrintedHours">
+        <decimalTextBox refId="KeepPrintedHours_Decimal" defaultValue="24">Hours</decimalTextBox>
+      </presentation>
+
+      <presentation id="KeepHistoryDays">
+        <decimalTextBox refId="KeepHistoryDays_Decimal" defaultValue="14">Days</decimalTextBox>
+      </presentation>
+
+      <presentation id="ExpireUnprintedDays">
+        <decimalTextBox refId="ExpireUnprintedDays_Decimal" defaultValue="30">Days</decimalTextBox>
+      </presentation>
+
+      <presentation id="MaxSpoolMb">
+        <decimalTextBox refId="MaxSpoolMb_Decimal" defaultValue="2048">Megabytes</decimalTextBox>
+      </presentation>
     </presentationTable>
   </resources>
 </policyDefinitionResources>

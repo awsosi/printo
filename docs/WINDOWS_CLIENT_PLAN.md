@@ -165,7 +165,7 @@ Two concrete debts the corpus exposes in the existing engine:
 | Configurability | Routing profiles must be editable like Print&Share: picture, text, OCR |
 | Code signing | **Internal ADCS-issued Authenticode cert**; devices are domain-joined, trust + AV exclusions pushed by GPO |
 | Virtual printer name | `Printo` |
-| Thermal media | Default **100x150 mm**, fully configurable centrally *and* overridable per agent / per printer |
+| Thermal media | Default **100x210 mm** (was 100x150 until 0.1.15), fully configurable centrally *and* overridable per agent / per printer |
 | Fallback | When routing is unavailable or unreliable, prompt the user with a keyboard-first page picker (section 7) |
 | Fleet | 20-30 domain-joined workstations; MSI deployed by GPO, configured by ADMX |
 | Server delivery | On-prem `docker compose up -d` / `down`, `.env` policy, internal HTTP, fronted by **Traefik using the file provider** (dynamic YAML, no docker labels) |
@@ -843,7 +843,7 @@ inspectable chain, most specific wins:
 3. agent policy override                (this machine)               <- local override / ADMX
 4. central printer profile              (server, this printer)
 5. central routing profile default      (server, this profile)
-6. product default                      (100x150 mm thermal, A4 document)
+6. product default                      (100x210 mm thermal, A4 document)
 ```
 
 The effective value and the layer it came from are shown in the tray and in the admin UI, and

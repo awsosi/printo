@@ -54,6 +54,17 @@ public sealed class PolicyTemplateTests
             "VirtualPrinterName",
             "VirtualPrinterPort",
             "VirtualPrinterManageQueue",
+            "WaybillHandling",
+            "ThermalMedia",
+            "LogToFile",
+            "LogLevel",
+            "LogMaxFileSizeMb",
+            "LogMaxFiles",
+            "KeepPrintedHours",
+            "KeepHistoryDays",
+            "ExpireUnprintedDays",
+            "MaxSpoolMb",
+            "UsersCanControlService",
         };
 
         var declared = LoadAdmx()

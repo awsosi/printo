@@ -160,6 +160,35 @@ Check 'the tray starts at sign-in' {
     # that executable, run with no arguments, showed a usage message box instead of a tray.
     ($value -like '*Printo.Tray.exe*') -and (Test-Path (Join-Path $installDir 'Printo.Tray.exe'))
 }
+Check 'signed-in users may start and stop the service' {
+    # The tray's Start/Stop/Restart and its restart after saving settings run as the operator.
+    # Windows' default service permissions let interactive users look but not touch, which is
+    # how saving settings used to report a running agent as "not running".
+    $sddl = (& sc.exe sdshow PrintoAgent | Where-Object { $_ -match '^D:' }) -join ''
+    $sddl -match '\(A;;[A-Z]*RP[A-Z]*WP[A-Z]*;;;IU\)'
+}
+Check 'the tray is running for the signed-in user, unelevated' {
+    # Started by the installer rather than left for the next sign-in. As the person at the
+    # console, never as the elevated installer: an administrator's tray would own the picker.
+    $console = (Get-Process -Name explorer -ErrorAction SilentlyContinue | Select-Object -First 1).SessionId
+    if ($null -eq $console) { Write-Host '        (nobody signed in: skipped)'; return $true }
+    for ($i = 0; $i -lt 20; $i++) {
+        $tray = Get-CimInstance Win32_Process -Filter "Name='Printo.Tray.exe'" |
+            Where-Object { $_.SessionId -eq $console } | Select-Object -First 1
+        if ($tray) {
+            $owner = Invoke-CimMethod -InputObject $tray -MethodName GetOwner
+            $shell = Invoke-CimMethod -InputObject (Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" |
+                Where-Object { $_.SessionId -eq $console } | Select-Object -First 1) -MethodName GetOwner
+            return ($owner.User -eq $shell.User) -and ($owner.Domain -eq $shell.Domain)
+        }
+        Start-Sleep -Seconds 1
+    }
+    $false
+}
+Check 'the agent answers on its control pipe' {
+    # What the Printo window's status page reads, every two seconds.
+    Test-Path '\\.\pipe\printo-agent'
+}
 Check 'there is a Start Menu shortcut to open' {
     # Otherwise the install is invisible: a headless service plus an autostart entry that does
     # not fire until the next sign-in reads as "nothing happened" to whoever ran the MSI.
@@ -287,6 +316,21 @@ if ($UpgradePackage -and (Test-Path $UpgradePackage)) {
     Check 'the configuration survived the upgrade' {
         # An upgrade run without properties must not blank a working machine's settings.
         (Get-ItemProperty $machineKey -Name ServerUrl -ErrorAction SilentlyContinue).ServerUrl -eq $ServerUrl
+    }
+    Check 'the spool survived the upgrade' {
+        # The new version adds columns to the spool database rather than recreating it; queued
+        # work from the old version must still be there to print.
+        Test-Path (Join-Path $dataDir 'spool.db')
+    }
+    Check 'the tray is back after the upgrade' {
+        # The installer closes every tray to replace its files, and starts them again.
+        $console = (Get-Process -Name explorer -ErrorAction SilentlyContinue | Select-Object -First 1).SessionId
+        if ($null -eq $console) { return $true }
+        for ($i = 0; $i -lt 20; $i++) {
+            if (Get-Process -Name 'Printo.Tray' -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $console }) { return $true }
+            Start-Sleep -Seconds 1
+        }
+        $false
     }
 } else {
     Write-Host '==> upgrade NOT TESTED (pass -UpgradePackage with a higher-versioned package)'

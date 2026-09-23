@@ -13,6 +13,12 @@
     asked with a package that cannot exist so that nothing is installed and no package is
     blamed.
 
+    It also checks what the virtual printer needs once the agent is installed - the Print
+    Spooler, the PrintManagement module, the IPP class driver, the WinHTTP proxy - because a
+    machine where the "Printo" printer never appears has installed perfectly well, and the
+    agent's own diagnosis (Printo.Agent.exe --diagnose-virtual-printer) is printed when the agent
+    is there to run it.
+
     Safe to run as an ordinary user: without -Install it only reads.
 
 .PARAMETER Msi
@@ -324,6 +330,59 @@ if ($Install) {
             Get-Content $log -Tail 25 | ForEach-Object { Write-Host ("    " + $_.Trim()) }
         }
     }
+}
+
+# ---------------------------------------------------------------------------------------------
+Write-Host 'The virtual printer' -ForegroundColor Cyan
+
+# None of these stops the install - watched folders work without any of them - but each one
+# stops the "Printo" printer appearing, which is what an operator reports as "it did not install".
+$spooler = Get-CimInstance Win32_Service -Filter "Name='Spooler'" -ErrorAction SilentlyContinue
+if (-not $spooler) {
+    Say 'STOP' 'the Print Spooler service does not exist; the virtual printer cannot be created (watched folders still work)'
+} elseif ($spooler.StartMode -eq 'Disabled') {
+    Say 'STOP' 'the Print Spooler service is disabled (a common hardening setting); the virtual printer needs it'
+} elseif ($spooler.State -ne 'Running') {
+    Say 'INFO' ("the Print Spooler service is " + $spooler.State + "; the agent starts it when it creates the queue")
+} else {
+    Say 'OK' 'the Print Spooler service is running'
+}
+
+if (Get-Command -Name Add-Printer -ErrorAction SilentlyContinue) {
+    Say 'OK' 'the PrintManagement module is available (Add-Printer)'
+} else {
+    Say 'STOP' 'the PrintManagement PowerShell module is missing, so the agent cannot create the queue'
+}
+
+if (Get-PrinterDriver -Name 'Microsoft IPP Class Driver' -ErrorAction SilentlyContinue) {
+    Say 'OK' 'the Microsoft IPP Class Driver is installed'
+} else {
+    Say 'INFO' 'the Microsoft IPP Class Driver is not installed yet; the agent installs it from the driver store'
+}
+
+Say 'INFO' ("PowerShell language mode: " + $ExecutionContext.SessionState.LanguageMode)
+
+$proxy = (& netsh.exe winhttp show proxy) -join ' '
+if ($proxy -match '(\S+:\d+)') {
+    if ($proxy -match '<local>|127\.0\.0\.1') {
+        Say 'OK' ("a WinHTTP proxy ($($Matches[1])) is set, with loopback bypassed")
+    } else {
+        Say 'STOP' ("a WinHTTP proxy ($($Matches[1])) is set with no bypass for 127.0.0.1; the spooler may not reach the agent. Add <local> to the bypass list")
+    }
+} else {
+    Say 'OK' 'WinHTTP connects directly (no machine-wide proxy)'
+}
+
+$agent = Join-Path $env:ProgramFiles 'Printo Agent\Printo.Agent.exe'
+# Only an agent that knows the switch: an older one reads it as nothing in particular and starts
+# the whole agent in this window instead.
+$agentVersion = if (Test-Path $agent) { [version](Get-Item $agent).VersionInfo.FileVersion } else { $null }
+if ($agentVersion -and $agentVersion -ge [version]'0.1.15') {
+    Write-Host ''
+    Write-Host '  the agent''s own diagnosis:' -ForegroundColor Cyan
+    & $agent --diagnose-virtual-printer 2>&1 | ForEach-Object { Write-Host ("    " + $_) }
+} elseif ($agentVersion) {
+    Say 'INFO' ("the installed agent is $agentVersion; install 0.1.15 or later for its own virtual printer diagnosis")
 }
 
 # ---------------------------------------------------------------------------------------------

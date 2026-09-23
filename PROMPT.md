@@ -17,8 +17,9 @@
 > is met. Until then, keep it accurate: after each milestone, update
 > "Current position" below and strike through what is finished. Never leave it stale.
 >
-> **Last updated:** 2026-09-17, after proving the standalone agent against the whole corpus
-> as printed (section 6b, first entry), on `feat/windows-agent`.
+> **Last updated:** 2026-09-24, after the 0.1.15 operator release - one Printo window, fleet
+> policy, waybill handling, spool clean-up, log files (section 6b, first entry), on
+> `feat/windows-agent`.
 
 ---
 
@@ -91,7 +92,7 @@ currently mis-attributed to GLS.
 | Thermal routing | **Outgoing carrier label only.** Waybill sheet and return label stay on A4 |
 | Configurability | Routing profiles editable like Print&Share: picture, text, OCR — plus barcode and geometry |
 | Signing | Internal **ADCS** Authenticode cert; domain-joined fleet, GPO pushes trust chain + AV exclusions and deploys the MSI |
-| Thermal media | Default **100x150 mm**, free `WxH mm` value, configurable centrally and overridable per agent and per printer |
+| Thermal media | Default **100x210 mm** (changed from 100x150 on 2026-09-24 at the user's request), free `WxH mm` value, configurable centrally (fleet policy) and overridable per agent and per printer |
 | Uploads / retention | Uploads permitted; retention configurable per data class |
 | Legacy paths | Keep the existing SMB / CUPS / socket / IPP server paths — additive, not a replacement |
 | Virtual printer name | `Printo` |
@@ -330,8 +331,10 @@ Plan section 5.0d is the write-up; `VirtualPrinterTests` is the evidence.
 
 ```bash
 npm run lint && npm run typecheck                      # repo-wide, must stay green
-npx vitest run --root packages/routing-engine          # 146 tests incl. golden corpus and picture matching
-dotnet test clients/windows/Printo.Agent.Tests         # 253 tests incl. corpus parity, soak, captures, the virtual printer
+npx vitest run --root packages/routing-engine          # 171 tests incl. golden corpus in every waybill handling
+dotnet test clients/windows/Printo.Agent.Tests         # 346 tests incl. corpus parity, soak, captures, the virtual printer
+PRINTO_RENDER_WINDOWS=<dir> dotnet test clients/windows/Printo.Agent.Tests --filter WindowRenderings  # every window as PNG
+Printo.Agent.exe --diagnose-virtual-printer            # why the Printo queue is not there, without changing anything
 python tools/corpus/check_vision_features.py "C:\Users\olek\Documents\code\si\printo-materials" --all   # vision measures the corpus as calibrated
 npm run smoke:prod                                     # builds the production images, asserts the stack
 pwsh clients/windows/installer/build.ps1 -Version 0.1.0           # builds the agent MSI
@@ -382,6 +385,52 @@ text-layer modes, and the service's measurements are checked against the corpus 
 calibrated on — 1266 pages, exact agreement. Plan §10.3.
 
 ## 6b. Session log
+
+### 2026-09-24 — 0.1.15: what the operators asked for after running 0.1.14
+
+Thirteen items from the user, all built end to end and released as `PrintoAgent-0.1.15.exe`.
+Five commits; the messages carry the detail. What is worth carrying forward:
+
+- **Waybill policy** (`waybills: { handling, rules }` on a profile, `EngineOptions.waybillHandling`
+  in both engines): `route` (default, unchanged behaviour), `a4`, `thermal`, `skip` (route
+  `SKIP`, never printed). The FedEx AWB copy was being routed to thermal as a label: 106 corpus
+  pages, told apart only by OCR `CARRIAGE VALUE` / `PKG: YOUR PKG` (measured on OCR of files and
+  print-simulated copies; `AWB` alone hits every return note). The waybill rules run only when
+  the handling is not `route`, so the default costs nothing. `expected.json` gained a `waybill`
+  flag (251 pages). Both engines, the worker and `/decide` pass the corpus in every handling.
+- **Fleet policy** (`fleet_policy`, migration 0014): stores only what an admin set; per-agent
+  `policy_overrides`; sent on every heartbeat; cached by the agent. Agent precedence: GPO >
+  install > agent.json > fleet > product default, and agent.json stores null for "inherit".
+- **Page order**: pages go to each printer in document order, then A4 first-page-first and
+  thermal last-label-first by default (a torn-off strip then reads in order). This is a
+  judgement from the user's description ("seems reversed" once torn off), configurable per
+  printer and fleet-wide - **confirm on the bench**.
+- **Bug 6 (settings "service not running")** was the tray running `net stop`/`net start` without
+  rights and reading the second exit code. Services are now controlled through the SCM, and
+  interactive users are granted start/stop (only) on the service by the installer and at every
+  agent start (`UsersCanControlService` = 0 opts out).
+- **Bug 8 (queue never created)**: the agent logged only `#< CLIXML`, PowerShell's header for
+  errors serialised under `-EncodedCommand`; the real error was never seen. Reproduced here.
+  Now plain `-Command`, structured errors with HRESULT, preflight + repair (spooler, module,
+  class driver, orphaned ports), retry, WinHTTP proxy check, backoff, and
+  `Printo.Agent.exe --diagnose-virtual-printer`. The cause on that machine is still unknown:
+  0.1.15 will say what it is.
+- **Spool GC**: documents were never deleted. `SpoolJanitor` removes a document only when every
+  job sharing it (content-named) is finished, and never within 10 minutes of being written.
+- **Tray launched after install** as the console user: from the unelevated parent of a
+  double-click install; otherwise via the user's token (SYSTEM) or the shell's (admin), falling
+  back to a one-shot scheduled task. **Only the first path could be exercised here** (no
+  elevation on this machine); run `Verify-Install.ps1` elevated.
+- `Tests.WindowRenderings` (opt-in, `PRINTO_RENDER_WINDOWS=<dir>`) renders every window to PNG;
+  it is how the "very long slider" (every NumericUpDown docked Fill) was seen and fixed.
+- The API's Postgres tests ran for real this time (Docker Desktop started): 62 pass.
+
+Not verified here: an elevated install/upgrade of 0.1.15, the tray launch paths that need
+SYSTEM or an elevated token, the virtual printer on the machine that failed, page order on
+real printers.
+
+Suite: **346 C#, 171 routing-engine, 73 worker, 62 API (Postgres), 26 web; lint and typecheck
+clean.**
 
 ### 2026-09-17 — the whole corpus as printed, and what the seven captures could not show
 

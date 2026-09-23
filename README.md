@@ -179,6 +179,13 @@ The agent presents a printer called **Printo**. Anything printed to it is captur
 by page and sent on to this machine's physical printers; watched folders are a second intake
 path for sites that feed Printo from an export directory. The queue is created and repaired by
 the service itself, so a printer somebody deletes comes back — see `docs/DEPLOYMENT.md` §2.5a.
+
+Double-clicking the tray icon opens the **Printo window**: a live status page (the service with
+Start/Stop/Restart, the virtual printer and why it is not ready, the queue, the last jobs, and a
+**Clear all jobs** reset) and the machine's settings. Where waybill copies print (DHL courier
+sheet, FedEx AWB copy: route normally, A4, thermal or not at all), thermal stock (default
+100x210 mm), page order, local log files and spool clean-up can each be set fleet-wide in the
+console's **Fleet policy**, per agent, per machine or by Group Policy — `docs/DEPLOYMENT.md` §2.5b.
 - `tests/conformance/` — shared fixtures both engines execute; a divergence fails the build
 - `tests/corpus/` — extracted features and reviewed ground truth for the 1266-page sample set
 - `tests/render/` — reference images for the render-diff suite
