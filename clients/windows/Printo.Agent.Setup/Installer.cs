@@ -91,7 +91,7 @@ internal static class Installer
             }
         }
 
-        CloseTray(log);
+        var closedTrays = CloseTray(log);
 
         // -----------------------------------------------------------------------------------
         // The files.
@@ -185,6 +185,26 @@ internal static class Installer
             {
                 log.Warn("automatic start, as LocalSystem, but it will not restart itself on failure: " + warning);
             }
+
+            // Who may start and stop it. Interactive users may, so the tray's buttons and its
+            // restart after a settings change work for the operator at the desk; a site that
+            // says otherwise by policy gets the Windows default. The agent re-applies the same
+            // at every start, so this only has to be right until then.
+            var usersMayControl = UsersMayControlService();
+            if (Printo.Agent.Shared.ServiceDacl.Apply(
+                    Product.ServiceName,
+                    usersMayControl
+                        ? Printo.Agent.Shared.ServiceDacl.UsersMayControl
+                        : Printo.Agent.Shared.ServiceDacl.WindowsDefault) is { } refused)
+            {
+                log.Warn("the service permissions could not be set (" + refused + "); the agent sets them when it starts");
+            }
+            else
+            {
+                log.Done(usersMayControl
+                    ? "signed-in users may start, stop and restart it from the tray"
+                    : "only administrators may start and stop it (UsersCanControlService = 0)");
+            }
         }
         catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
@@ -207,6 +227,26 @@ internal static class Installer
                 "\"Printo Agent\" for the reason.");
         }
 
+        // -----------------------------------------------------------------------------------
+        // The tray, now rather than at the next sign-in.
+        // -----------------------------------------------------------------------------------
+        log.Step("starting the tray for the signed-in user");
+        if (options.Elevated)
+        {
+            // This process was started elevated by the one the person double-clicked, which is
+            // still waiting for it - as that person, unelevated, in their session. It starts the
+            // tray itself once this returns; from here it would be an administrator's tray.
+            log.Done("left to the installer that asked for elevation, which runs as that user");
+        }
+        else
+        {
+            var tray = Path.Combine(installDirectory, Product.TrayExecutable);
+            foreach (var line in TrayLauncher.LaunchForSignedInUsers(tray, TrayArguments(options.Quiet), closedTrays))
+            {
+                log.Done(line);
+            }
+        }
+
         log.Step("done");
         log.Done(Product.DisplayName + " " + Product.DisplayVersion + " is installed");
         log.Note("the virtual printer is created by the agent itself, within a poll of it starting");
@@ -215,19 +255,86 @@ internal static class Installer
     }
 
     /// <summary>
+    /// What the tray is started with after an install.
+    /// </summary>
+    /// <remarks>
+    /// An attended install opens the Printo window: on its Printers page when no printer is
+    /// mapped yet - a new machine's first need - and on its status page after an upgrade, where
+    /// the question is whether everything came back. An unattended one starts the icon and
+    /// nothing else; a window appearing on a bench because a GPO ran would be its own defect.
+    /// </remarks>
+    public static IReadOnlyList<string> TrayArguments(bool quiet)
+    {
+        if (quiet)
+        {
+            return [];
+        }
+
+        return ["--show", HasPrinters(Path.Combine(Product.DataDirectory, "agent.json")) ? "status" : "settings"];
+    }
+
+    /// <summary>True when the machine's configuration maps at least one printer.</summary>
+    internal static bool HasPrinters(string configPath)
+    {
+        try
+        {
+            if (!File.Exists(configPath))
+            {
+                return false;
+            }
+
+            using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(configPath));
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (string.Equals(property.Name, "printers", StringComparison.OrdinalIgnoreCase)
+                    && property.Value.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    return property.Value.GetArrayLength() > 0;
+                }
+            }
+
+            return false;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Whether a policy or an earlier install said only administrators may control the service.
+    /// </summary>
+    private static bool UsersMayControlService()
+    {
+        foreach (var path in new[] { @"SOFTWARE\Policies\Printo\Agent", Product.MachineKeyPath })
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(path);
+            if (key?.GetValue("UsersCanControlService") is { } value)
+            {
+                var text = Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)?.Trim().ToLowerInvariant();
+                return text is not ("0" or "false" or "no" or "off" or "disabled");
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Closes any running tray, because otherwise its executable cannot be replaced.
     /// </summary>
     /// <remarks>
     /// Windows Installer would show a files-in-use dialog here. There is nobody to answer one
     /// during a scripted install, and the tray is a status icon rather than a document being
-    /// edited - nothing is lost by closing it. It comes back at the next sign-in, and there is a
-    /// Start Menu shortcut for the operator who wants it back now.
+    /// edited - nothing is lost by closing it. It is started again, as the same users, once the
+    /// install has finished.
     /// </remarks>
-    private static void CloseTray(Transcript log)
+    /// <returns>The sessions a tray was closed in, so it can be started there again.</returns>
+    private static IReadOnlyCollection<int> CloseTray(Transcript log)
     {
         var name = Path.GetFileNameWithoutExtension(Product.TrayExecutable);
         var running = Process.GetProcessesByName(name);
-        if (running.Length == 0) { return; }
+        var sessions = running.Select(process => process.SessionId).Distinct().ToList();
+        if (running.Length == 0) { return sessions; }
 
         log.Step("closing " + running.Length + " running " + Product.TrayExecutable);
 
@@ -251,7 +358,8 @@ internal static class Installer
             }
         }
 
-        log.Done("closed; it starts again at the next sign-in, or from the Start Menu");
+        log.Done("closed; it is started again once the new version is in place");
+        return sessions;
     }
 
     /// <summary>Removes what the previous version installed and this one no longer ships.</summary>

@@ -80,11 +80,6 @@ internal static partial class Program
                 ? Uninstaller.Run(options, log)
                 : Installer.Run(options, log);
 
-            if (result == ExitCodes.Ok && options.Mode == SetupMode.Install)
-            {
-                OfferTheSettings(options, log);
-            }
-
             return Pause(result, options.Quiet);
         }
         catch (Exception error)
@@ -132,7 +127,15 @@ internal static partial class Program
         Console.WriteLine();
 
         var code = Elevation.Relaunch(options.Forwardable("/elevated"));
-        if (code is not null) { return code.Value; }
+        if (code is not null)
+        {
+            if (code == ExitCodes.Ok && options.Mode == SetupMode.Install)
+            {
+                StartTheTrayHere(options);
+            }
+
+            return code.Value;
+        }
 
         Console.Error.WriteLine();
         Console.Error.WriteLine("Permission was refused, so nothing has been changed.");
@@ -146,17 +149,17 @@ internal static partial class Program
     }
 
     /// <summary>
-    /// Offers the one thing a newly installed machine actually needs next.
+    /// Starts the tray from this, the unelevated process the person double-clicked.
     /// </summary>
     /// <remarks>
-    /// The MSI's exit dialog carries the same offer as a ticked checkbox, for the same reason:
-    /// the first thing a new install needs is its printer map, and at that moment the tray has
-    /// not started - the autostart entry does not fire until the next sign-in.
+    /// The elevated install has finished and this process is still that person, in their
+    /// session, without administrator rights - exactly what the tray needs to be, so it is
+    /// started from here rather than by any token juggling in the elevated one. The window opens
+    /// on the Printers page on a machine with nothing mapped yet, because that is the first thing
+    /// a new install needs; the old "open the settings? [Y/n]" question asked it elevated.
     /// </remarks>
-    private static void OfferTheSettings(SetupOptions options, Transcript log)
+    private static void StartTheTrayHere(SetupOptions options)
     {
-        if (options.Quiet || Console.IsInputRedirected) { return; }
-
         var installed = InstalledProduct.Read();
         if (installed is null) { return; }
 
@@ -164,23 +167,8 @@ internal static partial class Program
         if (!File.Exists(tray)) { return; }
 
         Console.WriteLine();
-        Console.Write("Open Printo Settings now, to map this machine's printers? [Y/n] ");
-
-        var answer = Console.ReadLine()?.Trim();
-        if (answer is not null && answer.Length > 0 && !answer.StartsWith('y') && !answer.StartsWith('Y'))
-        {
-            log.Note("the settings can be opened later from the Start Menu: Printo Settings");
-            return;
-        }
-
-        try
-        {
-            Process.Start(new ProcessStartInfo { FileName = tray, Arguments = "--settings", UseShellExecute = true });
-        }
-        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-            log.Warn("the settings window could not be opened: " + error.Message);
-        }
+        Console.WriteLine("Starting Printo for " + Environment.UserName + ": " +
+            TrayLauncher.LaunchHere(tray, Installer.TrayArguments(options.Quiet)));
     }
 
     /// <summary>

@@ -65,13 +65,14 @@
 
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT"
-              Value="Open Printo Settings, to map this machine's printers" />
+              Value="Start Printo and open its settings, to map this machine's printers" />
 
     <!--
       The first thing a new machine needs is its printer map, and at that moment the tray has
-      not started - the autostart entry does not fire until the next sign-in. Impersonated, so
-      the settings window runs as the person who installed rather than as the elevated
-      installer, and asynchronous so a window nobody closes cannot hold msiexec open.
+      not started - the autostart entry does not fire until the next sign-in. The settings switch
+      starts the tray and opens the Printo window on its Printers page. Impersonated, so both
+      run as the person who installed rather than as the elevated installer, and asynchronous
+      so a window nobody closes cannot hold msiexec open.
     -->
     <CustomAction Id="LaunchSettings"
                   FileRef="TrayExe"
