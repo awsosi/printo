@@ -406,7 +406,8 @@ queue is recreated against the new port at the next start.
 ```
 
 It checks, without changing anything, what `Add-Printer -IppURL` depends on: the Print Spooler
-(disabled by many post-PrintNightmare hardening baselines), the PrintManagement module, the IPP
+(disabled by many post-PrintNightmare hardening baselines), the PrintManagement module and
+whether its `Add-Printer` has `-IppURL` at all (older Windows 10 builds do not), the IPP
 class driver, orphaned ports from an earlier queue, whether the endpoint answers, and the WinHTTP
 proxy (a machine-wide proxy with no bypass for 127.0.0.1 sends the spooler's requests to the
 proxy). The service repairs what it can when it creates the queue - starts a stopped spooler,
@@ -575,6 +576,10 @@ which does not use Windows Installer at all, and repair the workstation separate
 ### 2.8 What the agent needs on a workstation
 
 - 64-bit Windows 10 22H2 or Windows 11. Both packages refuse to install on 32-bit, and say so.
+  Neither checks the Windows release, and on an older one the agent installs and runs, but
+  without its virtual printer: a Windows 10 21H1 workstation (build 19043.1237, unpatched since
+  2021) has an `Add-Printer` with no `-IppURL` and no way around it. The agent says so in its log
+  and on the Status page; install the current Windows updates, or deliver by watched folders.
 - No .NET prerequisite: the runtime is in the package.
 - Outbound HTTPS to the server, if one is configured.
 - A Windows OCR language pack, if documents in a language other than the machine's own have to

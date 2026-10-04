@@ -348,8 +348,13 @@ if (-not $spooler) {
     Say 'OK' 'the Print Spooler service is running'
 }
 
-if (Get-Command -Name Add-Printer -ErrorAction SilentlyContinue) {
-    Say 'OK' 'the PrintManagement module is available (Add-Printer)'
+$addPrinter = Get-Command -Name Add-Printer -ErrorAction SilentlyContinue
+if ($addPrinter -and -not $addPrinter.Parameters.ContainsKey('IppURL')) {
+    # Older Windows 10 builds (seen on 21H1, 19043.1237) have Add-Printer but not -IppURL.
+    $os = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+    Say 'STOP' ("Add-Printer on this Windows ($($os.ProductName) $($os.DisplayVersion), build $($os.CurrentBuild).$($os.UBR)) has no -IppURL, so the agent cannot create the queue; install the current Windows updates (Printo supports Windows 10 22H2 and Windows 11)")
+} elseif ($addPrinter) {
+    Say 'OK' 'the PrintManagement module is available (Add-Printer -IppURL)'
 } else {
     Say 'STOP' 'the PrintManagement PowerShell module is missing, so the agent cannot create the queue'
 }

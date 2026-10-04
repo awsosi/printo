@@ -338,19 +338,23 @@ public static partial class VirtualPrinterQueue
         $blocked = $false
         $repair = $env:PRINTO_REPAIR -eq '1'
 
+        # A finding that stops the queue being created, marked so the agent can lead with it
+        # rather than with whichever check happened to print first.
+        function Blocker($text) { 'finding=' + $text; 'blocked=' + $text }
+
         # The Print Spooler. Hardening guides written after PrintNightmare disable it outright,
         # and nothing can create or use any printer while it is off.
         $spooler = Get-Service -Name Spooler -ErrorAction SilentlyContinue
         if (-not $spooler) {
-            'finding=the Print Spooler service does not exist on this machine'; $blocked = $true
+            Blocker 'the Print Spooler service does not exist on this machine'; $blocked = $true
         } elseif ($spooler.Status -ne 'Running') {
             $start = (Get-CimInstance -ClassName Win32_Service -Filter "Name='Spooler'" -ErrorAction SilentlyContinue).StartMode
             if ($start -eq 'Disabled') {
-                'finding=the Print Spooler service is disabled (a common hardening setting); the virtual printer needs it - set it to Automatic and start it, or deliver Printo by watched folders only'
+                Blocker 'the Print Spooler service is disabled (a common hardening setting); the virtual printer needs it - set it to Automatic and start it, or deliver Printo by watched folders only'
                 $blocked = $true
             } elseif ($repair) {
                 try { Start-Service -Name Spooler -ErrorAction Stop; 'finding=the Print Spooler service was stopped and has been started' }
-                catch { 'finding=the Print Spooler service is stopped and would not start: ' + $_.Exception.Message; $blocked = $true }
+                catch { Blocker ('the Print Spooler service is stopped and would not start: ' + $_.Exception.Message); $blocked = $true }
             } else {
                 'finding=the Print Spooler service is ' + $spooler.Status
             }
@@ -360,12 +364,22 @@ public static partial class VirtualPrinterQueue
 
         # The cmdlets themselves. Missing on stripped-down images and on Server Core without
         # the print feature.
-        if (-not (Get-Command -Name Add-Printer -ErrorAction SilentlyContinue)) {
-            'finding=the PrintManagement PowerShell module is not available, so Add-Printer cannot run'
+        $addPrinter = Get-Command -Name Add-Printer -ErrorAction SilentlyContinue
+        $os = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue
+        # ProductName still says Windows 10 on Windows 11; the build number is what tells them apart.
+        $product = if ([int]$os.CurrentBuild -ge 22000) { $os.ProductName -replace 'Windows 10', 'Windows 11' } else { $os.ProductName }
+        $windows = ($product + ' ' + $os.DisplayVersion + ', build ' + $os.CurrentBuild + '.' + $os.UBR).Trim()
+        if (-not $addPrinter) {
+            Blocker 'the PrintManagement PowerShell module is not available, so Add-Printer cannot run'
+            $blocked = $true
+        } elseif (-not $addPrinter.Parameters.ContainsKey('IppURL')) {
+            # Older Windows 10 builds ship Add-Printer without -IppURL, and without the CIM method
+            # behind it, so there is no other way in: seen on 21H1, build 19043.1237.
+            Blocker ('Add-Printer on this Windows (' + $windows + ') has no -IppURL, which the virtual printer needs; install the current Windows updates (Printo supports Windows 10 22H2 and Windows 11), or deliver Printo by watched folders only')
             $blocked = $true
         }
 
-        'finding=PowerShell ' + $PSVersionTable.PSVersion + ', ' + $ExecutionContext.SessionState.LanguageMode + ' language mode'
+        'finding=' + $windows + '; PowerShell ' + $PSVersionTable.PSVersion + ', ' + $ExecutionContext.SessionState.LanguageMode + ' language mode'
 
         if (-not $blocked) {
             # The inbox IPP class driver, which Add-Printer -IppURL binds. Present on every
@@ -412,9 +426,8 @@ public static partial class VirtualPrinterQueue
         string detail;
         if (run.ExitCode == 3)
         {
-            // The preflight found a reason Add-Printer cannot work; the findings are the detail.
-            detail = findings.FirstOrDefault(finding => !finding.StartsWith("PowerShell ", StringComparison.Ordinal))
-                ?? "a prerequisite of the virtual printer is missing";
+            // The preflight found a reason Add-Printer cannot work, and named it.
+            detail = Field(run.Output, "blocked") ?? "a prerequisite of the virtual printer is missing";
         }
         else if (error is not null)
         {

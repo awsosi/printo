@@ -619,6 +619,8 @@ public sealed class MaintenanceTests : IDisposable
         // Read-only and unelevated, it still names the things Add-Printer depends on.
         Assert.Contains(findings, finding => finding.Contains("Print Spooler", StringComparison.Ordinal));
         Assert.Contains(findings, finding => finding.Contains("language mode", StringComparison.Ordinal));
+        Assert.Contains(findings, finding => finding.Contains(", build ", StringComparison.Ordinal));
+        Assert.DoesNotContain(findings, finding => finding.Contains("has no -IppURL", StringComparison.Ordinal));
         Assert.Contains(findings, finding => finding.Contains("WinHTTP", StringComparison.Ordinal));
         Assert.Contains(findings, finding => finding.Contains("does not answer", StringComparison.Ordinal));
         Assert.DoesNotContain(findings, finding => finding.Contains("CLIXML", StringComparison.Ordinal));
