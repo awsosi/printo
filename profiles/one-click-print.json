@@ -234,21 +234,37 @@
       "when": {
         "all": [
           {
-            "geometry": {
-              "inkShortEdgeMm": {
-                "min": 85,
-                "max": 118
+            "any": [
+              {
+                "geometry": {
+                  "inkShortEdgeMm": {
+                    "min": 85,
+                    "max": 118
+                  },
+                  "inkAspectNormalised": {
+                    "min": 1.75,
+                    "max": 2.2
+                  }
+                }
               },
-              "inkAspectNormalised": {
-                "min": 1.75,
-                "max": 2.2
+              {
+                "geometry": {
+                  "inkShortEdgeMm": {
+                    "min": 55,
+                    "max": 300
+                  },
+                  "inkAspectNormalised": {
+                    "min": 1.44,
+                    "max": 2.4
+                  }
+                }
               }
-            }
+            ]
           },
           {
             "ocr": {
               "rect": "inkBox",
-              "matches": "WAYBILL\\s*DOC|Not\\s*to\\s*be\\s*attached|Hand\\s*to\\s*Courier"
+              "matches": "WAYBILL\\s*DOC|Not\\s*to\\s*be\\s*attached|and\\s*to\\s*Courier|Service\\s*Code"
             }
           }
         ]
@@ -264,20 +280,40 @@
       "when": {
         "all": [
           {
-            "geometry": {
-              "inkShortEdgeMm": {
-                "min": 88,
-                "max": 118
+            "any": [
+              {
+                "geometry": {
+                  "inkShortEdgeMm": {
+                    "min": 88,
+                    "max": 118
+                  },
+                  "inkAspectNormalised": {
+                    "min": 1.35,
+                    "max": 1.7
+                  },
+                  "inkAspect": {
+                    "min": 1.35,
+                    "max": 1.7
+                  }
+                }
               },
-              "inkAspectNormalised": {
-                "min": 1.35,
-                "max": 1.7
-              },
-              "inkAspect": {
-                "min": 1.35,
-                "max": 1.7
+              {
+                "geometry": {
+                  "inkShortEdgeMm": {
+                    "min": 55,
+                    "max": 300
+                  },
+                  "inkAspectNormalised": {
+                    "min": 1.44,
+                    "max": 1.7
+                  },
+                  "inkAspect": {
+                    "min": 1.44,
+                    "max": 1.7
+                  }
+                }
               }
-            }
+            ]
           },
           {
             "ocr": {
@@ -378,6 +414,42 @@
           {
             "carrier": {
               "is": "FEDEX"
+            }
+          }
+        ]
+      },
+      "then": {
+        "route": "THERMAL",
+        "confidence": 0.85,
+        "transform": {
+          "source": "inkBox",
+          "padMm": 1,
+          "rotate": "auto",
+          "fit": "contain"
+        }
+      }
+    },
+    {
+      "id": "label-markings-any-scale",
+      "name": "Outgoing label at any scale (OCR markings)",
+      "when": {
+        "all": [
+          {
+            "geometry": {
+              "inkShortEdgeMm": {
+                "min": 55,
+                "max": 300
+              },
+              "inkAspectNormalised": {
+                "min": 1.44,
+                "max": 2.4
+              }
+            }
+          },
+          {
+            "ocr": {
+              "rect": "inkBox",
+              "matches": "TRK\\s*#|ORIGIN\\s*ID|BILL\\s*SENDER|\\bCAD\\s*:|SHP\\s*WT|SHP\\s*#|BILLING\\s*:\\s*(FID\\s*)?T\\s*P\\s*S|\\bDWT\\s*:|Ref\\s*Code|Pce\\s*/?\\s*Shpt"
             }
           }
         ]
@@ -500,21 +572,37 @@
         "when": {
           "all": [
             {
-              "geometry": {
-                "inkShortEdgeMm": {
-                  "min": 85,
-                  "max": 118
+              "any": [
+                {
+                  "geometry": {
+                    "inkShortEdgeMm": {
+                      "min": 85,
+                      "max": 118
+                    },
+                    "inkAspectNormalised": {
+                      "min": 1.75,
+                      "max": 2.2
+                    }
+                  }
                 },
-                "inkAspectNormalised": {
-                  "min": 1.75,
-                  "max": 2.2
+                {
+                  "geometry": {
+                    "inkShortEdgeMm": {
+                      "min": 55,
+                      "max": 300
+                    },
+                    "inkAspectNormalised": {
+                      "min": 1.44,
+                      "max": 2.4
+                    }
+                  }
                 }
-              }
+              ]
             },
             {
               "ocr": {
                 "rect": "inkBox",
-                "matches": "WAYBILL\\s*DOC|Not\\s*to\\s*be\\s*attached|Hand\\s*to\\s*Courier"
+                "matches": "WAYBILL\\s*DOC|Not\\s*to\\s*be\\s*attached|and\\s*to\\s*Courier|Service\\s*Code"
               }
             }
           ]
@@ -535,16 +623,32 @@
         "when": {
           "all": [
             {
-              "geometry": {
-                "inkShortEdgeMm": {
-                  "min": 88,
-                  "max": 118
+              "any": [
+                {
+                  "geometry": {
+                    "inkShortEdgeMm": {
+                      "min": 88,
+                      "max": 118
+                    },
+                    "inkAspectNormalised": {
+                      "min": 1.35,
+                      "max": 1.7
+                    }
+                  }
                 },
-                "inkAspectNormalised": {
-                  "min": 1.35,
-                  "max": 1.7
+                {
+                  "geometry": {
+                    "inkShortEdgeMm": {
+                      "min": 55,
+                      "max": 300
+                    },
+                    "inkAspectNormalised": {
+                      "min": 1.44,
+                      "max": 2.4
+                    }
+                  }
                 }
-              }
+              ]
             },
             {
               "ocr": {

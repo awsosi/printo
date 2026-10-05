@@ -25,7 +25,7 @@ function page(overrides: Partial<PageFeatures> = {}): PageFeatures {
     orientation: 'landscape',
     rotation: 0,
     text: null,
-    inkBox: { xMm: 12, yMm: 8, widthMm: 62, heightMm: 104, aspect: 1.68, coverage: 0.06 },
+    inkBox: { xMm: 12, yMm: 8, widthMm: 48, heightMm: 80.6, aspect: 1.68, coverage: 0.06 },
     barcodes: [],
     ...overrides
   };
@@ -48,7 +48,9 @@ describe('proposing a rule from a fallback', () => {
   it('produces a rule that routes the page it was derived from', () => {
     // A small label-shaped region with no text and no barcode. Deliberately not the 4x6in
     // shape: at 101.6 x 152.4 mm `fedex-label-embedded` claims it outright, which is correct
-    // behaviour and would make this a test of that rule rather than of the proposal.
+    // behaviour and would make this a test of that rule rather than of the proposal. And under
+    // 55 mm across, where the any-scale rules stop asking to read a region, so this stays a
+    // test of the proposal rather than of OCR.
     const features = document([page()]);
     const before = decide(ONE_CLICK_PRINT_PROFILE, features);
     expect(before.pages[0].route).toBe(ROUTE_A4);
@@ -83,7 +85,7 @@ describe('proposing a rule from a fallback', () => {
     // to happen, so the tolerance is load-bearing rather than cosmetic.
     const nextParcel = document([
       page({
-        inkBox: { xMm: 14, yMm: 9, widthMm: 64, heightMm: 101, aspect: 1.58, coverage: 0.058 }
+        inkBox: { xMm: 14, yMm: 9, widthMm: 49.5, heightMm: 78.2, aspect: 1.58, coverage: 0.058 }
       })
     ]);
 

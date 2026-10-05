@@ -574,6 +574,78 @@ paper, are both hardware- or elevation-shaped. `installer/Verify-Install.ps1` no
 end to end — it waits for the queue, checks the port points at the agent, prints the Windows
 test page and waits for the agent's event-log entry — and needs an elevated run to say so.
 
+### 5.0e Print-dialog resolution and scale, measured (0.1.17)
+
+The operators reported that routing changed with the resolution chosen on the Printo queue and
+with the scale chosen in the application. Measured, before changing anything, by printing the
+whole corpus each way in simulation (`tools/corpus/simulate_print.py --dpi`, `--scale`, `--fit`),
+recording the agent's own measurements (`PrintedCorpusExport`) and routing it
+(`packages/routing-engine/scripts/route-printed-variant.ts`). 1266 pages each:
+
+| Print dialog | Before 0.1.17 | After |
+|---|---|---|
+| 300 dpi, 100% (the measured path) | 0 wrong | 0 |
+| **203 dpi**, 100% | 0 wrong | 0 |
+| 97% | 0 wrong | 0 |
+| **90%** | **202 pages to the picker**, 139 of them DHL courier sheets offered for thermal | 0 |
+| **110%** | **147 pages to the picker**, 145 courier sheets offered for thermal | 0 |
+| **Fit to the sheet** | **72 DHL labels to A4, silently** | 0 |
+| **80%** (first held-out round) | **all 736 label-shaped pages to the picker**, courier sheets and AWB copies offered for thermal | 0 |
+| **125%** (first held-out round) | **92 labels to A4 and 6 courier sheets to thermal, silently**; 199 to the picker | 0 |
+| **Fit at 203 dpi** (first held-out round) | **72 DHL labels to A4, silently** | 0 |
+| 85% (second held-out round, never tuned on) | **732 pages to the picker**, courier sheets and AWB copies offered for thermal | 6 DHL labels to the picker, thermal pre-selected |
+| 105% (second held-out round) | 9 to the picker, 6 of them courier sheets offered for thermal | 0 |
+| 120% (second held-out round) | **6 courier sheets printed as labels, silently** (and 106 AWB copies under "do not print"); 98 to the picker | 1 FedEx label to the picker, thermal pre-selected |
+
+"After" holds in all four waybill handlings. On the sets the rules were built on, nobody is asked
+about any page; on the second held-out round nothing is misrouted and 7 of 3798 pages are asked
+about, each with the right answer pre-selected. At 85% those six are DHL Economy Select labels on
+which the recogniser reads `Ret Code` for `Ref Code`; they were left alone rather than chased with
+the last unseen data, and the second round is not checked in, because the suite demands zero
+prompts.
+
+**Resolution never mattered.** At 203 dpi the class driver resamples images to 203 dpi, and the
+recogniser reads them as well as at 300: no page routed differently. Nothing changed for it.
+
+**Scale did.** Every content rule was gated on an ink box measured at 100% - 85-118 mm across -
+because that is what separates labels (92-103 mm) from documents (190 mm and up). At 90% a DHL
+courier sheet is 82.5 mm across, falls out of the band that reads it, and lands on the catch-all
+that offers label-shaped pages to the picker pre-selected for thermal: one Enter and a courier
+sheet is a label. Fitted to the sheet, a DHL label from its own 99x200 mm stock is 147 mm across
+and no rule looks at it at all. Above 100% an A4-landscape sheet runs off the paper: at 125% a
+courier sheet or an AWB copy is clipped into a tall shape the tall-label rule prints as a label.
+
+What does not change with scale is shape and content. The normalised ink aspect separates every
+label (1.45 and up) from every document (1.43 and down) in the corpus, and from 55 mm up nothing
+but labels, courier sheets and return labels has a label's aspect. So each content rule also
+accepts its shape at any size from 55 to 300 mm, with the aspect floor raised to 1.44 - and for
+the courier sheet and the AWB copy at any label-like aspect, because their markings decide alone.
+A new rule, `label-markings-any-scale`, claims a label of any size by what only labels carry:
+`TRK#`, `ORIGIN ID`, `BILL SENDER`, `CAD:` (FedEx), `SHP WT`, `SHP#`, `BILLING: TPS`, `DWT:`
+(UPS), `Ref Code`, `Pce/Shpt` (DHL). The courier sheet is also known by `Service Code` and
+`and to Courier`, which survive the clipping that takes `*WAYBILL DOC*` and the H of `Hand`.
+Every one of those was counted on OCR of every page of every variant before it was added: on
+labels (or sheets) only, never on an invoice, return note, signature page or customs slip. The
+carrier's name would not do, because `FedEx` is printed on 192 of 330 return notes, and `SHIP TO:`
+was left out because real invoices print it. Nothing is routed on the any-scale geometry alone.
+
+The first held-out round earned its place: 80% and 125% failed on the rules as tuned on the other
+settings, and the `Service Code`, `BILLING: TPS`/`DWT:` markings and the courier sheet's and AWB
+copy's any-aspect variants are what that round added. Those sets are therefore no longer held out;
+the second round is.
+
+**What it costs.** Nothing on the print path: the 736 label-shaped printed pages were all read
+before and still are, and no document is read that was not. On the file path, under "route
+normally", the same 12 pages are read. "Do not print waybills", the default since 0.1.17, is what
+costs reading there - telling a FedEx AWB copy from the label it resembles takes OCR - 597 pages
+of 1266, against 587 for the same handling before.
+
+**Not proven.** These are simulated prints, rasterised at the dialog's resolution and scaled about
+the sheet's corner (centred for fit), which is how the seven real captures behaved at 100%. A real
+capture at another scale or resolution has not been made. The variants are checked in
+(`tests/corpus/printed-variants/`) and both engines must route every one of them in every waybill
+handling.
+
 ### 5.1 Hot-folder mode (robustness rules)
 
 - Watch N configurable directories; per-directory extension list + include/exclude filename

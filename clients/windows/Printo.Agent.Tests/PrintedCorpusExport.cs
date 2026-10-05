@@ -15,7 +15,9 @@ namespace Printo.Agent.Tests;
 /// <remarks>
 /// <para>
 /// Opt-in, because it is an export rather than a check: PRINTO_PRINTED_CORPUS_DIR must name the
-/// output of <c>tools/corpus/simulate_print.py</c>. It records what the agent itself measures on
+/// output of <c>tools/corpus/simulate_print.py</c>, and PRINTO_PRINTED_FEATURES_OUT may send the
+/// result somewhere other than the checked-in file - which is how a copy printed at another
+/// resolution or scale is measured. It records what the agent itself measures on
 /// each page - geometry, every barcode its decoder finds, and its recogniser's reading of the ink
 /// box - so the printed corpus can be routed by both engines without a recogniser, and so the
 /// file changes only when the agent's measurement does.
@@ -32,7 +34,10 @@ public sealed class PrintedCorpusExport
     public void ExportsThePrintedCorpusFeatures()
     {
         var source = Environment.GetEnvironmentVariable("PRINTO_PRINTED_CORPUS_DIR");
-        if (string.IsNullOrWhiteSpace(source) || RepositoryPaths.PrintedCorpusFeatures is not { } target)
+        var target = Environment.GetEnvironmentVariable("PRINTO_PRINTED_FEATURES_OUT") is { Length: > 0 } output
+            ? output
+            : RepositoryPaths.PrintedCorpusFeatures;
+        if (string.IsNullOrWhiteSpace(source) || target is null)
         {
             return;
         }

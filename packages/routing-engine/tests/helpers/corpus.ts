@@ -1,5 +1,5 @@
 import { gunzipSync } from 'node:zlib';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -24,6 +24,28 @@ export const EXPECTED_PATH = resolve(CORPUS_DIR, 'expected.json');
  * test suite; the copies route rule-for-rule like the seven real captures in `tests/capture/`.
  */
 export const PRINTED_FEATURES_PATH = resolve(CORPUS_DIR, 'printed-features.jsonl.gz');
+
+/**
+ * The same corpus printed with the print dialog set otherwise - the Printo queue at 203 dpi, the
+ * application's scale at 80%, 90%, 97%, 110% or 125%, or fitted to the sheet - each simulated with
+ * `simulate_print.py --dpi/--scale/--fit` and measured by `PrintedCorpusExport`. Routing must not
+ * depend on any of them (plan section 5.0e).
+ */
+export const PRINTED_VARIANTS_DIR = resolve(CORPUS_DIR, 'printed-variants');
+
+/** Every printed feature set: as measured, then each print-dialog variant by name. */
+export function printedFeatureSets(): Array<{ name: string; path: string }> {
+  const sets = [{ name: 'as measured', path: PRINTED_FEATURES_PATH }];
+  if (existsSync(PRINTED_VARIANTS_DIR)) {
+    const files = readdirSync(PRINTED_VARIANTS_DIR)
+      .filter((entry) => entry.endsWith('.jsonl.gz'))
+      .sort();
+    for (const file of files) {
+      sets.push({ name: file.replace(/\.jsonl\.gz$/, ''), path: resolve(PRINTED_VARIANTS_DIR, file) });
+    }
+  }
+  return sets;
+}
 
 export interface ExpectedPage {
   doc: string;

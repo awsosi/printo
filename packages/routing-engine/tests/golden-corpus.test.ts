@@ -13,8 +13,8 @@ import {
   decide,
   loadCorpus,
   loadExpected,
-  PRINTED_FEATURES_PATH,
   printedCorpusAvailable,
+  printedFeatureSets,
   stripTextLayer,
   type ExpectedPage
 } from './helpers/corpus.js';
@@ -201,12 +201,20 @@ suite('golden corpus', () => {
  * Asserted strictly: every page on the right printer, and nobody asked about any of them. A
  * prompt on a page the rules should know is a regression in the product's speed even when the
  * user's answer would have been right.
+ *
+ * And again for every way of setting the print dialog that has been measured - the queue at
+ * 203 dpi, the application's scale from 80% to 125%, fitted to the sheet - because the operators
+ * saw routing change with those settings, and it must not.
  */
 const printedSuite = printedCorpusAvailable() ? describe : describe.skip;
 
+const printedSets = printedFeatureSets();
+
 printedSuite('golden corpus, printed', () => {
-  for (const handling of ['route', ...OVERRIDES] as WaybillHandling[]) {
-    it(`routes every printed page correctly without asking anybody (waybills: ${handling})`, () => {
+  for (const [set, handling] of printedSets.flatMap((entry) =>
+    (['route', ...OVERRIDES] as WaybillHandling[]).map((value) => [entry, value] as const)
+  )) {
+    it(`routes every printed page correctly without asking anybody (${set.name}, waybills: ${handling})`, () => {
       const expected = loadExpected();
       const expectedByPage = new Map<string, ExpectedPage>(
         expected.pages.map((page) => [key(page.doc, page.pageNumber), page])
@@ -216,7 +224,7 @@ printedSuite('golden corpus, printed', () => {
       const prompted: string[] = [];
       let pages = 0;
 
-      for (const document of loadCorpus(PRINTED_FEATURES_PATH)) {
+      for (const document of loadCorpus(set.path)) {
         const decision = decide(ONE_CLICK_PRINT_PROFILE, document, { waybillHandling: handling });
         if (decision.fallback) {
           prompted.push(`${document.fileName}: ${decision.fallback.reason}`);

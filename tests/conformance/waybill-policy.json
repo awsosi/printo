@@ -43,7 +43,7 @@
   },
   {
    "name": "Any other handling reads a 4x6in region before the page rules may claim it",
-   "rationale": "The AWB copy and the FedEx label share one frame; only OCR tells them apart, so the waybill stage must ask before the geometry fast path answers.",
+   "rationale": "The AWB copy and the FedEx label share one frame; only OCR tells them apart, so the waybill stage must ask before the geometry fast path answers. The DHL courier-sheet rule asks first since 0.1.17 - it reads any label-shaped region, because a sheet printed at another scale is known only by its words - and it is the same ink box either way.",
    "profile": "builtin:OneClickPrint",
    "engineOptions": {
     "waybillHandling": "skip"
@@ -76,7 +76,7 @@
     {
      "pageNumber": 1,
      "key": "33.0,18.8,101.8,149.4",
-     "ruleId": "waybill-fedex-awb-ocr"
+     "ruleId": "waybill-dhl-ocr"
     }
    ]
   },

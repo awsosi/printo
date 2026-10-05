@@ -407,6 +407,16 @@ cannot be recovered. Anything that arrives in another page description language 
 the format named, and the person who pressed print sees it fail in the Windows queue rather than
 losing the job silently.
 
+**The resolution and scale chosen in the print dialog do not change where pages go.** The queue
+offers 203, 300 and 600 dpi; Printo composes every label itself at the thermal printer's own
+resolution whatever was chosen, so 203 here does not make a 203 dpi label and 300 does not make
+a worse one. Routing was measured over the whole sample corpus at 203 dpi, at 80% to 125% scale
+and fitted to the sheet, and every page goes where it goes at 100% (plan section 5.0e); at
+settings the rules were not built on, 7 pages in 3798 were asked about instead, with the right
+printer pre-selected, and none went to the wrong one. Leave the scale at its default all the
+same: above 100% an A4-landscape sheet runs off the paper, and what is not on the page cannot be
+printed.
+
 **If the port is taken.** The agent logs the failure loudly, keeps running its watched folders,
 and finishes whatever is already in its spool. Set `VirtualPrinterPort` to something free; the
 queue is recreated against the new port at the next start.

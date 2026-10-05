@@ -761,7 +761,8 @@ suite('agent API (postgres)', () => {
           orientation: 'landscape',
           rotation: 0,
           text: null,
-          inkBox: { xMm: 12, yMm: 8, widthMm: 62, heightMm: 104, aspect: 1.68, coverage: 0.06 },
+          // Under 55 mm across, where the any-scale rules stop asking to read a region.
+          inkBox: { xMm: 12, yMm: 8, widthMm: 48, heightMm: 80.6, aspect: 1.68, coverage: 0.06 },
           barcodes: []
         }
       ]
@@ -811,7 +812,7 @@ suite('agent API (postgres)', () => {
     const rule = proposed.body.proposal.rule;
     expect(rule.then.route).toBe('THERMAL');
     expect(rule.then.transform.source).toBe('inkBox');
-    expect(proposed.body.proposal.rationale.join(' ')).toContain('62 x 104 mm');
+    expect(proposed.body.proposal.rationale.join(' ')).toContain('48 x 80.6 mm');
 
     // The proposal is stored on the item, so it survives a page reload and is visible to
     // whoever eventually publishes it - and the item stays open, because a proposal is

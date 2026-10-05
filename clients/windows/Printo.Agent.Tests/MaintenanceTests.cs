@@ -268,13 +268,17 @@ public sealed class MaintenanceTests : IDisposable
     // Waybills end to end
     // -------------------------------------------------------------------------------------------
 
-    private sealed class StubOcr(string text) : IOcrEngine
+    /// <summary>
+    /// Reads <paramref name="tall"/> in a tall region - the DHL sheet's shape - and
+    /// <paramref name="other"/> anywhere else, so each page reads as what it is.
+    /// </summary>
+    private sealed class StubOcr(string tall, string other = "") : IOcrEngine
     {
         public OcrRegion Recognise(PdfPage page, RectMm region) => new()
         {
             Key = Geometry.OcrRegionKey(region),
             Rect = region,
-            Text = text,
+            Text = Math.Max(region.WidthMm, region.HeightMm) / Math.Min(region.WidthMm, region.HeightMm) >= 1.75 ? tall : other,
             Lines = [],
         };
     }
@@ -306,7 +310,7 @@ public sealed class MaintenanceTests : IDisposable
         var processor = new JobProcessor(
             spool,
             catalog,
-            ocr: new StubOcr("*WAYBILLDOC* Not to be attached to package - Hand to Courier"),
+            ocr: new StubOcr("*WAYBILLDOC* Not to be attached to package - Hand to Courier", "FedEx TRK# 7712 3456 7890"),
             decider: new LocalDecider(() => RuleBundle.Builtin, () => handling));
 
         var result = processor.Process(spool.FindById(job.Id)!);

@@ -20,18 +20,44 @@ namespace Printo.Agent.Tests;
 /// The TypeScript engine runs the same file in <c>golden-corpus.test.ts</c>, so the server's
 /// worker and the workstation are held to the same answer.
 /// </para>
+/// <para>
+/// And every print-dialog variant in <c>tests/corpus/printed-variants</c> - the queue at 203 dpi,
+/// the application's scale from 80% to 125%, fitted to the sheet - is held to the same answer
+/// too, because routing that changes with those settings is what the operators reported.
+/// </para>
 /// </remarks>
 public sealed class PrintedCorpusTests
 {
-    [Theory]
-    [InlineData(WaybillHandling.Route)]
-    [InlineData(WaybillHandling.A4)]
-    [InlineData(WaybillHandling.Thermal)]
-    [InlineData(WaybillHandling.Skip)]
-    public void RoutesEveryPrintedPageCorrectlyWithoutAskingAnybody(WaybillHandling handling)
+    public static TheoryData<string, WaybillHandling> FeatureSets()
     {
-        if (RepositoryPaths.PrintedCorpusFeatures is not { } featuresPath
-            || RepositoryPaths.CorpusExpected is not { } expectedPath)
+        var data = new TheoryData<string, WaybillHandling>();
+        var sets = new List<string> { "as measured" };
+        if (RepositoryPaths.PrintedCorpusVariants is { } variants)
+        {
+            sets.AddRange(Directory.EnumerateFiles(variants, "*.jsonl.gz")
+                .Select(path => Path.GetFileName(path)[..^".jsonl.gz".Length])
+                .Order(StringComparer.Ordinal));
+        }
+
+        foreach (var set in sets)
+        {
+            foreach (var handling in new[] { WaybillHandling.Route, WaybillHandling.A4, WaybillHandling.Thermal, WaybillHandling.Skip })
+            {
+                data.Add(set, handling);
+            }
+        }
+
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(FeatureSets))]
+    public void RoutesEveryPrintedPageCorrectlyWithoutAskingAnybody(string set, WaybillHandling handling)
+    {
+        var featuresPath = set == "as measured"
+            ? RepositoryPaths.PrintedCorpusFeatures
+            : RepositoryPaths.PrintedCorpusVariants is { } variants ? Path.Combine(variants, set + ".jsonl.gz") : null;
+        if (featuresPath is null || !File.Exists(featuresPath) || RepositoryPaths.CorpusExpected is not { } expectedPath)
         {
             return;
         }

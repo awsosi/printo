@@ -631,7 +631,7 @@
     },
     {
       "name": "A lying 4x6in region with nothing recognised yet asks for OCR of its ink box",
-      "rationale": "The FedEx carrier gate below can only resolve from recognised text, so something must ask for it. With the return-label rule now limited to upright labels, that is the UPS rule, which covers every label shape.",
+      "rationale": "The FedEx carrier gate below can only resolve from recognised text, so something must ask for it. Since 0.1.17 the first to ask is the DHL courier-sheet rule, whose any-scale variant reads every label-shaped region: a sheet printed at another scale, or clipped by the sheet edge, is known only by its words. Same ink box, one reading.",
       "profile": "builtin:OneClickPrint",
       "document": {
         "fileName": "OneClickPrint_TEST.pdf",
@@ -661,7 +661,7 @@
         {
           "pageNumber": 1,
           "key": "18.8,162.4,150.1,100.3",
-          "ruleId": "ups-label-region-ocr"
+          "ruleId": "dhl-waybill-sheet-ocr"
         }
       ]
     },

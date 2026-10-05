@@ -25,7 +25,42 @@
  * FedEx labels are still claimed by geometry on the file path and never reach an OCR rule.
  */
 
-import type { RoutingProfileRules } from './rules.js';
+import type { GeometryPredicate, RoutingProfileRules } from './rules.js';
+
+/**
+ * Label shapes at whatever scale the print dialog applied.
+ *
+ * The bands below are measured at 100%, and a printed page is not always printed at 100%: a
+ * custom scale shrinks or grows everything, and "fit to page" blows a 4x6in label page up to
+ * the width of A4. Size stops meaning anything, and only shape and content are left. Measured on
+ * the print-simulated corpus at 90% and 110% and fitted to the sheet (plan section 5.0e), the
+ * ink box's normalised aspect still separates every label (1.45 and up) from every document
+ * (1.43 and down), and from 55 mm up nothing but labels, courier sheets and return labels has a
+ * label's aspect: signature pages and customs slips are smaller (47 mm at most).
+ *
+ * So each content rule also accepts its shape at any size from 55 to 300 mm - a label printed at
+ * 60% up to one fitted to the sheet - with the aspect floor raised to 1.44 for the 4x6in family,
+ * where documents come closest. Nothing is routed on this geometry alone: every rule that uses
+ * it also has to read what the page says.
+ */
+const ANY_SCALE = { min: 55, max: 300 };
+const LABEL_ASPECT_FLOOR_ANY_SCALE = 1.44;
+
+/** A 100% band, or the same shape at any scale; the any-scale variant needs content as well. */
+function atAnyScale(
+  atFullSize: GeometryPredicate,
+  aspect: { min: number; max: number }
+): Array<{ geometry: GeometryPredicate }> {
+  return [
+    { geometry: atFullSize },
+    {
+      geometry: {
+        inkShortEdgeMm: ANY_SCALE,
+        inkAspectNormalised: { min: Math.max(aspect.min, LABEL_ASPECT_FLOOR_ANY_SCALE), max: aspect.max }
+      }
+    }
+  ];
+}
 
 /**
  * Measured page geometry, in millimetres.
@@ -204,15 +239,21 @@ export const ONE_CLICK_PRINT_PROFILE: RoutingProfileRules = {
       when: {
         all: [
           {
-            geometry: {
-              inkShortEdgeMm: { min: 85, max: 118 },
-              inkAspectNormalised: { min: 1.75, max: 2.2 }
-            }
+            // At any other scale the sheet's own words decide, at any label-like aspect: printed
+            // at 110% it runs off the foot of the A4 sheet and is clipped to 154x101 mm, and it
+            // is still a courier sheet. These three markings are on no other page in the corpus.
+            any: atAnyScale(
+              { inkShortEdgeMm: { min: 85, max: 118 }, inkAspectNormalised: { min: 1.75, max: 2.2 } },
+              { min: LABEL_ASPECT_FLOOR_ANY_SCALE, max: 2.4 }
+            )
           },
           {
+            // `Service Code` and `and to Courier` survive what clips the rest: printed at 125%
+            // the sheet loses its left edge, and with it `*WAYBILL DOC*` and the H of `Hand`.
+            // Measured on every printed variant: on all 145 sheets, and on no other page.
             ocr: {
               rect: 'inkBox',
-              matches: 'WAYBILL\\s*DOC|Not\\s*to\\s*be\\s*attached|Hand\\s*to\\s*Courier'
+              matches: 'WAYBILL\\s*DOC|Not\\s*to\\s*be\\s*attached|and\\s*to\\s*Courier|Service\\s*Code'
             }
           }
         ]
@@ -241,11 +282,22 @@ export const ONE_CLICK_PRINT_PROFILE: RoutingProfileRules = {
       when: {
         all: [
           {
-            geometry: {
-              inkShortEdgeMm: { min: 88, max: 118 },
-              inkAspectNormalised: { min: 1.35, max: 1.7 },
-              inkAspect: { min: 1.35, max: 1.7 }
-            }
+            any: [
+              {
+                geometry: {
+                  inkShortEdgeMm: { min: 88, max: 118 },
+                  inkAspectNormalised: { min: 1.35, max: 1.7 },
+                  inkAspect: { min: 1.35, max: 1.7 }
+                }
+              },
+              {
+                geometry: {
+                  inkShortEdgeMm: ANY_SCALE,
+                  inkAspectNormalised: { min: LABEL_ASPECT_FLOOR_ANY_SCALE, max: 1.7 },
+                  inkAspect: { min: LABEL_ASPECT_FLOOR_ANY_SCALE, max: 1.7 }
+                }
+              }
+            ]
           },
           { ocr: { rect: 'inkBox', matches: 'REF:\\s*RETURN|PO:\\s*RETURN' } }
         ]
@@ -346,6 +398,50 @@ export const ONE_CLICK_PRINT_PROFILE: RoutingProfileRules = {
       }
     },
     {
+      // An outgoing label at any scale, known by what only a label carries.
+      //
+      // The rules above find a label printed at 100% by its size. Printed at 85%, at 120% or
+      // fitted to the sheet, a label falls outside every size band and used to go to A4 with
+      // nobody told - or, under "fit", sit at an invoice's size. What does not change with scale
+      // is what is printed on it. Measured on OCR of the whole printed corpus at 80% to 125%,
+      // fitted to the sheet, and captured at 203 dpi (plan section 5.0e): FedEx's `TRK#`,
+      // `ORIGIN ID`, `BILL SENDER` and `CAD:`, UPS's `SHP WT`, `SHP#`, `BILLING: TPS` and `DWT:`,
+      // and DHL's `Ref Code` and `Pce/Shpt` mark every label in most of those prints and all but
+      // a handful of clipped ones in the rest (139 of 145 DHL labels at 125%), and not one
+      // invoice, return note, signature page or customs slip in any of them. No one marking
+      // survives every scale - the recogniser loses `TRK#` on a hundred labels at 97% - which is
+      // why there are ten. The carrier's *name* will not do: `FedEx` is on 192 of
+      // 330 return notes and `DHL` on 128. Courier sheets, AWB copies and return labels carry
+      // some of these markings too, which is why this rule comes after every rule that claims
+      // those.
+      //
+      // At 100% this rule is never reached - the shape rules above claim every label first - so
+      // the corpus as printed costs no more OCR than before.
+      id: 'label-markings-any-scale',
+      name: 'Outgoing label at any scale (OCR markings)',
+      when: {
+        all: [
+          {
+            geometry: {
+              inkShortEdgeMm: ANY_SCALE,
+              inkAspectNormalised: { min: LABEL_ASPECT_FLOOR_ANY_SCALE, max: 2.4 }
+            }
+          },
+          {
+            ocr: {
+              rect: 'inkBox',
+              matches: 'TRK\\s*#|ORIGIN\\s*ID|BILL\\s*SENDER|\\bCAD\\s*:|SHP\\s*WT|SHP\\s*#|BILLING\\s*:\\s*(FID\\s*)?T\\s*P\\s*S|\\bDWT\\s*:|Ref\\s*Code|Pce\\s*/?\\s*Shpt'
+            }
+          }
+        ]
+      },
+      then: {
+        route: 'THERMAL',
+        confidence: 0.85,
+        transform: { source: 'inkBox', padMm: 1, rotate: 'auto', fit: 'contain' }
+      }
+    },
+    {
       // Generic fallback for a carrier the product has never seen (plan section 6.3): a
       // label-shaped region carrying at least one shipping barcode is still cropped and sent
       // to thermal, but below the confidence threshold, so the user is asked to confirm and
@@ -434,15 +530,15 @@ export const ONE_CLICK_PRINT_PROFILE: RoutingProfileRules = {
         when: {
           all: [
             {
-              geometry: {
-                inkShortEdgeMm: { min: 85, max: 118 },
-                inkAspectNormalised: { min: 1.75, max: 2.2 }
-              }
+              any: atAnyScale(
+                { inkShortEdgeMm: { min: 85, max: 118 }, inkAspectNormalised: { min: 1.75, max: 2.2 } },
+                { min: LABEL_ASPECT_FLOOR_ANY_SCALE, max: 2.4 }
+              )
             },
             {
               ocr: {
                 rect: 'inkBox',
-                matches: 'WAYBILL\\s*DOC|Not\\s*to\\s*be\\s*attached|Hand\\s*to\\s*Courier'
+                matches: 'WAYBILL\\s*DOC|Not\\s*to\\s*be\\s*attached|and\\s*to\\s*Courier|Service\\s*Code'
               }
             }
           ]
@@ -462,15 +558,19 @@ export const ONE_CLICK_PRINT_PROFILE: RoutingProfileRules = {
         // Measured on OCR of every page, as files and as print-simulated copies: each marks
         // exactly the 106 AWB copies in the corpus and no other page, of any class. `AWB` on
         // its own was rejected - it also appears on all 330 return notes.
+        //
+        // At any other scale the markings decide at any label-like aspect, as for the DHL sheet:
+        // printed at 125% the copy runs off the sheet and is clipped into a tall shape, where
+        // the tall-label rule would otherwise print it as a label.
         id: 'waybill-fedex-awb-ocr',
         name: 'FedEx AWB copy (OCR)',
         when: {
           all: [
             {
-              geometry: {
-                inkShortEdgeMm: { min: 88, max: 118 },
-                inkAspectNormalised: { min: 1.35, max: 1.7 }
-              }
+              any: atAnyScale(
+                { inkShortEdgeMm: { min: 88, max: 118 }, inkAspectNormalised: { min: 1.35, max: 1.7 } },
+                { min: LABEL_ASPECT_FLOOR_ANY_SCALE, max: 2.4 }
+              )
             },
             { ocr: { rect: 'inkBox', matches: 'CARRIAGE\\s*VALUE|PKG\\s*:?\\s*YOUR\\s*PKG' } }
           ]

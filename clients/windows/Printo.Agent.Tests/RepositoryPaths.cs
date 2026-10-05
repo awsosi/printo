@@ -33,6 +33,12 @@ internal static class RepositoryPaths
     /// </remarks>
     public static string? PrintedCorpusFeatures => Combine("tests", "corpus", "printed-features.jsonl.gz");
 
+    /// <summary>
+    /// The same corpus printed with the print dialog set otherwise - the Printo queue at 203 dpi,
+    /// the application's scale changed, the page fitted to the sheet - one file per setting.
+    /// </summary>
+    public static string? PrintedCorpusVariants => Combine("tests", "corpus", "printed-variants");
+
     public static string? Profiles => Combine("profiles");
 
     /// <summary>
