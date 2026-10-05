@@ -111,7 +111,11 @@ describe('mixed-carrier end-to-end routing', () => {
 });
 
 describe('waybill copies under the fleet policy', () => {
-  it('records an excluded waybill copy as skipped and never sends it to a printer', async () => {
+  // Unset is the product default, which since 0.1.17 is not to print them either.
+  it.each([
+    { policy: 'skip' as const, label: 'set to skip' },
+    { policy: undefined, label: 'left unset' }
+  ])('records an excluded waybill copy as skipped and never sends it to a printer (policy $label)', async ({ policy }) => {
     const dispatched: number[] = [];
     let handlingSeen: string | undefined;
 
@@ -163,7 +167,7 @@ describe('waybill copies under the fleet policy', () => {
         { id: 'p-a4', name: 'Office A4', type: 'A4', targetUri: 'cups://OfficeA4', domainUsername: '', secretRef: '', isActive: true }
       ]
     });
-    store.waybillHandling = 'skip';
+    store.waybillHandling = policy;
 
     const scanner = new StaticSmbScanner({
       'source-intake': [

@@ -249,6 +249,14 @@ export type WaybillHandling = 'route' | 'a4' | 'thermal' | 'skip';
 export const WAYBILL_HANDLINGS: readonly WaybillHandling[] = ['route', 'a4', 'thermal', 'skip'];
 
 /**
+ * The handling the product applies when no site, fleet or machine has chosen one: the carrier's
+ * copy is not printed (the operators' request, 0.1.17). A setting rather than a profile value,
+ * so it holds whatever bundle a site published; a profile's own `waybills.handling` describes
+ * the rules and still decides when the engine is called with no handling at all.
+ */
+export const DEFAULT_WAYBILL_HANDLING: WaybillHandling = 'skip';
+
+/**
  * How a profile recognises waybill copies, and what it does with them.
  *
  * The rules here only identify; where the page goes is the handling's decision. They run ahead

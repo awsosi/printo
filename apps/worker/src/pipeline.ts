@@ -5,7 +5,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { matchPdfPagesBySnippet } from '@printo/shared';
-import type { WaybillHandling } from '@printo/routing-engine';
+import { DEFAULT_WAYBILL_HANDLING, type WaybillHandling } from '@printo/routing-engine';
 import { extractSinglePagePdf } from './pdf-split.js';
 import { HeuristicPageClassifier } from './classify/heuristic-classifier.js';
 import type { PageClass, PageClassification, PageClassifier, PageClassifierInput } from './classify/types.js';
@@ -243,8 +243,8 @@ export interface WorkerConfigStore {
   getActivePrinters(): Promise<WorkerPrinter[]>;
   getSystemSettings(): Promise<WorkerSystemSettings>;
   /**
-   * The fleet policy's waybill handling, or undefined when it sets none. Optional so stores
-   * written before the policy existed keep working, routing waybills as they always did.
+   * The fleet policy's waybill handling, or undefined when it sets none - the product default
+   * then applies. Optional so stores written before the policy existed keep working.
    */
   getWaybillHandling?(): Promise<WaybillHandling | undefined>;
   listVisualProfiles(ownerUserId: string | null, ownerGroupId: string | null): Promise<WorkerVisualProfile[]>;
@@ -708,7 +708,7 @@ export class WorkerPipeline {
         const classifications = await this.classifier.classifyDocument({
           fileName: file.path.split(/[\\/]/).pop() ?? file.path,
           pages: inputs,
-          ...(waybillHandling ? { waybillHandling } : {})
+          waybillHandling: waybillHandling ?? DEFAULT_WAYBILL_HANDLING
         });
 
         for (const classification of classifications) {

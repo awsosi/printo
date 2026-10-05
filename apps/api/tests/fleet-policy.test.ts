@@ -68,7 +68,7 @@ describe('fleet policy', () => {
 
   it('reports the product defaults for anything unset', () => {
     const effective = effectivePolicy({});
-    expect(effective.waybillHandling).toBe('route');
+    expect(effective.waybillHandling).toBe('skip');
     expect(effective.thermalMedia).toBe('100x210mm');
     expect(effective.logging.fileEnabled).toBe(false);
     expect(effective.retention).toEqual(PRODUCT_DEFAULTS.retention);

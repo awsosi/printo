@@ -425,7 +425,7 @@ public sealed class MainWindow : Form
         AddNote(grid, "The label stock loaded in thermal printers that do not name their own on the "
             + "Printers page, as width x height, e.g. 100x210mm. A printer's own media always wins.");
 
-        var fleetWaybills = inherited.WaybillHandling is { } fleet ? DescribeWaybills(fleet) : "Route normally";
+        var fleetWaybills = DescribeWaybills(inherited.WaybillHandling ?? WaybillHandlings.ProductDefault);
         waybillHandling.Items.AddRange(
         [
             $"Fleet setting ({fleetWaybills}, {inherited.WaybillHandlingSource})",
@@ -447,8 +447,8 @@ public sealed class MainWindow : Form
         AddRow(grid, "Waybill copies", waybillHandling, nameof(AgentConfiguration.WaybillHandling));
         AddNote(grid, "The carrier's own copy of the waybill: the DHL courier sheet (\"WAYBILL DOC - "
             + "Hand to Courier\") and the FedEx AWB copy. Choose where they print, or leave them out "
-            + "of every job. Identifying the FedEx copy means reading it, so any choice but the fleet's "
-            + "\"route normally\" adds a moment of OCR to each FedEx label.");
+            + "of every job - which is the product default. Identifying the FedEx copy means reading it, "
+            + "so any choice but \"route normally\" adds a moment of OCR to each FedEx label.");
 
         AddNote(grid, "Page order is set per printer on the Printers page: by default the A4 printer "
             + "gets the first page first and the thermal printer the last label first, so both stacks "

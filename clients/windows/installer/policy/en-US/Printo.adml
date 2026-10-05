@@ -100,15 +100,15 @@ If this policy is Not Configured, the agent uses the machine's own display langu
       <string id="WaybillHandling">Waybill copies</string>
       <string id="WaybillHandling_Explain">Where the carrier's own copy of the waybill prints: the DHL courier sheet ("WAYBILL DOC - Hand to Courier") and the FedEx AWB copy.
 
-Route normally: the routing rules decide - the DHL sheet on A4, the FedEx AWB copy on the thermal printer with the labels. This is what every agent did before this setting existed.
+Route normally: the routing rules decide - the DHL sheet on A4, the FedEx AWB copy on the thermal printer with the labels. This is what every agent did before 0.1.17.
 
 Always A4 / Always thermal: every waybill copy goes to that printer; on thermal it is cropped like a label.
 
-Do not print: waybill copies are left out of every job; the rest of the document prints, and the agent's history records the pages as not printed.
+Do not print: waybill copies are left out of every job; the rest of the document prints, and the agent's history records the pages as not printed. This is the product default.
 
 Any choice but Route normally makes the agent read each FedEx 4x6in label (OCR), because the AWB copy can only be told from the label by what it says.
 
-If this policy is Not Configured, the agent uses its own setting, or the fleet policy from the Printo server.</string>
+If this policy is Not Configured, the agent uses its own setting, or the fleet policy from the Printo server, or else does not print them.</string>
       <string id="WaybillHandling_Route">Route normally</string>
       <string id="WaybillHandling_A4">Always print them on A4</string>
       <string id="WaybillHandling_Thermal">Always print them on the thermal printer</string>

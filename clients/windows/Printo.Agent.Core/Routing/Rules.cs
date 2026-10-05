@@ -481,6 +481,12 @@ public enum WaybillHandling
 /// <summary>Wire names for <see cref="WaybillHandling"/>, shared with the TypeScript engine.</summary>
 public static class WaybillHandlings
 {
+    /// <summary>
+    /// The handling the product applies when nobody chose one: the carrier's copy is not
+    /// printed. Mirrors <c>DEFAULT_WAYBILL_HANDLING</c> in the TypeScript engine.
+    /// </summary>
+    public const WaybillHandling ProductDefault = WaybillHandling.Skip;
+
     public static string ToWire(WaybillHandling handling) => handling switch
     {
         WaybillHandling.A4 => "a4",

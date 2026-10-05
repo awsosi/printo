@@ -223,12 +223,13 @@ public static class SettingSources
 public sealed class EffectiveSettings
 {
     /// <summary>
-    /// The waybill handling to pass the engine, or <c>null</c> to let the rule bundle's profile
-    /// decide - which is what happens when nobody, locally or centrally, set one.
+    /// The waybill handling to pass the engine. When nobody, locally or centrally, set one it is
+    /// the product default - not printed - whatever the rule bundle's profile says, so a bundle
+    /// published before the default changed does not quietly bring the waybills back.
     /// </summary>
-    public WaybillHandling? WaybillHandling { get; init; }
+    public WaybillHandling? WaybillHandling { get; init; } = WaybillHandlings.ProductDefault;
 
-    public string WaybillHandlingSource { get; init; } = SettingSources.RuleBundle;
+    public string WaybillHandlingSource { get; init; } = SettingSources.ProductDefault;
 
     /// <summary>Thermal stock for printers that name none.</summary>
     public MediaSize ThermalMedia { get; init; } = MediaSizes.DefaultThermal;
@@ -276,10 +277,10 @@ public sealed class EffectiveSettings
 
         return new EffectiveSettings
         {
-            WaybillHandling = configuration.WaybillHandling ?? fleet?.WaybillHandling,
+            WaybillHandling = configuration.WaybillHandling ?? fleet?.WaybillHandling ?? WaybillHandlings.ProductDefault,
             WaybillHandlingSource = configuration.WaybillHandling is not null
                 ? LocalSource(nameof(AgentConfiguration.WaybillHandling))
-                : fleet?.WaybillHandling is not null ? SettingSources.Server : SettingSources.RuleBundle,
+                : fleet?.WaybillHandling is not null ? SettingSources.Server : SettingSources.ProductDefault,
 
             ThermalMedia = thermal,
             ThermalMediaSource = thermalSource,

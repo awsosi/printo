@@ -430,8 +430,10 @@ public sealed class MaintenanceTests : IDisposable
         Assert.Equal(150, chosen.ThermalMedia.HeightMm);
 
         var nothing = EffectiveSettings.Resolve(new AgentConfiguration(), null);
-        Assert.Null(nothing.WaybillHandling);
-        Assert.Equal(SettingSources.RuleBundle, nothing.WaybillHandlingSource);
+        // Nothing chosen anywhere: waybill copies are not printed (the default since 0.1.17),
+        // whatever the rule bundle's profile carries.
+        Assert.Equal(WaybillHandling.Skip, nothing.WaybillHandling);
+        Assert.Equal(SettingSources.ProductDefault, nothing.WaybillHandlingSource);
         Assert.Equal(210, nothing.ThermalMedia.HeightMm);
         Assert.False(nothing.Logging.FileEnabled);
     }

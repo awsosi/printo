@@ -1,4 +1,11 @@
-import { DEFAULT_THERMAL_MEDIA, formatMedia, parseMedia, WAYBILL_HANDLINGS, type WaybillHandling } from '@printo/routing-engine';
+import {
+  DEFAULT_THERMAL_MEDIA,
+  DEFAULT_WAYBILL_HANDLING,
+  formatMedia,
+  parseMedia,
+  WAYBILL_HANDLINGS,
+  type WaybillHandling
+} from '@printo/routing-engine';
 import type { JsonObject } from '../types.js';
 
 /**
@@ -51,7 +58,7 @@ export interface FleetPolicyInput {
 
 /** The product's own defaults, which the agent and the worker use when nothing is set. */
 export const PRODUCT_DEFAULTS = {
-  waybillHandling: 'route' as WaybillHandling,
+  waybillHandling: DEFAULT_WAYBILL_HANDLING,
   thermalMedia: formatMedia(DEFAULT_THERMAL_MEDIA),
   logging: { fileEnabled: false, level: 'information', maxFileSizeMb: 10, maxFiles: 5 } as LoggingPolicy,
   retention: { keepPrintedHours: 24, keepHistoryDays: 14, expireUnprintedDays: 30, maxSpoolMb: 2048 } as RetentionPolicy,

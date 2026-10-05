@@ -310,7 +310,7 @@ restart.
 
 | Setting | Product default | Policy value |
 |---|---|---|
-| Waybill copies - DHL courier sheet, FedEx AWB copy: route normally / always A4 / always thermal / do not print | route normally (DHL sheet on A4, AWB copy with the labels) | `WaybillHandling` = `route`, `a4`, `thermal`, `skip` |
+| Waybill copies - DHL courier sheet, FedEx AWB copy: route normally / always A4 / always thermal / do not print | do not print (since 0.1.17; before, route normally - DHL sheet on A4, AWB copy with the labels) | `WaybillHandling` = `route`, `a4`, `thermal`, `skip` |
 | Thermal media for printers that name none | `100x210mm` | `ThermalMedia` |
 | Page order per role (a printer's own setting wins) | A4 first page first; thermal last label first | — (fleet policy / per printer) |
 | Log files | off; Information; 10 MB x 5 files | `LogToFile`, `LogLevel`, `LogMaxFileSizeMb`, `LogMaxFiles` |
@@ -321,7 +321,10 @@ restart.
 | Signed-in users may start/stop the service | yes | `UsersCanControlService` |
 
 **Waybills.** The server-side worker applies the same fleet setting to what it routes. "Do not
-print" leaves those pages out of every job and records them as not printed; the rest prints. Any
+print", the default, leaves those pages out of every job and records them as not printed; the
+rest prints. It is the default of the setting, not of the rules: a bundle published before
+0.1.17 still carries `waybills.handling: route`, and the setting wins over it, so set the fleet
+policy to "route normally" to keep the old behaviour. Any
 choice but "route normally" makes the agent OCR each FedEx 4x6in label, because the AWB copy is
 told from the label only by what it says (`CARRIAGE VALUE`, `PKG: YOUR PKG`).
 

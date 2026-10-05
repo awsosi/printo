@@ -82,7 +82,7 @@ export function fleetPanelHtml(): string {
               <div class="grid2">
                 <label>Waybill copies (DHL courier sheet, FedEx AWB copy)
                   <select id="fleetPolicyWaybills">
-                    <option value="">Not set - route normally</option>
+                    <option value="">Not set - do not print them (product default)</option>
                     <option value="route">Route normally (DHL sheet on A4, FedEx AWB copy with the labels)</option>
                     <option value="a4">Always A4</option>
                     <option value="thermal">Always thermal</option>
