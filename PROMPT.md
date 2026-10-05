@@ -17,9 +17,9 @@
 > is met. Until then, keep it accurate: after each milestone, update
 > "Current position" below and strike through what is finished. Never leave it stale.
 >
-> **Last updated:** 2026-09-24, after the 0.1.15 operator release - one Printo window, fleet
-> policy, waybill handling, spool clean-up, log files (section 6b, first entry), on
-> `feat/windows-agent`.
+> **Last updated:** 2026-10-05, after 0.1.17 - black-and-white thermal output, routing that
+> holds at any print-dialog resolution and scale, waybills not printed by default (section 6b,
+> first entry), on `feat/windows-agent`.
 
 ---
 
@@ -331,8 +331,9 @@ Plan section 5.0d is the write-up; `VirtualPrinterTests` is the evidence.
 
 ```bash
 npm run lint && npm run typecheck                      # repo-wide, must stay green
-npx vitest run --root packages/routing-engine          # 171 tests incl. golden corpus in every waybill handling
-dotnet test clients/windows/Printo.Agent.Tests         # 346 tests incl. corpus parity, soak, captures, the virtual printer
+npx vitest run --root packages/routing-engine          # 203 tests incl. golden corpus, printed and in 8 print-dialog variants, every waybill handling
+dotnet test clients/windows/Printo.Agent.Tests         # 383 tests incl. corpus parity, soak, captures, the virtual printer, the variants
+npx tsx packages/routing-engine/scripts/route-printed-variant.ts <features.jsonl.gz> [handling]   # what a print-dialog setting does to routing
 PRINTO_RENDER_WINDOWS=<dir> dotnet test clients/windows/Printo.Agent.Tests --filter WindowRenderings  # every window as PNG
 Printo.Agent.exe --diagnose-virtual-printer            # why the Printo queue is not there, without changing anything
 python tools/corpus/check_vision_features.py "C:\Users\olek\Documents\code\si\printo-materials" --all   # vision measures the corpus as calibrated
@@ -385,6 +386,53 @@ text-layer modes, and the service's measurements are checked against the corpus 
 calibrated on — 1266 pages, exact agreement. Plan §10.3.
 
 ## 6b. Session log
+
+### 2026-10-05 — 0.1.17: ragged CITIZEN labels, routing that moved with the print dialog, waybills off
+
+Three requests from the operators, with a scan (`skanowanie.jpg`, not committed): the same DHL
+label from a ZEBRA GK420d (clean) and a CITIZEN CL-S400DT on the CL-S400DTZ driver (dashed
+rules, frayed text), via Printo and via direct printing alike, but clean via Print&Share; routing
+that differed with the DPI and scale settings; and "do not print waybills" as the default.
+
+- **The ragged labels were the driver halftoning grey.** Printo sent a 32bpp anti-aliased
+  raster; the CITIZEN driver dithers grey edge pixels into dot patterns (the dashed lines in the
+  scan), the ZEBRA driver does not. Print&Share sends black and white. Now a thermal page is
+  composed at the head's own resolution (uncapped), rendered once by PDFium straight onto the
+  destination pixel grid (the old render-then-box-filter path averaged every dot with its
+  neighbour whenever the two sizes rounded a pixel apart), thresholded at the profile's
+  `BlackThreshold`, and sent as a **1bpp DIB, dot for dot, unstretched**. The test page for a
+  thermal printer does the same. Direct printing still goes through the driver's halftoning;
+  `DEPLOYMENT.md` says to turn dithering off in the CITIZEN driver for that. **Not verified on
+  the printer** - there is none here; ask for a scan of a 0.1.17 label from the CITIZEN.
+- **DPI never changed routing; scale did** (plan section 5.0e, measured on print-simulated
+  copies of the whole corpus: `simulate_print.py --dpi/--scale/--fit` -> `PrintedCorpusExport`
+  with `PRINTO_PRINTED_FEATURES_OUT` -> `route-printed-variant.ts`). Before: 90% put 202 pages in
+  the picker with 139 courier sheets pre-selected for thermal; 110% 147; fit-to-page sent 72 DHL
+  labels to A4 silently; 125% printed 6 courier sheets as labels and dropped 92 labels on A4.
+  Fixed by an any-scale tier: each content rule also accepts its shape at 55-300 mm (aspect
+  floor 1.44, which no document in the corpus reaches), and `label-markings-any-scale` claims a
+  label of any size by label-only OCR markings. Every marking was counted on OCR of every page
+  of every variant first: carrier *names* are useless (`FedEx` is on 192 of 330 return notes).
+  Eight variants are checked in (`tests/corpus/printed-variants/`) and both engines must route
+  each 1266/1266 in every waybill handling with nobody asked. The first held-out round (80%,
+  125%, fit at 203 dpi) failed and fixed the rules further, so it is no longer held out; a
+  second round (85%, 105%, 120%) misroutes nothing in any handling and asks about 7 of 3798
+  pages, each pre-selected right (six DHL labels at 85% read as `Ret Code`; not chased, and not
+  checked in because the suite demands zero prompts).
+- **Waybills are not printed by default** - as the *setting's* default (agent, server fleet
+  policy, worker: `DEFAULT_WAYBILL_HANDLING` / `WaybillHandlings.ProductDefault`), not the
+  profile's. The profile keeps `handling: 'route'` because an agent older than the policy sends
+  no handling and has no printer for SKIP (`agents-postgres.test.ts` pins that), and because it
+  makes a bundle published before 0.1.17 irrelevant. Cost: on the file path every FedEx 4x6
+  label is now read (12 -> 597 pages of the corpus read), because only reading tells the AWB copy
+  from the label; on the print path nothing changes (all 736 label-shaped pages were read
+  already). With no recogniser at all, a FedEx label now goes to the picker rather than guess.
+
+Also committed separately: the Windows 10 `-IppURL` preflight that was built into 0.1.16 but
+never committed.
+
+Suite: **383 C#, 203 routing-engine, 74 worker, 62 API (Postgres, run for real), 26 web; lint and
+typecheck clean.**
 
 ### 2026-09-24 — 0.1.15: what the operators asked for after running 0.1.14
 
