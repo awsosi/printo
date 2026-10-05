@@ -330,6 +330,15 @@ it gets page 1 first; a thermal strip torn off after the job is held by its last
 gets the last label first and the first label ends up at the torn end. A printer that stacks the
 other way is set per printer in the Printo window (Printers → Edit → Page order).
 
+**Thermal output.** A label reaches the thermal printer's driver as a black-and-white image one
+bit deep, at the printer's own resolution, placed dot for dot: Printo decides every dot, at the
+printer's black threshold (128), and the driver has nothing to halftone or rescale. Before 0.1.17
+it went as greyscale, and the CITIZEN CL-S400DTZ driver dithered the grey edge of every rule and
+glyph into dashes - the ragged labels reported on 2026-10-02 - where the ZEBRA driver did not.
+Printing to a CITIZEN *without* Printo (straight from a PDF viewer) still goes through the
+driver's own halftoning; if those prints matter, look in the driver's Printing Preferences for a
+dithering or halftone setting and turn it off.
+
 **Log files** go to `%ProgramData%\Printo\agent\logs`: `agent.log` from the service - every
 job's audit trail at Debug - and `tray-<user>.log` from each tray. The tray menu's **Show log
 directory** opens it.

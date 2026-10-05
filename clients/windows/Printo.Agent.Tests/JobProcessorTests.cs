@@ -548,6 +548,21 @@ public sealed class JobProcessorTests : IDisposable
         // A 203 dpi head is already below the cap, so barcode bars keep their 1:1 dot mapping.
         var printed = Assert.Single(thermal.Pages);
         Assert.Equal(203, printed.Composed.Dpi);
+
+        // And it gets black and white, not grey for its driver to halftone.
+        Assert.True(printed.Composed.Monochrome);
+        Assert.Equal(printed.Composed.Raster.InkCoverage(128), printed.Composed.Raster.InkCoverage(255));
+    }
+
+    [Fact]
+    public void LeavesTheToneOfA4PagesToTheLaser()
+    {
+        var pdf = TestPdf.Build(TestPdf.A4Document());
+        var job = Enqueue(pdf);
+
+        new JobProcessor(spool, Catalog()).Process(job);
+
+        Assert.False(Assert.Single(a4.Pages).Composed.Monochrome);
     }
 
     [Fact]

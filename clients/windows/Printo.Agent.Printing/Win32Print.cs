@@ -100,6 +100,19 @@ internal static partial class Win32Print
         public uint ClrImportant;
     }
 
+    /// <summary>A BITMAPINFO for a 1bpp DIB: the header and its two-entry palette.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct BitmapInfoMonochrome
+    {
+        public BitmapInfoHeader Header;
+
+        /// <summary>RGBQUAD for a clear bit.</summary>
+        public uint Color0;
+
+        /// <summary>RGBQUAD for a set bit.</summary>
+        public uint Color1;
+    }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct DocInfo
     {
@@ -218,6 +231,22 @@ internal static partial class Win32Print
         int sourceHeight,
         IntPtr bits,
         in BitmapInfoHeader info,
+        int usage,
+        int rasterOperation);
+
+    [LibraryImport("gdi32.dll", EntryPoint = "StretchDIBits", SetLastError = true)]
+    public static partial int StretchDIBits(
+        IntPtr dc,
+        int destinationX,
+        int destinationY,
+        int destinationWidth,
+        int destinationHeight,
+        int sourceX,
+        int sourceY,
+        int sourceWidth,
+        int sourceHeight,
+        IntPtr bits,
+        in BitmapInfoMonochrome info,
         int usage,
         int rasterOperation);
 }

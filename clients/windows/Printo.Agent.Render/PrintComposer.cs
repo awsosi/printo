@@ -55,6 +55,12 @@ public sealed class ComposedPage
     /// <summary>Region of the source page that was printed.</summary>
     public required RectMm Source { get; init; }
 
+    /// <summary>
+    /// True when the raster is pure black and white, reduced for a printer that marks a dot or
+    /// does not. The device sends such a page as a 1bpp bitmap, so no driver halftones it.
+    /// </summary>
+    public bool Monochrome { get; init; }
+
     /// <summary>True when the placement had to scale the content down to fit.</summary>
     public bool Reduced => Placement.Reduced;
 
@@ -85,13 +91,18 @@ public static class PrintComposer
     /// Region to print, already resolved from the transform against the page's measured
     /// features. Null means the whole page.
     /// </param>
+    /// <param name="blackThreshold">
+    /// Reduce the sheet to pure black and white at this luma, for a thermal head. Null keeps
+    /// the full tone range, for a printer that renders grey itself.
+    /// </param>
     public static ComposedPage Compose(
         PdfPage page,
         TransformSpec? transform,
         MediaSize media,
         PrintableArea area,
         double dpi,
-        RectMm? sourceRegion = null)
+        RectMm? sourceRegion = null,
+        byte? blackThreshold = null)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(media);
@@ -121,18 +132,27 @@ public static class PrintComposer
         var sheet = new RasterImage(sheetWidth, sheetHeight);
         sheet.FillWhite();
 
-        // Render the source at the resolution it will actually be printed at, so the scaling
-        // happens once, in PDFium, rather than twice.
-        var renderDpi = dpi * Math.Max(placement.ScaleX, placement.ScaleY);
-        var content = PageRenderer.RenderRegion(page, source, Math.Max(renderDpi, 1));
-        var rotated = content.Rotate(placement.Rotation);
-
         var destinationX = (int)Math.Round((area.OffsetXMm + placement.Destination.XMm) * pixelsPerMm);
         var destinationY = (int)Math.Round((area.OffsetYMm + placement.Destination.YMm) * pixelsPerMm);
         var destinationWidth = Math.Max(1, (int)Math.Round(placement.Destination.WidthMm * pixelsPerMm));
         var destinationHeight = Math.Max(1, (int)Math.Round(placement.Destination.HeightMm * pixelsPerMm));
 
+        // Render the source straight onto the destination's own pixel grid, turned back for the
+        // rotation, so the scaling happens once, in PDFium, and the copy below is 1:1.
+        var turned = placement.Rotation is 90 or 270;
+        var content = PageRenderer.RenderRegion(
+            page,
+            source,
+            turned ? destinationHeight : destinationWidth,
+            turned ? destinationWidth : destinationHeight);
+        var rotated = content.Rotate(placement.Rotation);
+
         sheet.DrawScaled(rotated, destinationX, destinationY, destinationWidth, destinationHeight);
+
+        if (blackThreshold is { } threshold)
+        {
+            sheet.Threshold(threshold);
+        }
 
         return new ComposedPage
         {
@@ -141,6 +161,7 @@ public static class PrintComposer
             Media = media,
             Dpi = dpi,
             Source = source,
+            Monochrome = blackThreshold is not null,
         };
     }
 }

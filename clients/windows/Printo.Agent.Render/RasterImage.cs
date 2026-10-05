@@ -176,6 +176,55 @@ public sealed class RasterImage
         return gray;
     }
 
+    /// <summary>
+    /// Reduces the raster to pure black and white in place: luma below
+    /// <paramref name="threshold"/> becomes black, everything else white.
+    /// </summary>
+    /// <remarks>
+    /// For thermal heads, which mark a dot or do not. Handed grey, a thermal driver halftones
+    /// it, and the anti-aliased edge of every rule and glyph comes out as a dotted fringe -
+    /// dashed lines, ragged text, bars that scan badly. A fixed threshold keeps every edge
+    /// where the artwork puts it, to the nearest dot, and a line at least one dot wide always
+    /// has a row or column at least half covered, so it cannot break up.
+    /// </remarks>
+    public void Threshold(byte threshold)
+    {
+        for (var offset = 0; offset < Pixels.Length; offset += 4)
+        {
+            var luma = ((Pixels[offset + 2] * 299) + (Pixels[offset + 1] * 587) + (Pixels[offset] * 114)) / 1000;
+            var value = luma < threshold ? (byte)0x00 : (byte)0xFF;
+            Pixels[offset] = value;
+            Pixels[offset + 1] = value;
+            Pixels[offset + 2] = value;
+            Pixels[offset + 3] = 0xFF;
+        }
+    }
+
+    /// <summary>
+    /// Packs a raster already reduced by <see cref="Threshold"/> into a top-down 1bpp bitmap,
+    /// rows padded to 32 bits, with a set bit meaning white (palette entry 1), as a Windows DIB
+    /// expects.
+    /// </summary>
+    public byte[] ToOneBit(out int stride)
+    {
+        stride = ((Width + 31) / 32) * 4;
+        var bits = new byte[stride * Height];
+        for (var y = 0; y < Height; y++)
+        {
+            var row = y * Stride;
+            var target = y * stride;
+            for (var x = 0; x < Width; x++)
+            {
+                if (Pixels[row + (x * 4) + 1] >= 0x80)
+                {
+                    bits[target + (x >> 3)] |= (byte)(0x80 >> (x & 7));
+                }
+            }
+        }
+
+        return bits;
+    }
+
     /// <summary>Fraction of pixels darker than <paramref name="level"/>, 0..1.</summary>
     public double InkCoverage(byte level = 200)
     {

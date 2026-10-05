@@ -11,7 +11,10 @@ namespace Printo.Agent.Printing;
 /// <remarks>
 /// The composed raster goes to <c>StretchDIBits</c> as a top-down 32bpp DIB, which is the
 /// layout <see cref="RasterImage"/> already uses — so the bytes asserted by the render-diff
-/// tests are the bytes the driver receives, with no conversion in between.
+/// tests are the bytes the driver receives, with no conversion in between. A page composed
+/// black and white for a thermal head goes as a 1bpp DIB of the same pixels instead: a
+/// driver handed grey halftones it, and some (the CITIZEN CL-S400DTZ driver, for one) do it
+/// badly enough to break every rule into dashes. Sent one bit deep, there is nothing to dither.
 ///
 /// Custom media is set through the queue's own DEVMODE rather than by picking a named form:
 /// label stock is a free <c>WxH mm</c> value in this product, and no driver has a form for
@@ -99,6 +102,9 @@ public sealed class WindowsPrinterDevice : IPrinterDevice
         }
 
         var raster = page.Composed.Raster;
+        var monochrome = page.Composed.Monochrome;
+        var oneBitStride = 0;
+        var bits = monochrome ? raster.ToOneBit(out oneBitStride) : raster.Pixels;
 
         // Negative height marks the DIB top-down, matching RasterImage's layout. Getting this
         // wrong prints the page upside down, which is exactly the kind of defect that only
@@ -109,19 +115,31 @@ public sealed class WindowsPrinterDevice : IPrinterDevice
             Width = raster.Width,
             Height = -raster.Height,
             Planes = 1,
-            BitCount = 32,
+            BitCount = (ushort)(monochrome ? 1 : 32),
             Compression = 0,
-            SizeImage = (uint)(raster.Stride * raster.Height),
+            SizeImage = (uint)((monochrome ? oneBitStride : raster.Stride) * raster.Height),
+            ClrUsed = monochrome ? 2u : 0u,
+        };
+        var monochromeInfo = new Win32Print.BitmapInfoMonochrome
+        {
+            Header = header,
+            Color0 = 0x00000000,
+            Color1 = 0x00FFFFFF,
         };
 
-        // The composed raster already covers the whole physical sheet at device resolution,
-        // so it maps 1:1 onto the device's physical extent - no further scaling here.
-        var deviceWidth = Win32Print.GetDeviceCaps(deviceContext, Win32Print.PhysicalWidth);
-        var deviceHeight = Win32Print.GetDeviceCaps(deviceContext, Win32Print.PhysicalHeight);
+        // The composed raster covers the whole physical sheet. Composed at the device's own
+        // resolution it is placed dot for dot, at its own size: stretching it onto a physical
+        // extent that rounds a pixel differently would resample every row - a duplicated or
+        // dropped column through a barcode. Composed lower (an A4 laser past the compose cap),
+        // it is stretched to the sheet.
+        var deviceDpi = Win32Print.GetDeviceCaps(deviceContext, Win32Print.LogPixelsX);
+        var native = Math.Abs(page.Composed.Dpi - deviceDpi) < 0.5;
+        var deviceWidth = native ? raster.Width : Win32Print.GetDeviceCaps(deviceContext, Win32Print.PhysicalWidth);
+        var deviceHeight = native ? raster.Height : Win32Print.GetDeviceCaps(deviceContext, Win32Print.PhysicalHeight);
         var offsetX = Win32Print.GetDeviceCaps(deviceContext, Win32Print.PhysicalOffsetX);
         var offsetY = Win32Print.GetDeviceCaps(deviceContext, Win32Print.PhysicalOffsetY);
 
-        var pinned = GCHandle.Alloc(raster.Pixels, GCHandleType.Pinned);
+        var pinned = GCHandle.Alloc(bits, GCHandleType.Pinned);
         try
         {
             for (var copy = 0; copy < Math.Max(1, page.Copies); copy++)
@@ -134,20 +152,35 @@ public sealed class WindowsPrinterDevice : IPrinterDevice
 
                 // GDI's origin is the printable area, so the physical offset is subtracted:
                 // the sheet raster starts at the paper edge, which sits above and left of it.
-                var result = Win32Print.StretchDIBits(
-                    deviceContext,
-                    -offsetX,
-                    -offsetY,
-                    deviceWidth,
-                    deviceHeight,
-                    0,
-                    0,
-                    raster.Width,
-                    raster.Height,
-                    pinned.AddrOfPinnedObject(),
-                    in header,
-                    Win32Print.DibRgbColors,
-                    Win32Print.SrcCopy);
+                var result = monochrome
+                    ? Win32Print.StretchDIBits(
+                        deviceContext,
+                        -offsetX,
+                        -offsetY,
+                        deviceWidth,
+                        deviceHeight,
+                        0,
+                        0,
+                        raster.Width,
+                        raster.Height,
+                        pinned.AddrOfPinnedObject(),
+                        in monochromeInfo,
+                        Win32Print.DibRgbColors,
+                        Win32Print.SrcCopy)
+                    : Win32Print.StretchDIBits(
+                        deviceContext,
+                        -offsetX,
+                        -offsetY,
+                        deviceWidth,
+                        deviceHeight,
+                        0,
+                        0,
+                        raster.Width,
+                        raster.Height,
+                        pinned.AddrOfPinnedObject(),
+                        in header,
+                        Win32Print.DibRgbColors,
+                        Win32Print.SrcCopy);
 
                 if (result == 0)
                 {

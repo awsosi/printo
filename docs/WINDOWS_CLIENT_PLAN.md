@@ -824,6 +824,14 @@ copies, duplex, tray, colour/mono
 - Thermal support strategy: **default is raster through the printer's own Windows driver** —
   works uniformly for CITIZEN, 4BARCODE and ZEBRA, USB or Ethernet. ZPL raw is opt-in per
   printer for sites that want it.
+- **A thermal page reaches the driver as black and white, one bit deep, dot for dot** (0.1.17).
+  It is composed at the head's own resolution (never capped), the source region is rendered by
+  PDFium straight onto the destination's pixel grid (no second resample), reduced at the printer
+  profile's `BlackThreshold`, and sent as a 1bpp DIB without stretching. Before, it went as a
+  32bpp grey raster: the CITIZEN CL-S400DTZ driver halftoned the grey edges into dashed rules and
+  frayed text (field scan, 2026-10-02) where the ZEBRA driver did not, and a render one pixel off
+  the destination size had the box filter average every dot with its neighbour. A4 lasers still
+  get tone, which they render well.
 
 ### 7.3 Printer profiles
 

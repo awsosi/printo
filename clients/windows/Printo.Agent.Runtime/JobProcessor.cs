@@ -730,7 +730,13 @@ public sealed class JobProcessor
                     var transform = profile.Apply(page.Transform);
                     var region = ResolveRegion(page, transform, source);
 
-                    var dpi = Math.Min(profile.Dpi ?? device.Capabilities.DpiX, profile.MaxComposeDpi);
+                    // A thermal page is composed at the head's own resolution, never capped, and
+                    // reduced to black and white here rather than by the driver: a label that is
+                    // resampled or halftoned on its way to the head has ragged text and bars
+                    // that will not scan.
+                    var dpi = isThermal
+                        ? profile.Dpi ?? device.Capabilities.DpiX
+                        : Math.Min(profile.Dpi ?? device.Capabilities.DpiX, profile.MaxComposeDpi);
 
                     var composed = PrintComposer.Compose(
                         source,
@@ -738,7 +744,8 @@ public sealed class JobProcessor
                         device.Capabilities.PhysicalMedia,
                         area,
                         dpi,
-                        region);
+                        region,
+                        isThermal ? profile.BlackThreshold : null);
 
                     device.PrintPage(new PrintedPage
                     {

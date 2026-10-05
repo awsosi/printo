@@ -22,7 +22,7 @@ public sealed class PrintingTests
 
     private static bool FixtureAvailable => RepositoryPaths.Root is not null && File.Exists(FixturePath);
 
-    private static ComposedPage ComposeLabel(MediaSize media)
+    private static ComposedPage ComposeLabel(MediaSize media, byte? blackThreshold = null)
     {
         using var document = PdfDocument.Load(File.ReadAllBytes(FixturePath));
         using var page = document.OpenPage(1);
@@ -31,7 +31,125 @@ public sealed class PrintingTests
             new TransformSpec { Rotate = RotateSpec.Auto, Fit = "contain" },
             media,
             PrintableArea.FullBleed(media),
-            203);
+            203,
+            blackThreshold: blackThreshold);
+    }
+
+    [Fact]
+    public void ThermalOutputIsPureBlackAndWhite()
+    {
+        if (!FixtureAvailable)
+        {
+            return;
+        }
+
+        // Grey reaching a thermal driver is halftoned, and on the CITIZEN CL-S400DTZ driver that
+        // broke every rule of a DHL label into dashes and frayed the text (field report,
+        // 2026-10-02). Printo now hands the head black and white and leaves the driver nothing
+        // to decide.
+        var media = RecordingPrinterDevice.Thermal().Capabilities.PhysicalMedia;
+        var grey = ComposeLabel(media);
+        var thermal = ComposeLabel(media, blackThreshold: 128);
+
+        Assert.False(grey.Monochrome);
+        Assert.True(thermal.Monochrome);
+        Assert.True(CountGrey(grey.Raster) > 0, "the anti-aliased render should carry grey edges");
+        Assert.Equal(0, CountGrey(thermal.Raster));
+
+        // Exactly the pixels the anti-aliased render had darker than the threshold, no more.
+        Assert.Equal(grey.Raster.InkCoverage(128), thermal.Raster.InkCoverage(128));
+    }
+
+    [Fact]
+    public void TheLabelIsResampledOnceStraightOntoTheDeviceGrid()
+    {
+        if (!FixtureAvailable)
+        {
+            return;
+        }
+
+        // Rendering at a resolution and then resizing to the destination box was a second
+        // resample; when the two sizes rounded a pixel apart, the box filter averaged every dot
+        // with its neighbour and the whole label went soft. The composed content must be
+        // exactly PDFium's render of the source region at the destination's own size.
+        var media = RecordingPrinterDevice.Thermal().Capabilities.PhysicalMedia;
+        var composed = ComposeLabel(media);
+        var placement = composed.Placement;
+        var pixelsPerMm = 203 / 25.4;
+        var x = (int)Math.Round(placement.Destination.XMm * pixelsPerMm);
+        var y = (int)Math.Round(placement.Destination.YMm * pixelsPerMm);
+        var width = (int)Math.Round(placement.Destination.WidthMm * pixelsPerMm);
+        var height = (int)Math.Round(placement.Destination.HeightMm * pixelsPerMm);
+        var turned = placement.Rotation is 90 or 270;
+
+        using var document = PdfDocument.Load(File.ReadAllBytes(FixturePath));
+        using var page = document.OpenPage(1);
+        var direct = PageRenderer
+            .RenderRegion(page, composed.Source, turned ? height : width, turned ? width : height)
+            .Rotate(placement.Rotation);
+
+        var differing = 0;
+        for (var row = 0; row < height; row++)
+        {
+            for (var column = 0; column < width; column++)
+            {
+                if (x + column < 0 || x + column >= composed.Raster.Width || y + row < 0 || y + row >= composed.Raster.Height)
+                {
+                    continue;
+                }
+
+                if (composed.Raster.GetPixel(x + column, y + row) != direct.GetPixel(column, row))
+                {
+                    differing++;
+                }
+            }
+        }
+
+        Assert.Equal(0, differing);
+    }
+
+    [Fact]
+    public void PacksABlackAndWhiteRasterOneBitDeep()
+    {
+        // 33 pixels wide: one bit past a 32-bit boundary, so every row pads to 8 bytes.
+        var raster = new RasterImage(33, 2);
+        raster.FillWhite();
+        foreach (var (column, row) in new[] { (0, 0), (8, 0), (32, 0), (1, 1) })
+        {
+            var offset = (row * raster.Stride) + (column * 4);
+            raster.Pixels[offset] = raster.Pixels[offset + 1] = raster.Pixels[offset + 2] = 40;
+        }
+
+        raster.Threshold(128);
+        var bits = raster.ToOneBit(out var stride);
+
+        Assert.Equal(8, stride);
+        Assert.Equal(16, bits.Length);
+
+        // A set bit is white; black dots are the clear ones, most significant bit first.
+        Assert.Equal(0b0111_1111, bits[0]);
+        Assert.Equal(0b0111_1111, bits[1]);
+        Assert.Equal(0b0000_0000, bits[4]);
+        Assert.Equal(0b1011_1111, bits[8]);
+        Assert.Equal(0xFF, bits[9]);
+
+        // Padding past the last pixel is never read; it is left clear.
+        Assert.Equal(0, bits[5]);
+        Assert.Equal(0b1000_0000, bits[12]);
+    }
+
+    private static int CountGrey(RasterImage raster)
+    {
+        var grey = 0;
+        for (var offset = 0; offset < raster.Pixels.Length; offset += 4)
+        {
+            if (raster.Pixels[offset + 1] is > 0 and < 255)
+            {
+                grey++;
+            }
+        }
+
+        return grey;
     }
 
     [Fact]

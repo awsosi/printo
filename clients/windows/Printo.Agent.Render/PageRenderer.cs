@@ -47,6 +47,58 @@ public static class PageRenderer
         var startX = -(int)Math.Round(region.XMm * pixelsPerMm);
         var startY = -(int)Math.Round(region.YMm * pixelsPerMm);
 
+        return Render(page, width, height, pageWidth, pageHeight, startX, startY, grayscale);
+    }
+
+    /// <summary>
+    /// Renders <paramref name="region"/> of the page into exactly
+    /// <paramref name="width"/> x <paramref name="height"/> pixels.
+    /// </summary>
+    /// <remarks>
+    /// For output that is placed pixel for pixel on a device. Rendering at a resolution and then
+    /// resizing to the destination is a second resample, and when the two sizes differ by a
+    /// single pixel - which rounding makes them do about half the time - the box filter averages
+    /// every pixel with its neighbour: the whole label goes soft, and a thermal driver dithers
+    /// the grey into broken rules and ragged text. Here PDFium scales once, straight onto the
+    /// device grid.
+    /// </remarks>
+    public static RasterImage RenderRegion(PdfPage page, RectMm region, int width, int height, bool grayscale = false)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(region);
+        if (width <= 0 || height <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(width), $"raster must be at least 1x1, got {width}x{height}");
+        }
+
+        if (region.WidthMm <= 0 || region.HeightMm <= 0)
+        {
+            throw new ArgumentException(
+                $"region must have a positive size, got {region.WidthMm}x{region.HeightMm}mm",
+                nameof(region));
+        }
+
+        var pixelsPerMmX = width / region.WidthMm;
+        var pixelsPerMmY = height / region.HeightMm;
+        var pageWidth = Math.Max(1, (int)Math.Round(page.WidthMm * pixelsPerMmX));
+        var pageHeight = Math.Max(1, (int)Math.Round(page.HeightMm * pixelsPerMmY));
+        var startX = -(int)Math.Round(region.XMm * pixelsPerMmX);
+        var startY = -(int)Math.Round(region.YMm * pixelsPerMmY);
+
+        return Render(page, width, height, pageWidth, pageHeight, startX, startY, grayscale);
+    }
+
+    private static RasterImage Render(
+        PdfPage page,
+        int width,
+        int height,
+        int pageWidth,
+        int pageHeight,
+        int startX,
+        int startY,
+        bool grayscale)
+    {
+
         var raster = new RasterImage(width, height);
         raster.FillWhite();
 

@@ -38,7 +38,11 @@ public static class CalibrationPage
         ArgumentNullException.ThrowIfNull(mapping);
 
         var media = capabilities.PhysicalMedia;
-        var dpi = Math.Min(Math.Max(capabilities.DpiX, 72), MaxDpi);
+
+        // A thermal printer gets its page the way it gets a label - at the head's own
+        // resolution and in pure black and white - so the test page shows what labels will.
+        var thermal = string.Equals(mapping.Role, "THERMAL", StringComparison.OrdinalIgnoreCase);
+        var dpi = thermal ? Math.Max(capabilities.DpiX, 72) : Math.Min(Math.Max(capabilities.DpiX, 72), MaxDpi);
         var pixelsPerMm = dpi / 25.4;
 
         var width = Math.Max(1, (int)Math.Round(media.WidthMm * pixelsPerMm));
@@ -53,9 +57,16 @@ public static class CalibrationPage
             Draw(graphics, capabilities, mapping, media, pixelsPerMm);
         }
 
+        var raster = ToRaster(bitmap);
+        if (thermal)
+        {
+            raster.Threshold(128);
+        }
+
         return new ComposedPage
         {
-            Raster = ToRaster(bitmap),
+            Raster = raster,
+            Monochrome = thermal,
             Placement = new Placement
             {
                 Destination = new RectMm
